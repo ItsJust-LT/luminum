@@ -1,0 +1,229 @@
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import { Toaster } from "@/components/ui/sonner";
+import { Providers } from "@/components/providers";
+import InstallPrompt from "@/components/install-prompt";
+import { NotificationToastManager } from "@/components/notifications";
+import { EnhancedNotificationPopupContainer } from "@/components/notifications/enhanced-notification-popup";
+import { NotificationClickHandler } from "@/components/notifications/notification-click-handler";
+import { APP, METADATA } from "@/lib/constants";
+
+export const metadata: Metadata = {
+  title: {
+    default: METADATA.defaultTitle,
+    template: METADATA.titleTemplate,
+  },
+  description: APP.tagline,
+  keywords: ['PWA', 'Next.js', 'Progressive Web App', 'Analytics', 'Dashboard', 'Notifications'],
+  authors: [{ name: APP.name }],
+  creator: APP.name,
+  publisher: APP.name,
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    url: '/',
+    title: METADATA.openGraphTitle,
+    description: APP.tagline,
+    siteName: METADATA.siteName,
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: `${APP.name} PWA`,
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: METADATA.openGraphTitle,
+    description: APP.tagline,
+    images: ['/og-image.png'],
+    creator: '@luminum',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  manifest: '/manifest.json',
+  other: {
+    'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'apple-mobile-web-app-title': 'Luminum',
+    'application-name': 'Luminum',
+    'msapplication-TileColor': '#000000',
+    'msapplication-config': '/browserconfig.xml',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#000000' },
+  ],
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: 'cover',
+}
+
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="manifest" href="/manifest.json" />
+
+        
+        {/* Apple-specific PWA meta tags */}
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#000000" />
+        
+        {/* Microsoft-specific PWA meta tags */}
+        <meta name="msapplication-TileImage" content="/mstile-144x144.png" />
+        <meta name="msapplication-TileColor" content="#000000" />
+        
+        {/* Additional PWA enhancements */}
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="format-detection" content="date=no" />
+        <meta name="format-detection" content="address=no" />
+        <meta name="format-detection" content="email=no" />
+      <body
+      >
+<Providers>
+
+        {children}
+        <InstallPrompt />
+        <PWAUpdatePrompt />
+        <NotificationToastManager />
+        <EnhancedNotificationPopupContainer />
+        <NotificationClickHandler />
+
+        </Providers>
+        <ServiceWorkerRegistration />
+
+        <Toaster />
+      </body>
+    </html>
+  );
+}
+
+
+
+// Component to handle PWA updates
+function PWAUpdatePrompt() {
+  return (
+    <div id="pwa-update-available" className="hidden fixed bottom-4 right-4 bg-blue-600 text-white p-4 rounded-lg shadow-lg z-50">
+      <p className="text-sm font-medium">App update available!</p>
+      <button 
+        id="pwa-refresh" 
+        className="mt-2 bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-gray-100"
+      >
+        Refresh
+      </button>
+    </div>
+  )
+}
+
+// Client-side service worker registration
+function ServiceWorkerRegistration() {
+  return (
+    <script
+      dangerouslySetInnerHTML={{
+        __html: `
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+              navigator.serviceWorker.register('/sw.js')
+                .then(function(registration) {
+                  console.log('SW registered: ', registration);
+                  
+                  // Handle updates
+                  registration.addEventListener('updatefound', function() {
+                    const newWorker = registration.installing;
+                    if (newWorker) {
+                      newWorker.addEventListener('statechange', function() {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                          // Show update notification
+                          const updateDiv = document.getElementById('pwa-update-available');
+                          const refreshBtn = document.getElementById('pwa-refresh');
+                          if (updateDiv && refreshBtn) {
+                            updateDiv.classList.remove('hidden');
+                            refreshBtn.addEventListener('click', function() {
+                              newWorker.postMessage({ type: 'SKIP_WAITING' });
+                              window.location.reload();
+                            });
+                          }
+                        }
+                      });
+                    }
+                  });
+                })
+                .catch(function(registrationError) {
+                  console.log('SW registration failed: ', registrationError);
+                });
+            });
+
+            // Handle service worker updates
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+              window.location.reload();
+            });
+          }
+
+          // Handle app install prompt
+          let deferredPrompt;
+          window.addEventListener('beforeinstallprompt', function(e) {
+            e.preventDefault();
+            deferredPrompt = e;
+          });
+
+          // Handle iOS install instructions
+          function isIOS() {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+          }
+
+          function isStandalone() {
+            return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+          }
+
+          // Add to home screen functionality
+          window.addToHomeScreen = function() {
+            if (deferredPrompt) {
+              deferredPrompt.prompt();
+              deferredPrompt.userChoice.then(function(choiceResult) {
+                if (choiceResult.outcome === 'accepted') {
+                  console.log('User accepted the install prompt');
+                }
+                deferredPrompt = null;
+              });
+            }
+          };
+        `,
+      }}
+    />
+  )
+}

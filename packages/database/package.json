@@ -1,0 +1,30 @@
+{
+  "name": "@luminum/database",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "build": "node -e \"process.env.DATABASE_URL=process.env.DATABASE_URL||'postgresql://localhost:5432/build'; require('child_process').execSync('npx prisma generate', {stdio:'inherit', env: process.env})\"",
+    "generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.0.0",
+    "@prisma/adapter-pg": "^7.0.0",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5",
+    "prisma": "^7.0.0",
+    "typescript": "^5",
+    "@types/pg": "^8.15.5"
+  }
+}

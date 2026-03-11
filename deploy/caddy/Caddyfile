@@ -1,0 +1,15 @@
+# Luminum production – reverse proxy for app / api / analytics
+# Copy to /etc/caddy/Caddyfile (or run: caddy adapt --config ./Caddyfile)
+# With Cloudflare: use SSL Full (strict); Caddy will obtain Let's Encrypt certs.
+
+app.luminum.agency {
+  reverse_proxy 127.0.0.1:3000
+}
+
+api.luminum.agency {
+  reverse_proxy 127.0.0.1:4000
+}
+
+analytics.luminum.agency {
+  reverse_proxy 127.0.0.1:8080
+}

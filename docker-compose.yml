@@ -1,0 +1,105 @@
+# Luminum full stack: Postgres, Redis, API, Dashboard, Analytics (Go)
+# Copy .env.docker.example to .env and fill in values, then: docker compose up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-luminum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-luminum_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-luminum}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-luminum} -d ${POSTGRES_DB:-luminum}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "exec redis-server ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      API_WS_URL: ${API_WS_URL:-http://localhost:4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-luminum}:${POSTGRES_PASSWORD:-luminum_secret}@postgres:5432/${POSTGRES_DB:-luminum}
+      REDIS_URL: redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      PAYSTACK_SECRET: ${PAYSTACK_SECRET:-}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    env_file: .env
+    ports:
+      - "${API_PORT:-4000}:4000"
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:4000
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_ANALYTICS_URL: ${NEXT_PUBLIC_ANALYTICS_URL:-http://localhost:8080}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+    env_file: .env
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+
+  analytics:
+    build:
+      context: ./apps/analytics
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-luminum}:${POSTGRES_PASSWORD:-luminum_secret}@postgres:5432/${POSTGRES_DB:-luminum}
+      API_URL: http://api:4000
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      PORT: 8080
+    env_file: .env
+    ports:
+      - "${ANALYTICS_PORT:-8080}:8080"
+
+volumes:
+  postgres_data:
+  redis_data:

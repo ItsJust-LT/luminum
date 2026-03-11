@@ -1,0 +1,27 @@
+# Build API from monorepo root (needs workspace deps)
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+WORKDIR /app
+
+FROM base AS builder
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY packages ./packages
+COPY apps/api ./apps/api
+RUN pnpm install --frozen-lockfile
+ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
+RUN pnpm run build --filter=@luminum/database --filter=@luminum/api
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/database ./packages/database
+# Ensure runtime deps resolvable from /app (pnpm symlinks can break in copy)
+RUN npm install dotenv
+COPY docker/entrypoint-api.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+EXPOSE 4000
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["node", "dist/index.js"]

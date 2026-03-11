@@ -1,0 +1,479 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamp(6)
+  refreshTokenExpiresAt DateTime? @db.Timestamp(6)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @db.Timestamp(6)
+  updatedAt             DateTime  @db.Timestamp(6)
+  user                  user      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model device_subscriptions {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String?
+  device_id    String
+  subscription Json
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+  user_agent   String?
+  user         user?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, device_id], map: "device_user_unique")
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model events {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  url             String?
+  referrer        String?
+  screen_size     String?
+  ip              String?
+  country         String?
+  city            String?
+  created_at      DateTime? @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  website_id      String?   @db.Uuid
+  session_id      String?
+  duration        Int?
+  device_type     String?
+  user_id         String?   @db.VarChar(255)
+  page_title      String?   @db.VarChar(500)
+  referrer_domain String?   @db.VarChar(255)
+  browser_name    String?   @db.VarChar(50)
+  browser_version String?   @db.VarChar(20)
+  os_name         String?   @db.VarChar(50)
+  os_version      String?   @db.VarChar(20)
+  url_params      Json?
+  referrer_path   String?
+  traffic_source  String?   @db.VarChar(50)
+  user_agent      String?
+  utm_params      Json?
+  websites        websites? @relation(fields: [website_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([website_id], map: "idx_events_website_id")
+  @@index([session_id], map: "idx_events_session_id")
+  @@index([browser_name], map: "idx_events_browser_name")
+  @@index([os_name], map: "idx_events_os_name")
+  @@index([referrer_domain], map: "idx_events_referrer_domain")
+  @@index([traffic_source], map: "idx_events_traffic_source")
+  @@index([user_id], map: "idx_events_user_id")
+  @@index([utm_params], map: "idx_events_utm_params", type: Gin)
+}
+
+model form_submissions {
+  website_id   String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  submitted_at DateTime  @default(now()) @db.Timestamptz(6)
+  data         Json
+  seen         Boolean   @default(false)
+  contacted    Boolean   @default(false)
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id   String?   // Same __luminum_sid as analytics; empty when unknown
+  websites     websites  @relation(fields: [website_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([website_id], map: "idx_form_submissions_website_id")
+  @@index([session_id], map: "idx_form_submissions_session_id")
+}
+
+model images {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  name            String        @db.VarChar
+  url             String
+  organization_id String?
+  size_bytes      BigInt?       @default(0)
+  organization    organization? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model invitation {
+  id             String       @id
+  organizationId String
+  email          String
+  role           String?
+  status         String
+  expiresAt      DateTime     @db.Timestamp(6)
+  inviterId      String?
+  createdAt      DateTime     @db.Timestamptz(6)
+  user           user?        @relation(fields: [inviterId], references: [id], onUpdate: NoAction)
+  organization   organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model jwks {
+  id         String   @id
+  publicKey  String
+  privateKey String
+  createdAt  DateTime @db.Timestamptz(6)
+}
+
+model member {
+  id             String       @id
+  organizationId String
+  userId         String
+  role           String
+  createdAt      DateTime     @db.Timestamp(6)
+  organization   organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user           user         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model notifications {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String?
+  type       String
+  title      String?
+  message    String?
+  data       Json?
+  read       Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  user       user?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, created_at])
+}
+
+model notification_preferences {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String    @unique
+  push_enabled     Boolean   @default(true)
+  in_app_enabled   Boolean   @default(true)
+  email_enabled    Boolean   @default(true)
+  disabled_types   Json?     @db.JsonB // Array of notification types to disable
+  quiet_hours_start String?  @db.VarChar(5) // Format: "HH:MM" in 24h format
+  quiet_hours_end  String?   @db.VarChar(5) // Format: "HH:MM" in 24h format
+  created_at       DateTime? @default(now()) @db.Timestamp(6)
+  updated_at       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  user             user      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id])
+}
+
+model email {
+  id              String       @id @default(cuid())
+  organization_id String?      @db.VarChar(255)
+  from            String?
+  to              String?
+  subject         String?
+  text            String?      @db.Text
+  html            String?      @db.Text
+  headers         Json?
+  receivedAt      DateTime?
+  read            Boolean      @default(false)
+  messageId       String?      @unique // RFC Message-ID for deduplication (normalized: trimmed, lowercased)
+  dedupeKey       String?      @unique // Fallback dedupe when Message-ID absent: hash(org+from+to+subject+receivedAt)
+  contentHash     String?      @unique // Content-based dedupe: md5(org+from+to+subject+text+html) — same as dedup script
+  attachments     attachment[]
+  createdAt       DateTime     @default(now())
+  organization    organization? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organization_id])
+  @@index([receivedAt])
+  @@index([subject])
+  @@index([from])
+  @@index([read])
+  @@map("email")
+}
+
+/// Cache of avatar image URL per sender email (BIMI/Gravatar). Populated by getAvatarForEmail and email webhook.
+model email_avatar_cache {
+  email       String    @id // normalized: trim + lowercase
+  avatar_url  String?   @db.Text
+  updated_at  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@map("email_avatar_cache")
+}
+
+model attachment {
+  id        String  @id @default(cuid())
+  emailId   String
+  filename  String
+  contentType String
+  size      Int?
+  r2Key     String
+  url       String? // optional public URL or proxied URL
+  email     email   @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@map("attachment")
+}
+
+model organization {
+  id                                                                String                    @id
+  name                                                              String
+  slug                                                              String                    @unique
+  logo                                                              String?
+  createdAt                                                         DateTime                  @db.Timestamp(6)
+  metadata                                                          String?
+  currency                                                          String                    @default("ZAR") @db.VarChar
+  country                                                           String                    @default("South Africa") @db.VarChar
+  payment_provider                                                  String                    @default("paystack") @db.VarChar
+  subscription_status                                               String?                   @default("active") @db.VarChar(50)
+  primary_subscription_id                                           String?
+  max_subscriptions                                                 Int?                      @default(1)
+  billing_email                                                     String?                   @db.VarChar(255)
+  tax_id                                                            String?                   @db.VarChar(100)
+  billing_address                                                   Json?
+  max_storage_bytes                                                 BigInt?                   @default(10737418240)
+  used_storage_bytes                                                BigInt?                   @default(0)
+  emails_enabled                                                    Boolean                   @default(false)
+  emails                                                            email[]
+  images                                                            images[]
+  invitation                                                        invitation[]
+  member                                                            member[]
+  subscriptions_organization_primary_subscription_idTosubscriptions subscriptions?            @relation("organization_primary_subscription_idTosubscriptions", fields: [primary_subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subscriptions_subscriptions_organization_idToorganization         subscriptions[]           @relation("subscriptions_organization_idToorganization")
+  support_tickets                                                   support_tickets[]
+  websites                                                          websites[]
+
+  @@index([payment_provider], map: "idx_organization_payment_provider")
+  @@index([primary_subscription_id], map: "idx_organization_primary_subscription")
+  @@index([subscription_status], map: "idx_organization_subscription_status")
+}
+
+model payments {
+  id                      String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  subscription_id         String
+  provider                String        @db.VarChar(50)
+  provider_payment_id     String?
+  provider_transaction_id String?
+  amount                  Decimal       @db.Decimal(10, 2)
+  currency                String        @db.VarChar(3)
+  status                  String        @db.VarChar(50)
+  payment_method          String?       @db.VarChar(100)
+  paid_at                 DateTime?     @db.Timestamp(6)
+  created_at              DateTime      @default(now()) @db.Timestamp(6)
+  metadata                Json?
+  subscriptions           subscriptions @relation(fields: [subscription_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([provider], map: "idx_payments_provider")
+  @@index([status], map: "idx_payments_status")
+  @@index([subscription_id], map: "idx_payments_subscription_id")
+}
+
+model session {
+  id                   String   @id
+  expiresAt            DateTime @db.Timestamp(6)
+  token                String   @unique
+  createdAt            DateTime @db.Timestamp(6)
+  updatedAt            DateTime @db.Timestamp(6)
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  impersonatedBy       String?
+  activeOrganizationId String?
+  user                 user     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model subscriptions {
+  id                                                               String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  organization_id                                                  String
+  provider                                                         String         @default("paystack") @db.VarChar(50)
+  provider_subscription_id                                         String?
+  provider_customer_id                                             String?
+  plan_name                                                        String?        @db.VarChar(255)
+  plan_id                                                          String?
+  status                                                           String         @default("active") @db.VarChar(50)
+  type                                                             String         @default("paid") @db.VarChar(50)
+  amount                                                           Decimal?       @db.Decimal(10, 2)
+  currency                                                         String         @default("ZAR") @db.VarChar(3)
+  billing_cycle                                                    String?        @db.VarChar(20)
+  trial_start_date                                                 DateTime?      @db.Timestamp(6)
+  trial_end_date                                                   DateTime?      @db.Timestamp(6)
+  current_period_start                                             DateTime?      @db.Timestamp(6)
+  current_period_end                                               DateTime?      @db.Timestamp(6)
+  canceled_at                                                      DateTime?      @db.Timestamp(6)
+  created_at                                                       DateTime       @default(now()) @db.Timestamp(6)
+  updated_at                                                       DateTime       @default(now()) @db.Timestamp(6)
+  metadata                                                         Json?
+  organization_organization_primary_subscription_idTosubscriptions organization[] @relation("organization_primary_subscription_idTosubscriptions")
+  payments                                                         payments[]
+  organization_subscriptions_organization_idToorganization         organization   @relation("subscriptions_organization_idToorganization", fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organization_id], map: "idx_subscriptions_organization_id")
+  @@index([provider], map: "idx_subscriptions_provider")
+  @@index([status], map: "idx_subscriptions_status")
+  @@index([type], map: "idx_subscriptions_type")
+}
+
+model support_attachments {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_id            String            @db.Uuid
+  message_id           String?           @db.Uuid
+  uploaded_by          String
+  filename             String            @db.VarChar(255)
+  original_filename    String            @db.VarChar(255)
+  file_size            Int
+  mime_type            String            @db.VarChar(100)
+  cloudinary_public_id String            @db.VarChar(255)
+  cloudinary_url       String
+  created_at           DateTime?         @default(now()) @db.Timestamptz(6)
+  support_messages     support_messages? @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  support_tickets      support_tickets   @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user                 user              @relation(fields: [uploaded_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([message_id], map: "idx_support_attachments_message_id")
+  @@index([ticket_id], map: "idx_support_attachments_ticket_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model support_messages {
+  id                                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_id                             String                @db.Uuid
+  sender_id                             String
+  message                               String
+  message_type                          String?               @default("text") @db.VarChar(20)
+  attachments                           Json?                 @default("[]")
+  is_read                               Boolean?              @default(false)
+  read_at                               DateTime?             @db.Timestamptz(6)
+  read_by                               String?
+  created_at                            DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at                            DateTime?             @default(now()) @db.Timestamptz(6)
+  support_attachments                   support_attachments[]
+  user_support_messages_read_byTouser   user?                 @relation("support_messages_read_byTouser", fields: [read_by], references: [id], onUpdate: NoAction)
+  user_support_messages_sender_idTouser user                  @relation("support_messages_sender_idTouser", fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  support_tickets                       support_tickets       @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_support_messages_created_at")
+  @@index([sender_id], map: "idx_support_messages_sender_id")
+  @@index([ticket_id], map: "idx_support_messages_ticket_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model support_ticket_participants {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_id       String          @db.Uuid
+  user_id         String
+  role            String          @db.VarChar(20)
+  joined_at       DateTime?       @default(now()) @db.Timestamptz(6)
+  support_tickets support_tickets @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user            user            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([ticket_id, user_id])
+  @@index([ticket_id], map: "idx_support_ticket_participants_ticket_id")
+  @@index([user_id], map: "idx_support_ticket_participants_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model support_tickets {
+  id                                     String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_number                          String                        @unique @db.VarChar(20)
+  title                                  String                        @db.VarChar(255)
+  description                            String
+  status                                 String?                       @default("open") @db.VarChar(20)
+  priority                               String?                       @default("medium") @db.VarChar(10)
+  category                               String?                       @default("general") @db.VarChar(50)
+  user_id                                String?
+  organization_id                        String?
+  assigned_to                            String?
+  assigned_at                            DateTime?                     @db.Timestamptz(6)
+  created_at                             DateTime?                     @default(now()) @db.Timestamptz(6)
+  updated_at                             DateTime?                     @default(now()) @db.Timestamptz(6)
+  resolved_at                            DateTime?                     @db.Timestamptz(6)
+  closed_at                              DateTime?                     @db.Timestamptz(6)
+  metadata                               Json?                         @default("{}")
+  support_attachments                    support_attachments[]
+  support_messages                       support_messages[]
+  support_ticket_participants            support_ticket_participants[]
+  user_support_tickets_assigned_toTouser user?                         @relation("support_tickets_assigned_toTouser", fields: [assigned_to], references: [id], onUpdate: NoAction)
+  organization                           organization?                 @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_support_tickets_user_idTouser     user?                         @relation("support_tickets_user_idTouser", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([assigned_to], map: "idx_support_tickets_assigned_to")
+  @@index([created_at], map: "idx_support_tickets_created_at")
+  @@index([organization_id], map: "idx_support_tickets_organization_id")
+  @@index([priority], map: "idx_support_tickets_priority")
+  @@index([status], map: "idx_support_tickets_status")
+  @@index([user_id], map: "idx_support_tickets_user_id")
+}
+
+model user {
+  id                                                String                        @id
+  name                                              String
+  email                                             String                        @unique
+  emailVerified                                     Boolean
+  image                                             String?
+  createdAt                                         DateTime                      @db.Timestamp(6)
+  updatedAt                                         DateTime                      @db.Timestamp(6)
+  role                                              String?
+  banned                                            Boolean?
+  banReason                                         String?
+  banExpires                                        DateTime?                     @db.Timestamp(6)
+  account                                           account[]
+  device_subscriptions                              device_subscriptions[]
+  invitation                                        invitation[]
+  member                                            member[]
+  notification_preferences                          notification_preferences?
+  notifications                                     notifications[]
+  session                                           session[]
+  support_attachments                               support_attachments[]
+  support_messages_support_messages_read_byTouser   support_messages[]            @relation("support_messages_read_byTouser")
+  support_messages_support_messages_sender_idTouser support_messages[]            @relation("support_messages_sender_idTouser")
+  support_ticket_participants                       support_ticket_participants[]
+  support_tickets_support_tickets_assigned_toTouser support_tickets[]             @relation("support_tickets_assigned_toTouser")
+  support_tickets_support_tickets_user_idTouser     support_tickets[]             @relation("support_tickets_user_idTouser")
+}
+
+model verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime  @db.Timestamp(6)
+  createdAt  DateTime? @db.Timestamp(6)
+  updatedAt  DateTime? @db.Timestamp(6)
+}
+
+// Ably LiveSync tables
+model outbox {
+  sequence_id  Int       @id @default(autoincrement())
+  mutation_id  String
+  channel      String
+  name         String
+  rejected     Boolean   @default(false)
+  data         Json?
+  headers      Json?
+  locked_by    String?
+  lock_expiry  DateTime? @db.Timestamp(6)
+  processed    Boolean   @default(false)
+
+  @@index([channel])
+  @@index([processed])
+  @@map("outbox")
+}
+
+model nodes {
+  id     String    @id
+  expiry DateTime  @db.Timestamp(6)
+
+  @@map("nodes")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model websites {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String?              @db.VarChar(255)
+  domain             String               @unique @db.VarChar(255)
+  organization_id    String               @db.VarChar(255)
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  analytics          Boolean?             @default(false)
+  metadata           Json?
+  website_id         String?              @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settings           Json?                @default("{}")
+  events             events[]
+  form_submissions   form_submissions[]
+  organization       organization         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([domain], map: "idx_websites_domain")
+  @@index([metadata], map: "idx_websites_metadata_gin", type: Gin)
+  @@index([organization_id], map: "idx_websites_organization_id")
+  @@index([website_id], map: "idx_websites_website_id")
+}

@@ -1,0 +1,32 @@
+# Build Dashboard from monorepo root
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+WORKDIR /app
+
+FROM base AS builder
+ARG API_URL=http://api:4000
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
+ARG NEXT_PUBLIC_ANALYTICS_URL=http://localhost:8080
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+ENV API_URL=$API_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_ANALYTICS_URL=$NEXT_PUBLIC_ANALYTICS_URL
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY packages ./packages
+COPY apps ./apps
+RUN pnpm install --frozen-lockfile
+RUN pnpm run build --filter=app-luminum-agency
+
+FROM node:20-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+COPY --from=builder /app/package.json --from=builder /app/pnpm-lock.yaml --from=builder /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/dashboard ./apps/dashboard
+COPY --from=builder /app/packages ./packages
+EXPOSE 3000
+WORKDIR /app/apps/dashboard
+CMD ["pnpm", "start"]

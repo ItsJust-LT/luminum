@@ -1,0 +1,7 @@
+# Test run: same as docker-compose but without dashboard (faster; dashboard test optional)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+# This override removes the dashboard service so we can test API, Analytics, Postgres, Redis only.
+services:
+  dashboard:
+    profiles:
+      - full
