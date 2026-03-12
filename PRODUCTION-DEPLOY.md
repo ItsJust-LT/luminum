@@ -12,7 +12,7 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 ## What you need
 
-- A **server** (VPS) with a public IP (e.g. Ubuntu 22.04).
+- A **server** (VPS) with a public IP (e.g. Ubuntu 22.04), with **Docker** and **Docker Compose** installed and available in the SSH user’s PATH (e.g. `/usr/bin` or via `~/.profile` / `~/.bashrc`). If the deploy step fails with `docker: command not found`, install Docker on the server or ensure it’s in PATH for non-interactive SSH.
 - **luminum.agency** (or your root domain) on **Cloudflare** (DNS managed there).
 - This **repo** on GitHub with Actions enabled.
 - About 30 minutes.

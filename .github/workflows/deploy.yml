@@ -150,6 +150,8 @@ jobs:
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/snap/bin:$PATH"
+            [ -f ~/.profile ] && . ~/.profile
+            [ -f ~/.bashrc ] && . ~/.bashrc
             cd ${{ vars.DEPLOY_PATH || '~/luminum' }}
             echo "${{ secrets.PROD_SERVER_GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.repository_owner }} --password-stdin
             docker compose -f docker-compose.prod.yml pull
