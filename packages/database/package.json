@@ -3,14 +3,22 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./types": "./src/types.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    }
   },
   "scripts": {
-    "build": "node -e \"process.env.DATABASE_URL=process.env.DATABASE_URL||'postgresql://localhost:5432/build'; require('child_process').execSync('npx prisma generate', {stdio:'inherit', env: process.env})\"",
+    "build": "node -e \"process.env.DATABASE_URL=process.env.DATABASE_URL||'postgresql://localhost:5432/build'; require('child_process').execSync('npx prisma generate', {stdio:'inherit', env: process.env})\" && tsc",
     "generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
