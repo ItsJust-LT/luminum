@@ -132,13 +132,13 @@ jobs:
             echo "GOOGLE_CLIENT_SECRET=${{ secrets.PROD_API_GOOGLE_CLIENT_SECRET }}"
           } > .env
 
-      - name: Copy .env to server
+      - name: Copy .env and docker-compose.prod.yml to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.PROD_SERVER_HOST }}
           username: ${{ secrets.PROD_SERVER_USER }}
           key: ${{ secrets.PROD_SERVER_SSH_KEY }}
-          source: ".env"
+          source: ".env,docker-compose.prod.yml"
           target: ${{ vars.DEPLOY_PATH || '~/luminum' }}
 
       - name: Deploy to server
