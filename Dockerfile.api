@@ -18,8 +18,8 @@ COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/apps/api/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/database ./packages/database
-# Ensure runtime deps resolvable from /app (pnpm symlinks can break in copy)
-RUN npm install dotenv
+# Ensure dotenv present (npm install fails here due to workspace:* in package.json)
+RUN cd /tmp && npm init -y && npm install dotenv && cp -r node_modules/dotenv /app/node_modules/
 COPY docker/entrypoint-api.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 4000
