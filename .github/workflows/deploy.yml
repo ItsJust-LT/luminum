@@ -112,6 +112,7 @@ jobs:
           OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           PREFIX="${{ vars.PROD_REGISTRY_IMAGE_PREFIX }}"
           [ -z "$PREFIX" ] && PREFIX="ghcr.io/${OWNER_LOWER}/luminum"
+          PREFIX=$(echo "$PREFIX" | tr '[:upper:]' '[:lower:]')
           {
             echo "REGISTRY_IMAGE_PREFIX=$PREFIX"
             echo "APP_URL=${{ vars.PROD_APP_URL }}"
