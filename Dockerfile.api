@@ -7,6 +7,8 @@ FROM base AS builder
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
+# Use copy so node_modules can be copied between stages (no broken symlinks)
+RUN echo "package-import-method=copy" > .npmrc
 RUN pnpm install --frozen-lockfile
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm run build --filter=@luminum/database --filter=@luminum/api
