@@ -113,8 +113,13 @@ jobs:
           PREFIX="${{ vars.PROD_REGISTRY_IMAGE_PREFIX }}"
           [ -z "$PREFIX" ] && PREFIX="ghcr.io/${OWNER_LOWER}/luminum"
           PREFIX=$(echo "$PREFIX" | tr '[:upper:]' '[:lower:]')
+          PG_PASS="${{ secrets.PROD_POSTGRES_PASSWORD }}"
+          [ -z "$PG_PASS" ] && PG_PASS="luminum_internal"
           {
             echo "REGISTRY_IMAGE_PREFIX=$PREFIX"
+            echo "POSTGRES_USER=${{ vars.PROD_POSTGRES_USER || 'luminum' }}"
+            echo "POSTGRES_PASSWORD=$PG_PASS"
+            echo "POSTGRES_DB=${{ vars.PROD_POSTGRES_DB || 'luminum' }}"
             echo "APP_URL=${{ vars.PROD_APP_URL }}"
             echo "API_WS_URL=${{ vars.PROD_API_WS_URL }}"
             echo "NEXT_PUBLIC_APP_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_APP_URL }}"
