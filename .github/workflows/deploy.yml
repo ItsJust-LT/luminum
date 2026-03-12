@@ -71,10 +71,10 @@ jobs:
           tags: ${{ steps.meta-dashboard.outputs.tags }}
           labels: ${{ steps.meta-dashboard.outputs.labels }}
           build-args: |
-            API_URL=${{ vars.API_URL || 'http://api:4000' }}
-            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
-            NEXT_PUBLIC_ANALYTICS_URL=${{ vars.NEXT_PUBLIC_ANALYTICS_URL || 'http://localhost:8080' }}
-            NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ secrets.VAPID_PUBLIC_KEY }}
+            API_URL=${{ vars.PROD_DASHBOARD_API_URL || 'http://api:4000' }}
+            NEXT_PUBLIC_APP_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_APP_URL || 'https://app.luminum.agency' }}
+            NEXT_PUBLIC_ANALYTICS_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_ANALYTICS_URL || 'https://analytics.luminum.agency' }}
+            NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ secrets.PROD_API_VAPID_PUBLIC_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -104,16 +104,53 @@ jobs:
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     environment: production
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create .env from PROD_* secrets and variables
+        run: |
+          {
+            echo "REGISTRY_IMAGE_PREFIX=${{ vars.PROD_REGISTRY_IMAGE_PREFIX }}"
+            echo "APP_URL=${{ vars.PROD_APP_URL }}"
+            echo "API_WS_URL=${{ vars.PROD_API_WS_URL }}"
+            echo "NEXT_PUBLIC_APP_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_APP_URL }}"
+            echo "NEXT_PUBLIC_ANALYTICS_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_ANALYTICS_URL }}"
+            echo "BETTER_AUTH_SECRET=${{ secrets.PROD_API_BETTER_AUTH_SECRET }}"
+            echo "WEBHOOK_SECRET=${{ secrets.PROD_API_WEBHOOK_SECRET }}"
+            echo "VAPID_PUBLIC_KEY=${{ secrets.PROD_API_VAPID_PUBLIC_KEY }}"
+            echo "VAPID_PRIVATE_KEY=${{ secrets.PROD_API_VAPID_PRIVATE_KEY }}"
+            echo "RESEND_API_KEY=${{ secrets.PROD_API_RESEND_API_KEY }}"
+            echo "PAYSTACK_SECRET=${{ secrets.PROD_API_PAYSTACK_SECRET }}"
+            echo "R2_ACCOUNT_ID=${{ secrets.PROD_API_R2_ACCOUNT_ID }}"
+            echo "R2_ACCESS_KEY_ID=${{ secrets.PROD_API_R2_ACCESS_KEY_ID }}"
+            echo "R2_SECRET_ACCESS_KEY=${{ secrets.PROD_API_R2_SECRET_ACCESS_KEY }}"
+            echo "R2_PUBLIC_URL=${{ secrets.PROD_API_R2_PUBLIC_URL }}"
+            echo "CLOUDINARY_CLOUD_NAME=${{ secrets.PROD_API_CLOUDINARY_CLOUD_NAME }}"
+            echo "CLOUDINARY_API_KEY=${{ secrets.PROD_API_CLOUDINARY_API_KEY }}"
+            echo "CLOUDINARY_API_SECRET=${{ secrets.PROD_API_CLOUDINARY_API_SECRET }}"
+            echo "GOOGLE_CLIENT_ID=${{ secrets.PROD_API_GOOGLE_CLIENT_ID }}"
+            echo "GOOGLE_CLIENT_SECRET=${{ secrets.PROD_API_GOOGLE_CLIENT_SECRET }}"
+          } > .env
+
+      - name: Copy .env to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          source: ".env"
+          target: ${{ vars.DEPLOY_PATH || '~/luminum' }}
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
           script: |
             set -e
             cd ${{ vars.DEPLOY_PATH || '~/luminum' }}
-            echo "${{ secrets.DEPLOY_GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.repository_owner }} --password-stdin
+            echo "${{ secrets.PROD_SERVER_GHCR_TOKEN }}" | docker login ${{ env.REGISTRY }} -u ${{ github.repository_owner }} --password-stdin
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f
