@@ -1,32 +1,21 @@
-# Build API from monorepo root (needs workspace deps)
-FROM node:20-alpine AS base
+# Single-stage API build: install and run in same stage so node_modules is never copied (avoids pnpm symlink issues)
+FROM node:20-alpine
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 WORKDIR /app
 
-FROM base AS builder
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
-# Use copy so node_modules can be copied between stages (no broken symlinks)
-RUN echo "package-import-method=copy" > .npmrc
+COPY docker/entrypoint-api.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 RUN pnpm install --frozen-lockfile
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm run build --filter=@luminum/database --filter=@luminum/api
-# Materialize node_modules (tar -h follows symlinks) so COPY to runner has real files
-RUN mkdir -p /app/node_modules_flat && tar -chf - -C /app node_modules | tar -xf - -C /app/node_modules_flat
+RUN pnpm prune --prod
 
-FROM node:20-alpine AS runner
-WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/apps/api/package.json ./
-COPY --from=builder /app/node_modules_flat/node_modules ./node_modules
-COPY --from=builder /app/packages/database ./packages/database
-RUN mkdir -p /app/packages/database/prisma/migrations
-# Ensure dotenv present (npm install fails here due to workspace:* in package.json)
-RUN cd /tmp && npm init -y && npm install dotenv && cp -r node_modules/dotenv /app/node_modules/
-COPY docker/entrypoint-api.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 EXPOSE 4000
+WORKDIR /app
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["node", "dist/index.js"]
+CMD ["node", "apps/api/dist/index.js"]
