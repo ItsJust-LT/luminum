@@ -1,7 +1,8 @@
 import { createApiClient } from "@luminum/api-client";
 
-export const api = createApiClient(
+const API_BASE =
   typeof window !== "undefined"
-    ? "" // Client-side: same origin, rewrites handle routing
-    : process.env.API_URL || "http://localhost:4000" // Server-side: direct to API
-);
+    ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000")
+    : (process.env.API_URL || "http://localhost:4000");
+
+export const api = createApiClient(API_BASE);

@@ -70,7 +70,7 @@ services:
       - api
     environment:
       NODE_ENV: production
-      API_URL: http://api:4000
+      API_URL: https://api.luminum.agency
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
       NEXT_PUBLIC_ANALYTICS_URL: ${NEXT_PUBLIC_ANALYTICS_URL}
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
