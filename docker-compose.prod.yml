@@ -25,6 +25,11 @@ services:
     command: redis-server ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   api:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-api:latest
