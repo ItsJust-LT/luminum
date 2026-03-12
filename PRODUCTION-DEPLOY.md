@@ -12,7 +12,7 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 ## What you need
 
-- A **server** (VPS) with a public IP (e.g. Ubuntu 22.04), with **Docker** and **Docker Compose** installed and available in the SSH user’s PATH (e.g. `/usr/bin` or via `~/.profile` / `~/.bashrc`). If the deploy step fails with `docker: command not found`, install Docker on the server or ensure it’s in PATH for non-interactive SSH.
+- A **server** (VPS) with a public IP, e.g. **Ubuntu 22.04** (or similar). The deploy workflow can **bootstrap** a fresh server: it will install Docker, Docker Compose, and Caddy if missing, and set up the Caddyfile. So you can use a blank Ubuntu box and only need SSH access (Step 2 secrets). Optionally, you can install Docker and Caddy yourself (Step 3) and the workflow will skip redundant work.
 - **luminum.agency** (or your root domain) on **Cloudflare** (DNS managed there).
 - This **repo** on GitHub with Actions enabled.
 - About 30 minutes.
@@ -93,13 +93,15 @@ Under **Variables**:
 
 ## Step 3: Prepare the server (one-time)
 
+You can use a **fresh Ubuntu server** and rely on the deploy workflow to install Docker and Caddy and set up the Caddyfile (see **Bootstrap on deploy** below). If you prefer to prepare the server yourself, SSH in and run the following.
+
 SSH into the server (replace with your user and host):
 
 ```bash
 ssh YOUR_SERVER_USER@YOUR_SERVER_IP
 ```
 
-### 3.1 Install Docker and Docker Compose
+### 3.1 Install Docker and Docker Compose (optional – workflow can do this)
 
 On **Ubuntu 22.04** (or similar):
 
@@ -115,7 +117,7 @@ sudo usermod -aG docker $USER
 
 Log out and back in (or run `newgrp docker`) so Docker works without `sudo`.
 
-### 3.2 Install Caddy (reverse proxy + HTTPS)
+### 3.2 Install Caddy (optional – workflow can do this)
 
 ```bash
 sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
@@ -124,16 +126,23 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo 
 sudo apt-get update && sudo apt-get install -y caddy
 ```
 
-### 3.3 Clone the repo and set deploy path
+### 3.3 Deploy path and Caddyfile
+
+The workflow copies `.env`, `docker-compose.prod.yml`, and `deploy/caddy/Caddyfile` to the server. It does **not** clone the repo. Ensure the deploy path exists and is writable by the SSH user, e.g.:
 
 ```bash
-mkdir -p ~/luminum && cd ~/luminum
-git clone https://github.com/YOUR_ORG/luminum.git .
+mkdir -p ~/luminum
 ```
 
-Replace `YOUR_ORG` with your GitHub org or username. If the repo is private, use a deploy key or HTTPS with a token; the deploy job will later use `PROD_SERVER_GHCR_TOKEN` only for pulling images, not for git.
+If you use a different path (e.g. `/opt/luminum`), create it and set the **Variable** `DEPLOY_PATH` in GitHub to that path (e.g. `/opt/luminum`).
 
-If you use a different path (e.g. `/opt/luminum`), set the **Variable** `DEPLOY_PATH` in GitHub to that path (e.g. `/opt/luminum`).
+**Bootstrap on deploy:** On each deploy, the workflow runs a **Bootstrap server** step that (idempotently):
+
+- Installs **Docker** and the **Docker Compose** plugin if not present.
+- Installs **Caddy** if not present.
+- Copies the **Caddyfile** from the copied file to `/etc/caddy/Caddyfile` and reloads Caddy.
+
+So a new Ubuntu server only needs SSH access (as **root** or a user with **passwordless sudo**) and the GitHub secrets/variables; the first deploy will install Docker and Caddy and then run the stack. Later deploys skip installs when already present.
 
 ---
 
@@ -165,7 +174,7 @@ Save and exit. On the next deploy, the workflow will overwrite `.env` with the c
 
 ## Step 5: Caddy reverse proxy
 
-Copy the Caddyfile from the repo and load it:
+If you use the deploy workflow, the **Bootstrap server** step copies the Caddyfile and reloads Caddy automatically. If you set up the server manually (no workflow or before first deploy), copy and load it:
 
 ```bash
 sudo cp ~/luminum/deploy/caddy/Caddyfile /etc/caddy/Caddyfile
@@ -246,6 +255,7 @@ The workflow creates the server `.env` from PROD_* secrets and variables, copies
 
 ## Troubleshooting
 
+- **Cloudflare 522 (Connection timed out):** Nothing on the server is listening on port 80/443. Install and start **Caddy** (Step 3.2 and Step 5) so it can accept traffic from Cloudflare and proxy to the containers on 127.0.0.1.
 - **502 Bad Gateway:** Containers not running or not listening on 127.0.0.1. Run `docker compose -f docker-compose.prod.yml ps` and `curl -v http://127.0.0.1:4000/api/health`.
 - **SSL errors:** In Cloudflare, use SSL mode **Full** or **Full (strict)**. Ensure Caddy is running and can listen on 80/443 (`sudo systemctl status caddy`).
 - **Deploy job fails on SSH:** Check `PROD_SERVER_HOST`, `PROD_SERVER_USER`, and `PROD_SERVER_SSH_KEY` in GitHub Secrets. Test SSH from your machine: `ssh -i /path/to/key PROD_SERVER_USER@PROD_SERVER_HOST`.
