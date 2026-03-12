@@ -17,6 +17,8 @@ ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY packages ./packages
 COPY apps ./apps
+# Remove any .env in dashboard so Docker build-arg API_URL is used (not localhost)
+RUN rm -f apps/dashboard/.env apps/dashboard/.env.local apps/dashboard/.env.production apps/dashboard/.env.development 2>/dev/null; true
 # Prisma generate runs in dashboard postinstall and requires DATABASE_URL
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm install --frozen-lockfile
