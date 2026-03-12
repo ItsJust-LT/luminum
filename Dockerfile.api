@@ -12,13 +12,15 @@ RUN echo "package-import-method=copy" > .npmrc
 RUN pnpm install --frozen-lockfile
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm run build --filter=@luminum/database --filter=@luminum/api
+# Flatten node_modules (resolve any symlinks) so COPY to runner has real files
+RUN cp -rL /app/node_modules /app/node_modules_flat
 
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/apps/api/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/node_modules_flat ./node_modules
 COPY --from=builder /app/packages/database ./packages/database
 RUN mkdir -p /app/packages/database/prisma/migrations
 # Ensure dotenv present (npm install fails here due to workspace:* in package.json)
