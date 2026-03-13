@@ -1,5 +1,8 @@
 import { authClient } from "@/lib/auth/client"
 
+const APP_BASE = process.env.NEXT_PUBLIC_APP_URL || ""
+const DASHBOARD_CALLBACK = APP_BASE ? `${APP_BASE.replace(/\/$/, "")}/dashboard` : "/dashboard"
+
 // Email & password sign-in
 export async function signInWithEmail({
   email,
@@ -12,7 +15,7 @@ export async function signInWithEmail({
     {
       email,
       password,
-      callbackURL: "/dashboard", // redirect after sign-in
+      callbackURL: DASHBOARD_CALLBACK, // redirect after sign-in
     },
     {
       onRequest: () => {
@@ -20,7 +23,7 @@ export async function signInWithEmail({
       },
       onSuccess: (ctx) => {
         console.log("Sign-in successful, redirecting...")
-        window.location.href = ctx.data?.callbackURL || "/dashboard"
+        window.location.href = ctx.data?.callbackURL || DASHBOARD_CALLBACK
       },
       onError: (ctx) => {
         alert(`Sign-in failed: ${ctx.error.message}`)
@@ -35,7 +38,7 @@ export async function signInWithGoogle() {
   const { data, error } = await authClient.signIn.social(
     {
       provider: "google",
-      callbackURL: "/dashboard",
+      callbackURL: DASHBOARD_CALLBACK,
     },
     {
       onRequest: () => {
@@ -44,7 +47,7 @@ export async function signInWithGoogle() {
       onSuccess: (ctx) => {
         console.log("Google sign-in complete!")
         // Redirect to dashboard after successful authentication
-        window.location.href = ctx.data?.callbackURL || "/dashboard"
+        window.location.href = ctx.data?.callbackURL || DASHBOARD_CALLBACK
       },
       onError: (ctx) => {
         console.error("Google sign-in error:", ctx.error)

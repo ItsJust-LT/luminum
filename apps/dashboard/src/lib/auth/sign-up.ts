@@ -1,5 +1,8 @@
 import { authClient } from "@/lib/auth/client";
 
+const APP_BASE = process.env.NEXT_PUBLIC_APP_URL || ""
+const DASHBOARD_CALLBACK = APP_BASE ? `${APP_BASE.replace(/\/$/, "")}/dashboard` : "/dashboard"
+
 export async function signUpUser({
   email,
   password,
@@ -17,7 +20,7 @@ export async function signUpUser({
       password,
       name,
       image,
-      callbackURL: "/dashboard",
+      callbackURL: DASHBOARD_CALLBACK,
     },
     {
       onRequest: () => {
@@ -25,7 +28,7 @@ export async function signUpUser({
       },
       onSuccess: async (ctx) => {
         console.log("Signup successful, redirecting...");
-        window.location.href = ctx.data?.callbackURL || "/dashboard";
+        window.location.href = ctx.data?.callbackURL || DASHBOARD_CALLBACK;
       },
       onError: (ctx) => {
         alert(`Signup failed: ${ctx.error.message}`);
@@ -36,7 +39,7 @@ export async function signUpUser({
   return { data, error };
 }
 
-export async function signUpWithGoogle(callbackURL: string = "/dashboard") {
+export async function signUpWithGoogle(callbackURL: string = DASHBOARD_CALLBACK) {
   const { data, error } = await authClient.signIn.social(
     {
       provider: "google",
