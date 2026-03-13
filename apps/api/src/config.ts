@@ -25,7 +25,7 @@ export const config = {
   /** Request body size limit (bytes). */
   bodyLimit: "50mb",
 
-  /** CORS: allowed origin(s). Comma-separated list or single APP_URL. */
+  /** CORS: allowed request origin(s) = app/dashboard URL(s), not the API URL. Set APP_URL in prod (e.g. https://app.luminum.agency). */
   corsOrigin: env.CORS_ORIGINS
     ? env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
     : (env.APP_URL ?? "http://localhost:3000"),
