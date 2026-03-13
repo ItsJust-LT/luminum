@@ -421,7 +421,7 @@ model user {
   banned                                            Boolean?
   banReason                                         String?
   banExpires                                        DateTime?                     @db.Timestamp(6)
-  account                                           account[]
+  accounts                                          account[]
   device_subscriptions                              device_subscriptions[]
   invitation                                        invitation[]
   member                                            member[]
