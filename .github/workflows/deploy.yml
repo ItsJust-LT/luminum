@@ -71,7 +71,6 @@ jobs:
           tags: ${{ steps.meta-dashboard.outputs.tags }}
           labels: ${{ steps.meta-dashboard.outputs.labels }}
           build-args: |
-            API_URL=http://api:4000
             BUILD_SHA=${{ github.sha }}
             NEXT_PUBLIC_API_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_API_URL || 'https://api.luminum.agency' }}
             NEXT_PUBLIC_APP_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_APP_URL || 'https://app.luminum.agency' }}
@@ -123,8 +122,10 @@ jobs:
             echo "POSTGRES_PASSWORD=$PG_PASS"
             echo "POSTGRES_DB=${{ vars.PROD_POSTGRES_DB || 'luminum' }}"
             echo "APP_URL=${{ vars.PROD_APP_URL }}"
+            echo "API_URL=${{ vars.PROD_API_URL || 'https://api.luminum.agency' }}"
             echo "API_WS_URL=${{ vars.PROD_API_WS_URL }}"
             echo "NEXT_PUBLIC_APP_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_APP_URL }}"
+            echo "NEXT_PUBLIC_API_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_API_URL || 'https://api.luminum.agency' }}"
             echo "NEXT_PUBLIC_ANALYTICS_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_ANALYTICS_URL }}"
             echo "BETTER_AUTH_SECRET=${{ secrets.PROD_API_BETTER_AUTH_SECRET }}"
             echo "WEBHOOK_SECRET=${{ secrets.PROD_API_WEBHOOK_SECRET }}"
