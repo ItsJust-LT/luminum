@@ -79,6 +79,31 @@ router.post("/tickets/:id/messages", async (req: Request, res: Response) => {
       include: { user_support_messages_sender_idTouser: { select: { id: true, name: true, email: true, image: true, role: true } } },
     });
 
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      for (const a of attachments) {
+        const storageKey = a.storage_key ?? (typeof a.cloudinary_public_id === "string" && a.cloudinary_public_id.startsWith("support/") ? a.cloudinary_public_id : null);
+        const url = a.cloudinary_url ?? a.secure_url ?? a.url;
+        if (storageKey && url) {
+          try {
+            await prisma.support_attachments.create({
+              data: {
+                ticket_id: ticketId!,
+                message_id: msg.id,
+                uploaded_by: req.user.id,
+                filename: a.filename ?? a.original_filename ?? "file",
+                original_filename: a.original_filename ?? a.filename ?? "file",
+                file_size: a.file_size ?? a.bytes ?? 0,
+                mime_type: a.mime_type ?? a.contentType ?? "application/octet-stream",
+                cloudinary_public_id: storageKey,
+                cloudinary_url: url,
+                storage_key: storageKey,
+              },
+            });
+          } catch {}
+        }
+      }
+    }
+
     await prisma.support_tickets.update({ where: { id: ticketId! }, data: { updated_at: new Date() } });
 
     if (req.user.role === "admin" && ticket.user_id) {

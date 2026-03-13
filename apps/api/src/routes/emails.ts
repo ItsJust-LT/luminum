@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { getR2PresignedUrl } from "../lib/utils/r2.js";
+import { config } from "../config.js";
+import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
 
 const router = Router();
@@ -129,7 +130,11 @@ router.get("/", async (req: Request, res: Response) => {
         id: e.id, from: e.from || "", to: toArray, cc: [], bcc: [],
         subject: e.subject || "", date: e.receivedAt || e.createdAt,
         textBody: e.text || null, htmlBody: e.html || null, read: e.read, createdAt: e.createdAt,
-        attachments: e.attachments.map((a: any) => ({ filename: a.filename, file_size: a.size || 0, mime_type: a.contentType, r2_key: a.r2Key, r2_url: a.url, r2_bucket: "mail-attachments" })),
+        attachments: e.attachments.map((a: any) => {
+          const base = config.apiUrl.replace(/\/$/, "");
+          const url = a.r2Key ? `${base}/api/files/${encodeURIComponent(a.r2Key)}` : a.url;
+          return { filename: a.filename, file_size: a.size || 0, mime_type: a.contentType, r2_key: a.r2Key, r2_url: url, storage_key: a.r2Key };
+        }),
         inlineImages: [],
       };
     });
@@ -218,8 +223,8 @@ router.delete("/:id", async (req: Request, res: Response) => {
     const attachments = (email as typeof email & { attachments: { size?: number; r2Key?: string }[] }).attachments ?? [];
     for (const att of attachments) {
       if (att.size) emailSize += att.size;
-      if (att.r2Key) {
-        try { const { deleteFromR2 } = await import("../lib/utils/r2.js"); await deleteFromR2(att.r2Key, "mail-attachments"); } catch {}
+      if (att.r2Key && s3.isStorageConfigured()) {
+        try { await s3.remove(att.r2Key); } catch {}
       }
     }
 
@@ -237,7 +242,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/emails/:id/attachment/:index
+// GET /api/emails/:id/attachment/:index — returns proxy URL for the attachment (client can GET that URL with auth to stream or download)
 router.get("/:id/attachment/:index", async (req: Request, res: Response) => {
   try {
     const id = pathParam(req, "id");
@@ -252,9 +257,10 @@ router.get("/:id/attachment/:index", async (req: Request, res: Response) => {
     if (Number.isNaN(idx) || idx >= attachments.length) return res.status(404).json({ success: false, error: "Attachment not found" });
 
     const att = attachments[idx];
-    if (!att.r2Key) return res.status(400).json({ success: false, error: "No R2 key" });
+    if (!att.r2Key) return res.status(400).json({ success: false, error: "No storage key" });
 
-    const url = await getR2PresignedUrl(att.r2Key, "mail-attachments", 3600);
+    const base = config.apiUrl.replace(/\/$/, "");
+    const url = `${base}/api/files/${encodeURIComponent(att.r2Key)}`;
     res.json({ success: true, url, filename: att.filename, contentType: att.contentType });
   } catch (error: any) {
     res.json({ success: false, error: error.message });

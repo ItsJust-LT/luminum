@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
+import { config } from "../config.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -119,15 +120,19 @@ router.post("/", async (req: Request, res: Response) => {
     });
 
     if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
-      const publicBase = process.env.R2_PUBLIC_BASE || process.env.R2_PUBLIC_URL;
-      const atts = payload.attachments.map((a: any, i: number) => ({
-        emailId: email.id,
-        filename: a.filename || `attachment-${i + 1}`,
-        contentType: a.contentType || "application/octet-stream",
-        size: a.size ?? null,
-        r2Key: a.r2Key || "",
-        url: publicBase && a.r2Key ? `${publicBase}/${encodeURIComponent(a.r2Key)}` : null,
-      }));
+      const base = config.apiUrl.replace(/\/$/, "");
+      const atts = payload.attachments.map((a: any, i: number) => {
+        const key = a.r2Key || a.storage_key || "";
+        const url = key ? `${base}/api/files/${encodeURIComponent(key)}` : null;
+        return {
+          emailId: email.id,
+          filename: a.filename || `attachment-${i + 1}`,
+          contentType: a.contentType || "application/octet-stream",
+          size: a.size ?? null,
+          r2Key: key,
+          url,
+        };
+      });
       await prisma.attachment.createMany({ data: atts });
     }
 

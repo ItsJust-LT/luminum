@@ -29,6 +29,9 @@ export const config = {
   corsOrigin: env.CORS_ORIGINS
     ? env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
     : (env.APP_URL ?? "http://localhost:3000"),
+
+  /** Public URL of this API (for file proxy links). Defaults to API_WS_URL or APP_URL. */
+  apiUrl: env.API_URL ?? env.API_WS_URL ?? env.APP_URL ?? "http://localhost:4000",
 } as const;
 
 export type AppConfig = typeof config;

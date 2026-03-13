@@ -1,6 +1,9 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import * as s3 from "../lib/storage/s3.js";
+import { logoKey } from "../lib/storage/keys.js";
+import { updateOrganizationStorage } from "../lib/utils/storage.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -94,16 +97,17 @@ router.post("/upload-logo", async (req: Request, res: Response) => {
     const buffer = Buffer.from(logoBase64, "base64");
     if (buffer.length > 5 * 1024 * 1024) return res.status(400).json({ success: false, error: "File too large" });
 
-    const { uploadToR2 } = await import("../lib/utils/r2.js");
-    const { updateOrganizationStorage } = await import("../lib/utils/storage.js");
-    const sanitizedName = organization.name.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+    if (!s3.isStorageConfigured()) {
+      return res.status(503).json({ success: false, error: "Storage not configured" });
+    }
+
     const ext = (fileName || "logo.png").split(".").pop() || "png";
-    const key = `logos/${sanitizedName}-${Date.now()}.${ext}`;
-    const url = await uploadToR2(buffer, key, "images", contentType || "image/png");
+    const key = logoKey(organization.name, ext);
+    const { url, bytes } = await s3.upload(buffer, key, { contentType: contentType || "image/png" });
 
     try {
-      await prisma.images.create({ data: { name: `${organization.name} Logo`, url, organization_id: organizationId, size_bytes: BigInt(buffer.length) } });
-      await updateOrganizationStorage(organizationId, buffer.length);
+      await prisma.images.create({ data: { name: `${organization.name} Logo`, url, organization_id: organizationId, size_bytes: BigInt(bytes) } });
+      await updateOrganizationStorage(organizationId, bytes);
     } catch {}
 
     await prisma.organization.update({ where: { id: organizationId }, data: { logo: url } });
@@ -127,13 +131,15 @@ router.delete("/logo", async (req: Request, res: Response) => {
       const imageRecord = await prisma.images.findFirst({ where: { organization_id: organizationId, url: organization.logo } });
       if (imageRecord) {
         try {
-          const { deleteFromR2 } = await import("../lib/utils/r2.js");
-          const urlParts = imageRecord.url.split("/images/");
-          if (urlParts.length > 1) {
-            await deleteFromR2(`logos/${urlParts[1]}`, "images");
-            if (imageRecord.size_bytes) {
-              const { updateOrganizationStorage } = await import("../lib/utils/storage.js");
-              await updateOrganizationStorage(organizationId, -Number(imageRecord.size_bytes));
+          const prefix = "/api/files/";
+          const i = imageRecord.url.indexOf(prefix);
+          if (i !== -1) {
+            const key = decodeURIComponent(imageRecord.url.slice(i + prefix.length));
+            if (key.startsWith("logos/")) {
+              await s3.remove(key);
+              if (imageRecord.size_bytes) {
+                await updateOrganizationStorage(organizationId, -Number(imageRecord.size_bytes));
+              }
             }
           }
           await prisma.images.delete({ where: { id: imageRecord.id } });

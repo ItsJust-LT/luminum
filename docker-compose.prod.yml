@@ -31,12 +31,26 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-luminum}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-luminum_minio_secret}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+
   api:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-api:latest
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      minio:
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -49,13 +63,11 @@ services:
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       PAYSTACK_SECRET: ${PAYSTACK_SECRET:-}
-      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
-      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
-      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
-      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
-      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-luminum}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-luminum_minio_secret}
+      S3_BUCKET: ${S3_BUCKET:-luminum-storage}
+      S3_REGION: ${S3_REGION:-us-east-1}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -97,3 +109,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
