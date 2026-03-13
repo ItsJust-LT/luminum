@@ -220,6 +220,7 @@ jobs:
           host: ${{ secrets.PROD_SERVER_HOST }}
           username: ${{ secrets.PROD_SERVER_USER }}
           key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          command_timeout: 25m
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/snap/bin:$PATH"
