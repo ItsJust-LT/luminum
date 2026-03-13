@@ -50,7 +50,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
-      minio:
+      minio: {}
     environment:
       NODE_ENV: production
       PORT: 4000
