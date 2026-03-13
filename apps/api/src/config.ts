@@ -25,8 +25,10 @@ export const config = {
   /** Request body size limit (bytes). */
   bodyLimit: "50mb",
 
-  /** CORS: allowed origin (dashboard). */
-  corsOrigin: env.APP_URL ?? "http://localhost:3000",
+  /** CORS: allowed origin(s). Comma-separated list or single APP_URL. */
+  corsOrigin: env.CORS_ORIGINS
+    ? env.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+    : (env.APP_URL ?? "http://localhost:3000"),
 } as const;
 
 export type AppConfig = typeof config;

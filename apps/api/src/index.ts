@@ -32,9 +32,14 @@ import { analyticsWebhookRouter } from "./routes/analytics-webhook.js";
 const app = express();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────
+const corsOrigins = Array.isArray(config.corsOrigin) ? config.corsOrigin : [config.corsOrigin];
 app.use(
   cors({
-    origin: config.corsOrigin,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // same-origin or non-browser
+      if (corsOrigins.some((allowed) => allowed === origin)) return cb(null, true);
+      cb(null, false); // disallow, no CORS header sent
+    },
     credentials: true,
   })
 );
