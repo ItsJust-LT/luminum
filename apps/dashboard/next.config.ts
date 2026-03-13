@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
+const API_URL = process.env.API_URL || "http://localhost:4000";
+
 const nextConfig: NextConfig = {
+  async rewrites() {
+    return [
+      { source: "/api/auth/:path*", destination: `${API_URL}/api/auth/:path*` },
+      { source: "/api/me", destination: `${API_URL}/api/me` },
+    ];
+  },
   async headers() {
     return [
       {
