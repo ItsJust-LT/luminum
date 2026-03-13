@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-/** Session cookie set by Better Auth (default prefix). */
-const SESSION_COOKIE = "better-auth.session_token"
+/** Session cookie names: default (dev) and __Secure- prefixed (prod HTTPS). */
+const SESSION_COOKIES = [
+  "better-auth.session_token",
+  "__Secure-better-auth.session_token",
+]
 
 const PUBLIC_PATHS = [
   "/sign-in",
@@ -32,7 +35,7 @@ function isAllowedApi(pathname: string): boolean {
 }
 
 function hasSessionCookie(request: NextRequest): boolean {
-  return request.cookies.has(SESSION_COOKIE)
+  return SESSION_COOKIES.some((name) => request.cookies.has(name))
 }
 
 export function middleware(request: NextRequest) {

@@ -17,7 +17,25 @@ const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, 
 const API_URL = (process.env.API_URL || "http://localhost:4000").replace(/\/$/, "");
 
 export const auth = betterAuth({
-  baseURL: API_URL,
+  baseURL: {
+    allowedHosts: [
+      "api.luminum.agency",
+      "app.luminum.agency",
+      "*.luminum.agency",
+      "localhost:3000",
+      "localhost:4000",
+      "127.0.0.1:3000",
+      "127.0.0.1:4000",
+    ],
+    fallback: API_URL,
+    protocol: process.env.NODE_ENV === "development" ? "http" : "https",
+  },
+  advanced: {
+    crossSubDomainCookies: {
+      enabled: true,
+      domain: ".luminum.agency",
+    },
+  },
   trustedOrigins: [
     APP_URL,
     API_URL,
