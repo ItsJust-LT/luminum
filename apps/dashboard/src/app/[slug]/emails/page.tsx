@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { useEmailsContext } from "@/lib/contexts/emails-context"
 import type { EmailListItem } from "@/lib/contexts/emails-context"
-import { getEmails, deleteEmail, getEmailAddresses } from "@/lib/actions/emails"
+import { getEmails, deleteEmail, getEmailAddresses, getEmailSetupStatus, type EmailSetupStatus } from "@/lib/actions/emails"
 import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { Button } from "@/components/ui/button"
@@ -89,6 +89,7 @@ export default function EmailsPage() {
   } = ctx
   const [orgLoading, setOrgLoading] = useState(false)
   const [emailSelectorOpen, setEmailSelectorOpen] = useState(false)
+  const [setupStatus, setSetupStatus] = useState<EmailSetupStatus | null>(null)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
@@ -98,7 +99,13 @@ export default function EmailsPage() {
     return () => clearTimeout(t)
   }, [searchQuery, setDebouncedSearch])
 
+  useEffect(() => {
+    if (!organization?.id) return
+    getEmailSetupStatus(organization.id).then(setSetupStatus)
+  }, [organization?.id])
+
   const router = useRouter()
+  const showSetupRequired = setupStatus?.access && !setupStatus?.setupComplete && setupStatus?.domain
 
   const fetchEmails = useCallback(
     async (pageNum: number, refresh: boolean) => {
@@ -253,6 +260,43 @@ export default function EmailsPage() {
     observer.observe(el)
     return () => observer.disconnect()
   }, [hasMore, loading, loadingMore, loadMore])
+
+  if (showSetupRequired) {
+    return (
+      <AppPageContainer fullWidth>
+        <div className="relative overflow-hidden app-hero bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/10 p-4 sm:p-6 md:p-8">
+          <div className="relative space-y-4 max-w-2xl">
+            <h1 className="text-2xl font-bold text-foreground">Email setup required</h1>
+            <p className="text-muted-foreground">
+              Your domain’s mail (MX) isn’t pointing to our server yet, so we can’t receive or send email for this organization.
+            </p>
+            {setupStatus?.lastError && (
+              <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+                {setupStatus.lastError}
+              </div>
+            )}
+            {setupStatus?.expectedMxHost && (
+              <p className="text-sm text-muted-foreground">
+                Set your MX record to: <code className="bg-muted px-1.5 py-0.5 rounded">{setupStatus.expectedMxHost}</code>
+              </p>
+            )}
+            {setupStatus?.steps && setupStatus.steps.length > 0 && (
+              <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                {setupStatus.steps.map((step, i) => (
+                  <li key={i}>
+                    <span className="font-medium text-foreground">{step.title}</span> — {step.description}
+                  </li>
+                ))}
+              </ol>
+            )}
+            <p className="text-sm text-muted-foreground">
+              Need help? Contact your admin — they can complete setup from the admin panel.
+            </p>
+          </div>
+        </div>
+      </AppPageContainer>
+    )
+  }
 
   return (
     <AppPageContainer fullWidth>

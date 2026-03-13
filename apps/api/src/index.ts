@@ -29,6 +29,7 @@ import { subscriptionsRouter } from "./routes/subscriptions.js";
 import { userManagementRouter } from "./routes/user-management.js";
 import { analyticsRouter } from "./routes/analytics.js";
 import { analyticsWebhookRouter } from "./routes/analytics-webhook.js";
+import { cronRouter } from "./routes/cron.js";
 
 const app = express();
 
@@ -76,6 +77,9 @@ app.get("/api/me", async (req, res) => {
     res.status(401).json({ error: "Authentication required" });
   }
 });
+
+// ─── Cron (secret auth) ─────────────────────────────────────────────────────
+app.use("/api/cron", cronRouter);
 
 // ─── Webhooks & public endpoints (no auth) ──────────────────────────────────
 app.use("/api/webhook/emails", webhookEmailsRouter);

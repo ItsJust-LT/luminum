@@ -171,6 +171,10 @@ model email {
   messageId       String?      @unique // RFC Message-ID for deduplication (normalized: trimmed, lowercased)
   dedupeKey       String?      @unique // Fallback dedupe when Message-ID absent: hash(org+from+to+subject+receivedAt)
   contentHash     String?      @unique // Content-based dedupe: md5(org+from+to+subject+text+html) — same as dedup script
+  direction       String       @default("inbound") @db.VarChar(20) // "inbound" | "outbound"
+  in_reply_to     String?      @db.Text
+  references      String?      @db.Text
+  sent_at         DateTime?    @db.Timestamptz(6)
   attachments     attachment[]
   createdAt       DateTime     @default(now())
   organization    organization? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -180,6 +184,7 @@ model email {
   @@index([subject])
   @@index([from])
   @@index([read])
+  @@index([direction])
   @@map("email")
 }
 
@@ -225,6 +230,11 @@ model organization {
   max_storage_bytes                                                 BigInt?                   @default(10737418240)
   used_storage_bytes                                                BigInt?                   @default(0)
   emails_enabled                                                    Boolean                   @default(false)
+  email_domain_id                                                   String?                   @db.Uuid
+  email_dns_verified_at                                             DateTime?                 @db.Timestamptz(6)
+  email_dns_last_check_at                                           DateTime?                 @db.Timestamptz(6)
+  email_dns_last_error                                              String?                   @db.Text
+  email_from_address                                                String?                   @db.VarChar(255)
   emails                                                            email[]
   images                                                            images[]
   invitation                                                        invitation[]
@@ -233,8 +243,10 @@ model organization {
   subscriptions_subscriptions_organization_idToorganization         subscriptions[]           @relation("subscriptions_organization_idToorganization")
   support_tickets                                                   support_tickets[]
   websites                                                          websites[]
+  email_domain                                                      websites?                 @relation("OrganizationEmailDomain", fields: [email_domain_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([payment_provider], map: "idx_organization_payment_provider")
+  @@index([email_domain_id], map: "idx_organization_email_domain_id")
   @@index([primary_subscription_id], map: "idx_organization_primary_subscription")
   @@index([subscription_status], map: "idx_organization_subscription_status")
 }
@@ -470,9 +482,10 @@ model websites {
   metadata           Json?
   website_id         String?              @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   settings           Json?                @default("{}")
-  events             events[]
-  form_submissions   form_submissions[]
-  organization       organization         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  events                     events[]
+  form_submissions           form_submissions[]
+  organization               organization         @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization_email_domain   organization[]       @relation("OrganizationEmailDomain")
 
   @@index([domain], map: "idx_websites_domain")
   @@index([metadata], map: "idx_websites_metadata_gin", type: Gin)

@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { auth } from "../auth/config.js";
 import { notifyAdminsOrganizationCreated } from "../lib/notifications/helpers.js";
 import { sendOwnerInvitationEmail, sendInvitationEmail } from "../lib/email.js";
+import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -132,6 +133,99 @@ router.post("/check-domain", adminOnly, async (req: Request, res: Response) => {
     const website = await prisma.websites.findUnique({ where: { domain }, select: { id: true } });
     res.json({ success: true, available: !website });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
+});
+
+// POST /api/admin/check-email-dns
+router.post("/check-email-dns", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { domain, organizationId, includeSpf } = req.body as { domain?: string; organizationId?: string; includeSpf?: boolean };
+    let checkDomain: string | null = domain || null;
+    if (organizationId && !checkDomain) {
+      const org = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { email_domain_id: true, email_domain: { select: { domain: true } } },
+      });
+      if (!org?.email_domain_id || !org.email_domain) {
+        return res.status(400).json({ success: false, error: "No email domain set for this organization" });
+      }
+      checkDomain = org.email_domain.domain;
+    }
+    if (!checkDomain) {
+      return res.status(400).json({ success: false, error: "Provide domain or organizationId" });
+    }
+    const mx = await checkDomainMx(checkDomain);
+    const result: { success: boolean; mx: typeof mx; spf?: Awaited<ReturnType<typeof checkDomainSpf>> } = { success: true, mx };
+    if (includeSpf) {
+      result.spf = await checkDomainSpf(checkDomain);
+    }
+    res.json(result);
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/enable-organization-email
+router.post("/enable-organization-email", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId, websiteId, email_from_address } = req.body as { organizationId: string; websiteId: string; email_from_address?: string };
+    if (!organizationId || !websiteId) {
+      return res.status(400).json({ success: false, error: "organizationId and websiteId required" });
+    }
+    const website = await prisma.websites.findUnique({
+      where: { id: websiteId },
+      select: { id: true, domain: true, organization_id: true },
+    });
+    if (!website || website.organization_id !== organizationId) {
+      return res.status(400).json({ success: false, error: "Website not found or does not belong to this organization" });
+    }
+    const mx = await checkDomainMx(website.domain);
+    if (!mx.ok) {
+      return res.status(400).json({
+        success: false,
+        error: mx.error || "MX check failed",
+        expectedHost: mx.expectedHost,
+        actualHosts: mx.actualHosts,
+      });
+    }
+    const replyAddress = email_from_address || `replies@${website.domain}`;
+    const now = new Date();
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        emails_enabled: true,
+        email_domain_id: websiteId,
+        email_dns_verified_at: now,
+        email_dns_last_check_at: now,
+        email_dns_last_error: null,
+        email_from_address: replyAddress,
+      },
+    });
+    res.json({ success: true, message: "Email enabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/disable-organization-email
+router.post("/disable-organization-email", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        emails_enabled: false,
+        email_domain_id: null,
+        email_dns_verified_at: null,
+        email_dns_last_check_at: null,
+        email_dns_last_error: null,
+        email_from_address: null,
+      },
+    });
+    res.json({ success: true, message: "Email disabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
 });
 
 export { router as adminRouter };

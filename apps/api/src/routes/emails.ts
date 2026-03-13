@@ -4,6 +4,8 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
+import { getExpectedMxHost } from "../lib/email-dns.js";
+import { getOrgReplyAddress, sendViaMailApp } from "../lib/email-send.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -72,6 +74,103 @@ router.get("/unread-count", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/emails/setup-status?organizationId=...
+router.get("/setup-status", async (req: Request, res: Response) => {
+  try {
+    const organizationId = queryParam(req, "organizationId");
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id } });
+    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        emails_enabled: true,
+        email_domain_id: true,
+        email_dns_verified_at: true,
+        email_dns_last_check_at: true,
+        email_dns_last_error: true,
+        email_from_address: true,
+        email_domain: { select: { domain: true } },
+      },
+    });
+    if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
+    const access = !!org.emails_enabled;
+    const hasDomain = !!org.email_domain_id && !!org.email_domain;
+    const setupComplete = access && hasDomain && !!org.email_dns_verified_at && !org.email_dns_last_error;
+    const expectedMxHost = getExpectedMxHost();
+    const steps = !setupComplete && access && hasDomain
+      ? [
+          { title: "Add MX record", description: `Add an MX record for your domain (${org.email_domain?.domain || ""}).` },
+          { title: "Point MX to our server", description: `Set the MX target to ${expectedMxHost || "your mail host"}.` },
+          { title: "Save and wait", description: "We check automatically every few hours. Contact your admin if you need help." },
+        ]
+      : [];
+    res.json({
+      success: true,
+      access,
+      setupComplete,
+      domain: org.email_domain?.domain ?? undefined,
+      expectedMxHost: expectedMxHost || undefined,
+      lastCheckAt: org.email_dns_last_check_at?.toISOString(),
+      lastError: org.email_dns_last_error ?? undefined,
+      emailFromAddress: org.email_from_address ?? undefined,
+      steps,
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/emails/send
+router.post("/send", async (req: Request, res: Response) => {
+  try {
+    const { organizationId, to: toInput, subject, text, html, attachments: attachmentsInput } = req.body as {
+      organizationId?: string; to?: string | string[]; subject?: string; text?: string; html?: string;
+      attachments?: { storageKey?: string; filename?: string; contentType?: string; contentBase64?: string }[];
+    };
+    if (!organizationId || !subject || (!text && !html)) {
+      return res.status(400).json({ success: false, error: "organizationId, subject, and text or html required" });
+    }
+    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id } });
+    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    const { from, replyTo } = await getOrgReplyAddress(organizationId);
+    const toList = Array.isArray(toInput) ? toInput : toInput ? [toInput] : [];
+    if (toList.length === 0) return res.status(400).json({ success: false, error: "At least one recipient required" });
+    const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
+    const attachments: { filename: string; contentType: string; contentBase64: string }[] = [];
+    if (attachmentsInput && attachmentsInput.length > 0 && attachmentsInput.length <= 10) {
+      for (const a of attachmentsInput) {
+        if (a.contentBase64 && a.filename && a.contentType) {
+          attachments.push({ filename: a.filename, contentType: a.contentType, contentBase64: a.contentBase64 });
+        }
+      }
+    }
+    const { messageId: sentMessageId } = await sendViaMailApp({
+      from, replyTo, to: toList, subject,
+      text: text || "", html: html || undefined,
+      attachments: attachments.length ? attachments : undefined,
+      messageId,
+    });
+    const emailRecord = await prisma.email.create({
+      data: {
+        organization_id: organizationId,
+        from: replyTo,
+        to: JSON.stringify(toList),
+        subject,
+        text: text || null,
+        html: html || null,
+        direction: "outbound",
+        messageId: sentMessageId,
+        sent_at: new Date(),
+        receivedAt: null,
+      },
+    });
+    res.json({ success: true, data: { id: emailRecord.id, messageId: sentMessageId } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 // GET /api/emails?organizationId=...&page=1&limit=20&read=true&search=...&from=...&emailAddresses=a,b
 router.get("/", async (req: Request, res: Response) => {
   try {
@@ -130,6 +229,8 @@ router.get("/", async (req: Request, res: Response) => {
         id: e.id, from: e.from || "", to: toArray, cc: [], bcc: [],
         subject: e.subject || "", date: e.receivedAt || e.createdAt,
         textBody: e.text || null, htmlBody: e.html || null, read: e.read, createdAt: e.createdAt,
+        direction: (e as any).direction ?? "inbound",
+        in_reply_to: (e as any).in_reply_to ?? undefined,
         attachments: e.attachments.map((a: any) => {
           const base = config.apiUrl.replace(/\/$/, "");
           const url = a.r2Key ? `${base}/api/files/${encodeURIComponent(a.r2Key)}` : a.url;
@@ -203,6 +304,51 @@ router.post("/:id/unread", async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/emails/:id/reply
+router.post("/:id/reply", async (req: Request, res: Response) => {
+  try {
+    const id = pathParam(req, "id");
+    const { text, html } = req.body as { text?: string; html?: string };
+    if (!text && !html) return res.status(400).json({ success: false, error: "text or html required" });
+    const original = await prisma.email.findUnique({
+      where: { id },
+      select: { id: true, organization_id: true, from: true, subject: true, messageId: true, references: true },
+    });
+    if (!original?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
+    const member = await prisma.member.findFirst({ where: { organizationId: original.organization_id, userId: req.user.id } });
+    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    const { from, replyTo } = await getOrgReplyAddress(original.organization_id);
+    const toAddr = original.from || "";
+    const reSubject = (original.subject || "").toLowerCase().startsWith("re:") ? (original.subject || "") : `Re: ${original.subject || ""}`;
+    const refs = [original.references, original.messageId].filter(Boolean).join(" ");
+    const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
+    const { messageId: sentMessageId } = await sendViaMailApp({
+      from, replyTo, to: [toAddr], subject: reSubject,
+      text: text || "", html: html || undefined,
+      inReplyTo: original.messageId || undefined, references: refs || undefined, messageId,
+    });
+    const emailRecord = await prisma.email.create({
+      data: {
+        organization_id: original.organization_id,
+        from: replyTo,
+        to: JSON.stringify([toAddr]),
+        subject: reSubject,
+        text: text || null,
+        html: html || null,
+        direction: "outbound",
+        messageId: sentMessageId,
+        in_reply_to: original.messageId || undefined,
+        references: refs || undefined,
+        sent_at: new Date(),
+        receivedAt: null,
+      },
+    });
+    res.json({ success: true, data: { id: emailRecord.id, messageId: sentMessageId } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
   }
 });
 

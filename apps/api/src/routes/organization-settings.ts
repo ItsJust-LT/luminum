@@ -71,7 +71,18 @@ router.patch("/", async (req: Request, res: Response) => {
       if (existing) return res.status(400).json({ success: false, error: "Slug already exists" });
     }
 
-    const { country, currency, payment_provider, ...allowedUpdates } = updates;
+    const {
+      country,
+      currency,
+      payment_provider,
+      emails_enabled,
+      email_domain_id,
+      email_dns_verified_at,
+      email_dns_last_check_at,
+      email_dns_last_error,
+      email_from_address,
+      ...allowedUpdates
+    } = updates;
     await prisma.organization.update({ where: { id: organizationId }, data: allowedUpdates });
     res.json({ success: true, message: "Settings updated" });
   } catch (error: any) {

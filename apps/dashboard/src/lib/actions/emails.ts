@@ -13,6 +13,24 @@ export async function checkEmailsEnabled(organizationId: string) {
   return serverGet("/api/emails/enabled", { organizationId })
 }
 
+export interface EmailSetupStatus {
+  success: boolean
+  access?: boolean
+  setupComplete?: boolean
+  domain?: string
+  expectedMxHost?: string
+  lastCheckAt?: string
+  lastError?: string
+  emailFromAddress?: string
+  steps?: { title: string; description: string }[]
+  error?: string
+}
+
+export async function getEmailSetupStatus(organizationId: string): Promise<EmailSetupStatus> {
+  const res = await serverGet("/api/emails/setup-status", { organizationId })
+  return res as EmailSetupStatus
+}
+
 export async function getEmailAddresses(organizationId: string) {
   return serverGet("/api/emails/addresses", { organizationId })
 }
