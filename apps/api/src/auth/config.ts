@@ -13,11 +13,19 @@ import {
 } from "../lib/email.js";
 import { notifyNewUserRegistration } from "../lib/notifications/helpers.js";
 
-const APP_URL = process.env.APP_URL || "http://localhost:3000";
-const API_URL = process.env.API_URL || "http://localhost:4000";
+const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
+const API_URL = (process.env.API_URL || "http://localhost:4000").replace(/\/$/, "");
 
 export const auth = betterAuth({
   baseURL: API_URL,
+  trustedOrigins: [
+    APP_URL,
+    API_URL,
+    "http://localhost:3000",
+    "http://localhost:4000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:4000",
+  ],
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
