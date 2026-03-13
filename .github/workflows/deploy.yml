@@ -71,6 +71,7 @@ jobs:
           tags: ${{ steps.meta-dashboard.outputs.tags }}
           labels: ${{ steps.meta-dashboard.outputs.labels }}
           build-args: |
+            API_URL=http://api:4000
             BUILD_SHA=${{ github.sha }}
             NEXT_PUBLIC_API_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_API_URL || 'https://api.luminum.agency' }}
             NEXT_PUBLIC_APP_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_APP_URL || 'https://app.luminum.agency' }}
