@@ -98,7 +98,11 @@ func getServerOrigin(r *http.Request) string {
 			proto = "http"
 		}
 	}
-	return fmt.Sprintf("%s://%s", proto, r.Host)
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	return fmt.Sprintf("%s://%s", proto, host)
 }
 
 func getWSOrigin(r *http.Request) string {
@@ -110,5 +114,9 @@ func getWSOrigin(r *http.Request) string {
 			proto = "ws"
 		}
 	}
-	return fmt.Sprintf("%s://%s", proto, r.Host)
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	return fmt.Sprintf("%s://%s", proto, host)
 }

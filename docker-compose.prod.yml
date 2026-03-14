@@ -92,6 +92,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
 
+  # Analytics (Go): tracking, forms, live count; calls API for live-update & form-notify
   analytics:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-analytics:latest
     restart: unless-stopped
