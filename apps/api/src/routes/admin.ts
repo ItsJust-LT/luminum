@@ -18,27 +18,65 @@ function adminOnly(req: any, res: any, next: any) {
 // GET /api/admin/dashboard-stats
 router.get("/dashboard-stats", adminOnly, async (_req: Request, res: Response) => {
   try {
-    const [totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions] = await Promise.all([
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions, newUsersThisMonth, newOrgsThisMonth, bannedUsers, openTickets, totalPageViews, unseenForms] = await Promise.all([
       prisma.organization.count(),
       prisma.user.count(),
       prisma.websites.count(),
       prisma.subscriptions.count({ where: { status: "active" } }),
       prisma.email.count(),
       prisma.form_submissions.count(),
+      prisma.user.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+      prisma.organization.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+      prisma.user.count({ where: { banned: true } }),
+      prisma.support_tickets.count({ where: { status: { in: ["open", "in_progress"] } } }).catch(() => 0),
+      prisma.events.count({ where: { created_at: { gte: thirtyDaysAgo } } }).catch(() => 0),
+      prisma.form_submissions.count({ where: { seen: false } }),
     ]);
-    const recentUsers = await prisma.user.findMany({ orderBy: { createdAt: "desc" }, take: 5, select: { id: true, name: true, email: true, createdAt: true } });
-    res.json({ success: true, stats: { totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions, recentUsers } });
+    const recentUsers = await prisma.user.findMany({ orderBy: { createdAt: "desc" }, take: 5, select: { id: true, name: true, email: true, image: true, createdAt: true, role: true } });
+    const recentOrgs = await prisma.organization.findMany({
+      orderBy: { createdAt: "desc" }, take: 5,
+      select: { id: true, name: true, slug: true, logo: true, createdAt: true, _count: { select: { members: true } } },
+    });
+    res.json({ success: true, stats: {
+      totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions,
+      newUsersThisMonth, newOrgsThisMonth, bannedUsers, openTickets, totalPageViews, unseenForms,
+      recentUsers, recentOrgs,
+    }});
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 
-// GET /api/admin/organizations
-router.get("/organizations", adminOnly, async (_req: Request, res: Response) => {
+// GET /api/admin/organizations?search=...&hasSubscription=...&limit=50&offset=0
+router.get("/organizations", adminOnly, async (req: Request, res: Response) => {
   try {
-    const orgs = await prisma.organization.findMany({
-      include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, websites: { select: { id: true, domain: true, name: true, analytics: true } }, subscriptions_subscriptions_organization_idToorganization: { where: { status: "active" } } },
-      orderBy: { createdAt: "desc" },
-    });
-    res.json({ success: true, organizations: orgs });
+    const { search, hasSubscription, limit = "50", offset = "0" } = req.query as Record<string, string>;
+    const where: any = {};
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { slug: { contains: search, mode: "insensitive" } },
+      ];
+    }
+    if (hasSubscription === "true") {
+      where.subscriptions_subscriptions_organization_idToorganization = { some: { status: "active" } };
+    }
+
+    const [orgs, total] = await Promise.all([
+      prisma.organization.findMany({
+        where,
+        include: {
+          members: { include: { user: { select: { id: true, name: true, email: true } } } },
+          websites: { select: { id: true, domain: true, name: true, analytics: true } },
+          subscriptions_subscriptions_organization_idToorganization: { where: { status: "active" } },
+          _count: { select: { members: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: Math.min(parseInt(limit), 100),
+        skip: parseInt(offset),
+      }),
+      prisma.organization.count({ where }),
+    ]);
+    res.json({ success: true, organizations: orgs, total, limit: parseInt(limit), offset: parseInt(offset) });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 

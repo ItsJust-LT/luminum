@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useSession } from '@/lib/auth/client'
-import { addSupportMessage, getSupportTicket } from '@/lib/actions/support-actions'
+import { addSupportMessage, getSupportTicket, getNewMessages, markTicketRead } from '@/lib/actions/support-actions'
 import { uploadFileToCloudinary } from '@/lib/actions/cloudinary-actions'
 import type { SupportMessage, SupportTicket } from '@/lib/types/support'
 
@@ -150,29 +150,41 @@ export function SupportMessagesProvider({
     await fetchTicketAndMessages()
   }, [fetchTicketAndMessages])
 
-  // Mark message as read
-  const markAsRead = useCallback(async (messageId: string) => {
-    // TODO: Implement mark as read functionality
-    console.log('Marking message as read:', messageId)
-  }, [])
+  const markAsRead = useCallback(async (_messageId: string) => {
+    if (ticketId) await markTicketRead(ticketId)
+  }, [ticketId])
 
-  // Reconnect function for real-time
   const reconnect = useCallback(() => {
     setIsConnected(false)
-    // TODO: Implement reconnection logic
-    setTimeout(() => setIsConnected(true), 1000)
-  }, [])
+    fetchTicketAndMessages().then(() => setIsConnected(true))
+  }, [fetchTicketAndMessages])
 
-  // Initialize
   useEffect(() => {
     fetchTicketAndMessages()
   }, [fetchTicketAndMessages])
 
-  // Simulate real-time connection
+  // Poll for new messages every 4 seconds
   useEffect(() => {
-    const timer = setTimeout(() => setIsConnected(true), 1000)
-    return () => clearTimeout(timer)
-  }, [])
+    if (!session || !ticketId) return
+    let lastPoll = new Date().toISOString()
+    setIsConnected(true)
+
+    const interval = setInterval(async () => {
+      try {
+        const result = await getNewMessages(ticketId, lastPoll)
+        if (result.success && result.data?.length > 0) {
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id))
+            const newMsgs = result.data.filter((m: any) => !existingIds.has(m.id))
+            return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev
+          })
+          lastPoll = new Date().toISOString()
+        }
+      } catch {}
+    }, 4000)
+
+    return () => clearInterval(interval)
+  }, [session, ticketId])
 
   const value: SupportMessagesContextType = {
     messages,

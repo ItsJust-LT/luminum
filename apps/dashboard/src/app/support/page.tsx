@@ -307,7 +307,7 @@ export default function SupportPage() {
                         </div>
                         <div className="flex items-center gap-1">
                           <MessageSquare className="h-4 w-4" />
-                          <span>{ticket.support_messages?.[0]?.count || 0} messages</span>
+                          <span>{ticket.message_count ?? ticket._count?.support_messages ?? 0} messages</span>
                         </div>
                       </div>
                     </CardContent>

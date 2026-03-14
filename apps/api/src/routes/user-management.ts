@@ -50,6 +50,14 @@ router.post("/users/:id/deactivate", adminOnly, async (req: Request, res: Respon
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 
+// POST /api/user-management/users/:id/reactivate
+router.post("/users/:id/reactivate", adminOnly, async (req: Request, res: Response) => {
+  try {
+    await prisma.user.update({ where: { id: pathParam(req, "id")! }, data: { banned: false, banReason: null, banExpires: null } });
+    res.json({ success: true });
+  } catch (error: any) { res.json({ success: false, error: error.message }); }
+});
+
 // GET /api/user-management/stats
 router.get("/stats", adminOnly, async (_req: Request, res: Response) => {
   try {

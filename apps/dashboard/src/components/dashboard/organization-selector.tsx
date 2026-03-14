@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Building2, ChevronRight, Users, Globe, Calendar, ArrowRight, CreditCard, Activity } from "lucide-react"
+import { useSession } from "@/lib/auth/client"
+import { Building2, ChevronRight, Users, Globe, Calendar, ArrowRight, CreditCard, Activity, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +34,8 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const router = useRouter()
+  const { data: session } = useSession()
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
 
   useEffect(() => {
     fetchOrganizations()
@@ -149,14 +152,32 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-muted/20 to-muted/5 rounded-2xl blur-xl" />
               <div className="relative p-6">
-                <Building2 className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-foreground mb-2">No Organizations Found</h3>
-                <p className="text-muted-foreground mb-6">
-                  You don't have access to any organizations yet. Contact your administrator to get invited.
-                </p>
-                <Button variant="outline" onClick={() => router.push("/sign-in")} className="w-full">
-                  Back to Sign In
-                </Button>
+                {isAdmin ? (
+                  <>
+                    <Shield className="w-16 h-16 text-primary mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-foreground mb-2">Admin access</h3>
+                    <p className="text-muted-foreground mb-6">
+                      You have no organizations yet. Go to the admin panel to create or manage organizations.
+                    </p>
+                    <Button onClick={() => router.push("/admin/organizations")} className="w-full">
+                      Go to Admin Dashboard
+                    </Button>
+                    <Button variant="outline" onClick={() => router.push("/sign-in")} className="w-full mt-2">
+                      Back to Sign In
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Building2 className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-foreground mb-2">No Organizations Found</h3>
+                    <p className="text-muted-foreground mb-6">
+                      You don't have access to any organizations yet. Contact your administrator to get invited.
+                    </p>
+                    <Button variant="outline" onClick={() => router.push("/sign-in")} className="w-full">
+                      Back to Sign In
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </CardContent>

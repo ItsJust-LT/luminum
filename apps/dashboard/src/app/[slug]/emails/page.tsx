@@ -105,7 +105,7 @@ export default function EmailsPage() {
   }, [organization?.id])
 
   const router = useRouter()
-  const showSetupRequired = setupStatus?.access && !setupStatus?.setupComplete && setupStatus?.domain
+  const showSetupRequired = !!(setupStatus?.access && !setupStatus?.setupComplete)
 
   const fetchEmails = useCallback(
     async (pageNum: number, refresh: boolean) => {
@@ -189,14 +189,15 @@ export default function EmailsPage() {
     return ""
   }, [])
 
-  // Fetch when org or filters change; skip when we have cached list (e.g. returning from detail)
+  // Fetch when org or filters change; skip when setup not complete or when we have cached list (e.g. returning from detail)
+  const shouldFetchInbox = setupStatus != null && setupStatus.setupComplete === true
   useEffect(() => {
-    if (!organization?.id) return
+    if (!organization?.id || !shouldFetchInbox) return
     if (hasCachedList(organization.id) && scrollPosition != null) return
     setPage(1)
     fetchEmails(1, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- omit scrollPosition so clearing it after restore doesn't refetch
-  }, [organization?.id, filterRead, debouncedSearch, selectedEmailAddresses, fetchEmails, hasCachedList, setPage])
+  }, [organization?.id, shouldFetchInbox, filterRead, debouncedSearch, selectedEmailAddresses, fetchEmails, hasCachedList, setPage])
 
   // Restore scroll position when returning from email detail (after paint so viewport exists)
   useEffect(() => {
@@ -243,6 +244,20 @@ export default function EmailsPage() {
 
   if (!organization) return null
 
+  // Wait for setup status before showing inbox or setup-required (avoid flash of wrong view)
+  if (setupStatus == null) {
+    return (
+      <AppPageContainer fullWidth>
+        <div className="flex items-center justify-center py-24">
+          <div className="flex flex-col items-center gap-3">
+            <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Checking email setup…</p>
+          </div>
+        </div>
+      </AppPageContainer>
+    )
+  }
+
   const displayTotal = totalCount ?? emails.length
   const displayUnread = unreadCountFromApi ?? emails.filter((e) => !e.read).length
 
@@ -262,20 +277,27 @@ export default function EmailsPage() {
   }, [hasMore, loading, loadingMore, loadMore])
 
   if (showSetupRequired) {
+    const hasDomain = !!setupStatus?.domain
     return (
       <AppPageContainer fullWidth>
         <div className="relative overflow-hidden app-hero bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/10 p-4 sm:p-6 md:p-8">
           <div className="relative space-y-4 max-w-2xl">
             <h1 className="text-2xl font-bold text-foreground">Email setup required</h1>
-            <p className="text-muted-foreground">
-              Your domain’s mail (MX) isn’t pointing to our server yet, so we can’t receive or send email for this organization.
-            </p>
+            {!hasDomain ? (
+              <p className="text-muted-foreground">
+                Email is enabled for this organization but setup isn’t complete. Your admin needs to select a domain and verify DNS so you can receive and send email here.
+              </p>
+            ) : (
+              <p className="text-muted-foreground">
+                Your domain’s mail (MX) isn’t pointing to our server yet, so we can’t receive or send email for this organization.
+              </p>
+            )}
             {setupStatus?.lastError && (
               <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
                 {setupStatus.lastError}
               </div>
             )}
-            {setupStatus?.expectedMxHost && (
+            {hasDomain && setupStatus?.expectedMxHost && (
               <p className="text-sm text-muted-foreground">
                 Set your MX record to: <code className="bg-muted px-1.5 py-0.5 rounded">{setupStatus.expectedMxHost}</code>
               </p>

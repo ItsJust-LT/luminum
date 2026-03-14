@@ -245,10 +245,17 @@ async function getDefaultUrl(
       return "/dashboard";
     }
     case "new_user_registered":
-      return "/dashboard/users";
+      return "/admin/users";
     case "organization_created":
     case "organization_deleted":
-      return "/dashboard/organizations";
+      return "/admin/organizations";
+    case "new_support_ticket":
+      return data.url || `/admin/support/${data.ticketId || ""}`;
+    case "support_message":
+      return data.url || `/support/${data.ticketId || ""}`;
+    case "support_ticket_updated":
+    case "support_ticket_resolved":
+      return data.url || `/support/${data.ticketId || ""}`;
     default:
       return "/dashboard";
   }
@@ -461,6 +468,11 @@ export async function notifySupportMessage(
 ) {
   const messagePreview =
     message.length > 100 ? message.substring(0, 100) + "..." : message;
+  let url = `/support/${ticketId}`;
+  if (organizationId) {
+    const slug = await getOrganizationSlug(organizationId);
+    url = slug ? `/${slug}/support/${ticketId}` : `/support/${ticketId}`;
+  }
   return sendNotification({
     type: "support_message",
     data: {
@@ -470,10 +482,46 @@ export async function notifySupportMessage(
       message,
       messagePreview,
       senderName,
-      url: organizationId
-        ? `/${organizationId}/support/${ticketId}`
-        : `/support/${ticketId}`,
+      url,
     },
+    target: { userIds: [userId] },
+  });
+}
+
+export async function notifySupportTicketResolved(
+  ticketId: string,
+  ticketNumber: string,
+  title: string,
+  userId: string,
+  organizationId?: string
+) {
+  let url = `/support/${ticketId}`;
+  if (organizationId) {
+    const slug = await getOrganizationSlug(organizationId);
+    url = slug ? `/${slug}/support/${ticketId}` : `/support/${ticketId}`;
+  }
+  return sendNotification({
+    type: "support_ticket_resolved",
+    data: { ticketId, ticketNumber, title, url },
+    target: { userIds: [userId] },
+  });
+}
+
+export async function notifySupportTicketUpdated(
+  ticketId: string,
+  ticketNumber: string,
+  title: string,
+  userId: string,
+  organizationId?: string
+) {
+  let url = `/support/${ticketId}`;
+  if (organizationId) {
+    const slug = await getOrganizationSlug(organizationId);
+    url = slug ? `/${slug}/support/${ticketId}` : `/support/${ticketId}`;
+  }
+  return sendNotification({
+    type: "support_ticket_updated",
+    data: { ticketId, ticketNumber, title, url },
     target: { userIds: [userId] },
   });
 }

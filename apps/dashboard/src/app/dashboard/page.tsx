@@ -56,11 +56,25 @@ export default function DashboardPage() {
     router.replace(`/${firstSlug}/dashboard`)
   }, [checkingOrgs, hasOrgs, firstSlug, router])
 
+  // Admin with no orgs: redirect to admin area
+  const userRole = (session?.user as { role?: string } | undefined)?.role
+  useEffect(() => {
+    if (isPending || checkingOrgs || hasOrgs === null || hasOrgs !== false) return
+    if (userRole === "admin") {
+      router.replace("/admin")
+    }
+  }, [isPending, checkingOrgs, hasOrgs, userRole, router])
+
   if (isPending || !session?.user) {
     return <LoadingAnimation />
   }
 
   if (checkingOrgs || (hasOrgs === true && firstSlug)) {
+    return <LoadingAnimation />
+  }
+
+  // Admin with no orgs: still loading redirect
+  if (hasOrgs === false && userRole === "admin") {
     return <LoadingAnimation />
   }
 

@@ -1,0 +1,26 @@
+{
+  "name": "luminum",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "luminum": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "lint": "echo 'no lint configured'"
+  },
+  "dependencies": {
+    "@luminum/database": "workspace:*",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
