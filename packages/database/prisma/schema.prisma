@@ -237,7 +237,7 @@ model organization {
   email_from_address                                                String?                   @db.VarChar(255)
   emails                                                            email[]
   images                                                            images[]
-  invitation                                                        invitation[]
+  invitations                                                       invitation[]
   member                                                            member[]
   subscriptions_organization_primary_subscription_idTosubscriptions subscriptions?            @relation("organization_primary_subscription_idTosubscriptions", fields: [primary_subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   subscriptions_subscriptions_organization_idToorganization         subscriptions[]           @relation("subscriptions_organization_idToorganization")

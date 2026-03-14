@@ -47,7 +47,7 @@ router.get("/organizations/:id", adminOnly, async (req: Request, res: Response) 
   try {
     const org = await prisma.organization.findUnique({
       where: { id: pathParam(req, "id") },
-      include: { member: { include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true, invitation: { where: { status: "pending" } } },
+      include: { member: { include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true, invitations: { where: { status: "pending" } } },
     });
     if (!org) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, organization: org });
