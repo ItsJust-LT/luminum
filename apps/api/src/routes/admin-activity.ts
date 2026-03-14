@@ -40,13 +40,13 @@ router.get("/overview", async (_req: Request, res: Response) => {
         online_now: onlineNow,
         active_today: uniqueUsersToday.length,
         sessions_today: todaySessions,
-        total_time_today_ms: todayAggregate._sum.duration_ms || 0,
-        avg_session_today_ms: Math.round(todayAggregate._avg.duration_ms || 0),
-        total_time_week_ms: weekAggregate._sum.duration_ms || 0,
-        avg_session_week_ms: Math.round(weekAggregate._avg.duration_ms || 0),
-        sessions_week: weekAggregate._count || 0,
-        total_time_month_ms: monthAggregate._sum.duration_ms || 0,
-        sessions_month: monthAggregate._count || 0,
+        total_time_today_ms: todayAggregate._sum?.duration_ms ?? 0,
+        avg_session_today_ms: Math.round(todayAggregate._avg?.duration_ms ?? 0),
+        total_time_week_ms: weekAggregate._sum?.duration_ms ?? 0,
+        avg_session_week_ms: Math.round(weekAggregate._avg?.duration_ms ?? 0),
+        sessions_week: weekAggregate._count ?? 0,
+        total_time_month_ms: monthAggregate._sum?.duration_ms ?? 0,
+        sessions_month: monthAggregate._count ?? 0,
       },
     });
   } catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
@@ -105,9 +105,9 @@ router.get("/users", async (req: Request, res: Response) => {
       return {
         ...u,
         is_online: onlineIds.has(u.id),
-        total_time_ms: activity?._sum.duration_ms || 0,
-        avg_session_ms: Math.round(activity?._avg.duration_ms || 0),
-        session_count: activity?._count || 0,
+        total_time_ms: activity?._sum?.duration_ms ?? 0,
+        avg_session_ms: Math.round(activity?._avg?.duration_ms ?? 0),
+        session_count: activity?._count ?? 0,
       };
     });
 
@@ -118,8 +118,8 @@ router.get("/users", async (req: Request, res: Response) => {
 // GET /api/admin/activity/user/:userId
 router.get("/user/:userId", async (req: Request, res: Response) => {
   try {
-    const userId = req.params.userId;
-    const period = (req.query.period as string) || "month";
+    const userId = String(req.params.userId);
+    const period = String(req.query.period || "month");
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -163,13 +163,13 @@ router.get("/user/:userId", async (req: Request, res: Response) => {
       success: true,
       user: { ...user, is_online: isOnline },
       summary: {
-        total_time_ms: aggregate._sum.duration_ms || 0,
-        avg_session_ms: Math.round(aggregate._avg.duration_ms || 0),
-        session_count: aggregate._count || 0,
+        total_time_ms: aggregate._sum?.duration_ms ?? 0,
+        avg_session_ms: Math.round(aggregate._avg?.duration_ms ?? 0),
+        session_count: aggregate._count ?? 0,
       },
       daily_activity: dailyActivity.map((d) => ({
         date: d.date,
-        total_time_ms: d._sum.duration_ms || 0,
+        total_time_ms: d._sum?.duration_ms ?? 0,
         session_count: d._count,
       })),
       recent_sessions: sessions,
