@@ -11,7 +11,7 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (req.user.role !== "admin") return res.status(403).json({ success: false, error: "Admin only" });
-    const org = await prisma.organization.findUnique({ where: { id: organizationId }, include: { member: { include: { user: { select: { id: true, name: true, email: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true } });
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true } });
     if (!org) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, data: org });
   } catch (error: any) { res.json({ success: false, error: error.message }); }

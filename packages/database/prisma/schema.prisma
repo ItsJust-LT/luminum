@@ -238,7 +238,7 @@ model organization {
   emails                                                            email[]
   images                                                            images[]
   invitations                                                       invitation[]
-  member                                                            member[]
+  members                                                           member[]
   subscriptions_organization_primary_subscription_idTosubscriptions subscriptions?            @relation("organization_primary_subscription_idTosubscriptions", fields: [primary_subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   subscriptions_subscriptions_organization_idToorganization         subscriptions[]           @relation("subscriptions_organization_idToorganization")
   support_tickets                                                   support_tickets[]

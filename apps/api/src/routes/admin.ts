@@ -35,7 +35,7 @@ router.get("/dashboard-stats", adminOnly, async (_req: Request, res: Response) =
 router.get("/organizations", adminOnly, async (_req: Request, res: Response) => {
   try {
     const orgs = await prisma.organization.findMany({
-      include: { member: { include: { user: { select: { id: true, name: true, email: true } } } }, websites: { select: { id: true, domain: true, name: true, analytics: true } }, subscriptions_subscriptions_organization_idToorganization: { where: { status: "active" } } },
+      include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, websites: { select: { id: true, domain: true, name: true, analytics: true } }, subscriptions_subscriptions_organization_idToorganization: { where: { status: "active" } } },
       orderBy: { createdAt: "desc" },
     });
     res.json({ success: true, organizations: orgs });
@@ -47,7 +47,7 @@ router.get("/organizations/:id", adminOnly, async (req: Request, res: Response) 
   try {
     const org = await prisma.organization.findUnique({
       where: { id: pathParam(req, "id") },
-      include: { member: { include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true, invitations: { where: { status: "pending" } } },
+      include: { members: { include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true, invitations: { where: { status: "pending" } } },
     });
     if (!org) return res.status(404).json({ success: false, error: "Not found" });
     res.json({ success: true, organization: org });
