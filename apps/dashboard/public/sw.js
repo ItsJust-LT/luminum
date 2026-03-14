@@ -20,7 +20,7 @@ self.addEventListener("push", function (event) {
   const tag = data.tag && data.tag.trim() !== "" ? data.tag : `notif-${Date.now()}`;
 
   // Enhanced notification options with better Apple/iOS support
-  const options: any = {
+  const options = {
     body: data.message || data.body || "You have a new notification",
     data: data.data || {},               // additional data for clicks
     icon: data.icon || "/android-chrome-192x192.png",

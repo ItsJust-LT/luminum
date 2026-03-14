@@ -242,6 +242,21 @@ export default function EmailsPage() {
     ),
   )
 
+  // Infinite scroll: load more when sentinel enters viewport (must run before any conditional return to satisfy Rules of Hooks)
+  useEffect(() => {
+    if (!hasMore || loading || loadingMore) return
+    const el = loadMoreSentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore()
+      },
+      { rootMargin: "200px", threshold: 0 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, loading, loadingMore, loadMore])
+
   if (!organization) return null
 
   // Wait for setup status before showing inbox or setup-required (avoid flash of wrong view)
@@ -260,21 +275,6 @@ export default function EmailsPage() {
 
   const displayTotal = totalCount ?? emails.length
   const displayUnread = unreadCountFromApi ?? emails.filter((e) => !e.read).length
-
-  // Infinite scroll: load more when sentinel enters viewport
-  useEffect(() => {
-    if (!hasMore || loading || loadingMore) return
-    const el = loadMoreSentinelRef.current
-    if (!el) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) loadMore()
-      },
-      { rootMargin: "200px", threshold: 0 }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [hasMore, loading, loadingMore, loadMore])
 
   if (showSetupRequired) {
     const hasDomain = !!setupStatus?.domain
