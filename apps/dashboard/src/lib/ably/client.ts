@@ -27,8 +27,9 @@ export function useAnalyticsPresence(websiteId: string | null | undefined) {
       if (cancelled) return
 
       try {
+        const apiBase = typeof process.env.NEXT_PUBLIC_API_URL === "string" ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "") : ""
         const res = await fetch(
-          `/api/analytics/live-ws-token?websiteId=${encodeURIComponent(websiteId!)}`,
+          `${apiBase}/api/analytics/live-ws-token?websiteId=${encodeURIComponent(websiteId!)}`,
           { credentials: "include" }
         )
         if (!res.ok) return
