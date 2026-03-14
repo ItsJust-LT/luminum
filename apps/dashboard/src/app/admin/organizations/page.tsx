@@ -115,7 +115,7 @@ export default function AdminOrganizationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
-          <AdminOrganizationCreatorDialog onCreated={handleOrganizationCreated} />
+          <AdminOrganizationCreatorDialog onOrganizationCreated={handleOrganizationCreated} />
           <Button variant="outline" size="sm" onClick={fetchOrganizations} disabled={loading} className="gap-2">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
