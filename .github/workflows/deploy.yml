@@ -234,5 +234,7 @@ jobs:
             $DOCKER compose -f docker-compose.prod.yml pull
             $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate
             $DOCKER image prune -f
+            # Build CLI inside the API container so `luminum` wrapper works
+            $DOCKER exec luminum-api-1 sh -c 'cd /app/packages/cli && npx tsc' || echo "CLI build skipped (container may still be starting)"
         env:
           REGISTRY: ghcr.io
