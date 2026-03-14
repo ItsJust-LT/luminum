@@ -212,6 +212,9 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 	if !json.Valid(utmParamsJSON) {
 		utmParamsJSON = []byte("{}")
 	}
+	// Pass as string so pgx (simple protocol) sends valid JSON to PostgreSQL, not bytea
+	urlParamsStr := string(urlParamsJSON)
+	utmParamsStr := string(utmParamsJSON)
 
 	sessionIDArg := interface{}(event.SessionID)
 	if event.SessionID == "" {
@@ -230,8 +233,8 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 		)
 		RETURNING id`,
 		event.WebsiteID, event.URL, event.Referrer, event.ScreenSize, event.IP, event.Country, event.City, sessionIDArg, event.DeviceType,
-		event.BrowserName, event.BrowserVersion, event.OSName, event.OSVersion, event.UserAgent, event.PageTitle, urlParamsJSON,
-		event.ReferrerDomain, event.ReferrerPath, event.TrafficSource, utmParamsJSON,
+		event.BrowserName, event.BrowserVersion, event.OSName, event.OSVersion, event.UserAgent, event.PageTitle, urlParamsStr,
+		event.ReferrerDomain, event.ReferrerPath, event.TrafficSource, utmParamsStr,
 	).Scan(&eventID)
 
 	if err != nil {
