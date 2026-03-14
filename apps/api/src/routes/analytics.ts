@@ -9,11 +9,11 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 router.use(requireAuth);
 
-/** Resolves a website by id and verifies the user has access via organization membership. */
+/** Resolves a website by id or website_id and verifies the user has access. */
 async function resolveWebsiteWithAccess(websiteId: string, userId: string) {
   const website = await prisma.websites.findFirst({
     where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
-    select: { id: true, organization_id: true },
+    select: { id: true, website_id: true, organization_id: true },
   });
   if (!website) return null;
   const member = await prisma.member.findFirst({
@@ -21,6 +21,13 @@ async function resolveWebsiteWithAccess(websiteId: string, userId: string) {
   });
   if (!member) return null;
   return website;
+}
+
+/** Website IDs to use when querying events/form_submissions (script may send id or website_id). */
+function websiteIdFilter(website: { id: string; website_id: string | null }) {
+  const ids = [website.id];
+  if (website.website_id && website.website_id !== website.id) ids.push(website.website_id);
+  return { in: ids };
 }
 
 // GET /api/analytics/live-ws-token?websiteId=X
@@ -64,18 +71,19 @@ router.get("/overview", async (req: Request, res: Response) => {
     const startDate = new Date(start);
     const endDate = new Date(end);
 
+    const websiteIds = websiteIdFilter(website);
     const [eventsAgg, sessionGroups, formCount] = await Promise.all([
       prisma.events.aggregate({
-        where: { website_id: website.id, created_at: { gte: startDate, lte: endDate } },
+        where: { website_id: websiteIds, created_at: { gte: startDate, lte: endDate } },
         _count: { id: true },
         _avg: { duration: true },
       }),
       prisma.events.groupBy({
         by: ["session_id"],
-        where: { website_id: website.id, created_at: { gte: startDate, lte: endDate }, session_id: { not: null } },
+        where: { website_id: websiteIds, created_at: { gte: startDate, lte: endDate }, session_id: { not: null } },
       }),
       prisma.form_submissions.count({
-        where: { website_id: website.id, submitted_at: { gte: startDate, lte: endDate } },
+        where: { website_id: websiteIds, submitted_at: { gte: startDate, lte: endDate } },
       }),
     ]);
 
@@ -87,7 +95,7 @@ router.get("/overview", async (req: Request, res: Response) => {
       avgDuration: Math.round(eventsAgg._avg.duration ?? 0) || 0,
       formSubmissions: formCount,
     };
-    await cacheSet(cacheKey, payload, 120);
+    await cacheSet(cacheKey, payload, 60);
     res.json(payload);
   } catch (error: any) {
     console.error("[analytics] overview error:", error);
@@ -110,14 +118,15 @@ router.get("/timeseries", async (req: Request, res: Response) => {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
+    const websiteIds = websiteIdFilter(website);
 
     const events = await prisma.events.findMany({
-      where: { website_id: website.id, created_at: { gte: startDate, lte: endDate } },
+      where: { website_id: websiteIds, created_at: { gte: startDate, lte: endDate } },
       select: { created_at: true, session_id: true },
     });
 
     const formSubs = await prisma.form_submissions.findMany({
-      where: { website_id: website.id, submitted_at: { gte: startDate, lte: endDate } },
+      where: { website_id: websiteIds, submitted_at: { gte: startDate, lte: endDate } },
       select: { submitted_at: true },
     });
 
@@ -161,7 +170,7 @@ router.get("/timeseries", async (req: Request, res: Response) => {
         totalFormSubmissions: formSubs.length,
       },
     };
-    await cacheSet(cacheKey, payload, 120);
+    await cacheSet(cacheKey, payload, 60);
     res.json(payload);
   } catch (error: any) {
     console.error("[analytics] timeseries error:", error);
@@ -180,7 +189,7 @@ router.get("/top-pages", async (req: Request, res: Response) => {
 
     const events = await prisma.events.findMany({
       where: {
-        website_id: website.id,
+        website_id: websiteIdFilter(website),
         created_at: { gte: new Date(start), lte: new Date(end) },
         url: { not: null },
       },
@@ -215,7 +224,7 @@ router.get("/countries", async (req: Request, res: Response) => {
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const events = await prisma.events.findMany({
-      where: { website_id: website.id, created_at: { gte: new Date(start), lte: new Date(end) } },
+      where: { website_id: websiteIdFilter(website), created_at: { gte: new Date(start), lte: new Date(end) } },
       select: { country: true },
     });
 
@@ -247,7 +256,7 @@ router.get("/devices", async (req: Request, res: Response) => {
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const events = await prisma.events.findMany({
-      where: { website_id: website.id, created_at: { gte: new Date(start), lte: new Date(end) } },
+      where: { website_id: websiteIdFilter(website), created_at: { gte: new Date(start), lte: new Date(end) } },
       select: { device_type: true },
     });
 
@@ -278,30 +287,31 @@ router.get("/realtime", async (req: Request, res: Response) => {
     const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
+    const ids = websiteIdFilter(website);
     const now = new Date();
     const since2min = new Date(now.getTime() - 2 * 60 * 1000);
     const since30min = new Date(now.getTime() - 30 * 60 * 1000);
 
     const [recentEvents, sessionIds, count30] = await Promise.all([
       prisma.events.findMany({
-        where: { website_id: website.id, created_at: { gte: since2min } },
+        where: { website_id: ids, created_at: { gte: since2min } },
         select: { created_at: true, url: true, country: true, device_type: true },
         orderBy: { created_at: "desc" },
         take: 20,
       }),
       prisma.events.findMany({
-        where: { website_id: website.id, created_at: { gte: since2min }, session_id: { not: null } },
+        where: { website_id: ids, created_at: { gte: since2min }, session_id: { not: null } },
         select: { session_id: true },
         distinct: ["session_id"],
       }),
       prisma.events.count({
-        where: { website_id: website.id, created_at: { gte: since30min } },
+        where: { website_id: ids, created_at: { gte: since30min } },
       }),
     ]);
 
     // Top pages last 30 min
     const pageEvents = await prisma.events.findMany({
-      where: { website_id: website.id, created_at: { gte: since30min }, url: { not: null } },
+      where: { website_id: ids, created_at: { gte: since30min }, url: { not: null } },
       select: { url: true },
     });
     const pageCounts: Record<string, number> = {};
@@ -317,7 +327,7 @@ router.get("/realtime", async (req: Request, res: Response) => {
     // Top countries last 30 min
     const countryCounts: Record<string, number> = {};
     const countryEvents = await prisma.events.findMany({
-      where: { website_id: website.id, created_at: { gte: since30min } },
+      where: { website_id: ids, created_at: { gte: since30min } },
       select: { country: true },
     });
     for (const e of countryEvents) {
