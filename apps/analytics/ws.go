@@ -251,8 +251,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if navData.EventID != "" && navData.URL != "" {
+			var prevURL string
 			liveConnections.Lock()
 			if connData, exists := liveConnections.conns[conn]; exists {
+				prevURL = connData.lastURL
 				connData.lastURL = navData.URL
 				if navData.DeviceType != "" {
 					connData.deviceType = navData.DeviceType
@@ -267,6 +269,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				ScreenSize: navData.ScreenSize, Action: "navigate",
 				Duration: navData.Duration,
 			})
+
+			if prevURL != "" && prevURL != navData.URL {
+				go pushPageTransitionToExpress(websiteId, navData.SessionID, prevURL, navData.URL)
+			}
+
+			broadcastLiveViewerCount(websiteId)
 		}
 	}
 }
@@ -281,6 +289,19 @@ func GetLiveViewerCount(websiteId string) int {
 		}
 	}
 	return count
+}
+
+// GetLivePageCounts returns a map of page URL -> visitor count for a given website.
+func GetLivePageCounts(websiteId string) map[string]int {
+	pages := make(map[string]int)
+	liveConnections.Lock()
+	defer liveConnections.Unlock()
+	for _, conn := range liveConnections.conns {
+		if conn.websiteID == websiteId && conn.lastURL != "" {
+			pages[conn.lastURL]++
+		}
+	}
+	return pages
 }
 
 func LiveViewerCountHandler(w http.ResponseWriter, r *http.Request) {

@@ -53,6 +53,7 @@ import { useRouter } from "next/navigation"
 import { AnalyticsSkeleton } from "@/components/ui/skeleton-loader"
 import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
+import { useRealtime } from "@/components/realtime/realtime-provider"
 import { LiveVisitorsBadges, LiveViewersMetricCard } from "@/components/analytics/live-visitors-counter"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 
@@ -227,6 +228,28 @@ export default function AnalyticsPage() {
       .map(([page, count]) => ({ page, count }))
       .sort((a, b) => b.count - a.count)
   }, [presenceLivePages])
+
+  // Real-time: auto-refresh analytics when new events are inserted (database-driven)
+  const { onMessage } = useRealtime()
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const unsub = onMessage("analytics:event", (data: any) => {
+      if (!website) return
+      const wid = website.id
+      if (data?.websiteId !== wid) return
+
+      // Debounce: batch rapid events into a single refresh (2s delay)
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = setTimeout(() => {
+        fetchAnalyticsDataRef.current?.()
+      }, 2000)
+    })
+    return () => {
+      unsub()
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
+    }
+  }, [onMessage, website])
 
   // Fetch website data when organization is available
   useEffect(() => {

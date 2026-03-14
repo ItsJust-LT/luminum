@@ -37,10 +37,31 @@ func serveTrackingScript(w http.ResponseWriter, r *http.Request) {
 	rawJS := fmt.Sprintf(`(function(){
 %s
 var wid="%s",api="%s",wsApi="%s",sid=getOrCreateSid();
-var payload={websiteId:wid,sessionId:sid,url:location.href,referrer:document.referrer,screen:innerWidth+"x"+innerHeight,pageTitle:(document.title||"").slice(0,500),userAgent:navigator.userAgent};
-fetch(api+"/track",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(function(r){return r.json()}).then(function(d){
-if(d.eventId){try{new WebSocket(wsApi+"/ws?websiteId="+wid+"&eventId="+d.eventId)}catch(e){}}
+var _ws=null,_eid=null,_lastUrl=location.href;
+function trackPage(url,ref){
+var p={websiteId:wid,sessionId:sid,url:url,referrer:ref||document.referrer,screen:innerWidth+"x"+innerHeight,pageTitle:(document.title||"").slice(0,500),userAgent:navigator.userAgent};
+fetch(api+"/track",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json()}).then(function(d){
+if(d.eventId){
+_eid=d.eventId;
+if(!_ws||_ws.readyState>1){try{_ws=new WebSocket(wsApi+"/ws?websiteId="+wid+"&eventId="+d.eventId);_ws.onclose=function(){_ws=null;};}catch(e){}}
+}
 }).catch(function(){});
+}
+function onNav(){
+var cur=location.href;
+if(cur===_lastUrl)return;
+var prev=_lastUrl;_lastUrl=cur;
+if(_ws&&_ws.readyState===1&&_eid){
+try{_ws.send(JSON.stringify({eventId:_eid,sessionId:sid,url:cur,referrer:prev,screenSize:innerWidth+"x"+innerHeight}));}catch(e){}
+}
+trackPage(cur,prev);
+}
+var _origPush=history.pushState,_origReplace=history.replaceState;
+history.pushState=function(){_origPush.apply(history,arguments);onNav();};
+history.replaceState=function(){_origReplace.apply(history,arguments);onNav();};
+window.addEventListener("popstate",onNav);
+window.addEventListener("hashchange",onNav);
+trackPage(location.href,document.referrer);
 })();`, fmt.Sprintf(sessionJS, SessionCookieName, SessionCookieName, SessionCookieMaxAgeDays), websiteId, origin, wsOrigin)
 
 	m := minify.New()
@@ -51,8 +72,8 @@ if(d.eventId){try{new WebSocket(wsApi+"/ws?websiteId="+wid+"&eventId="+d.eventId
 	}
 
 	w.Header().Set("Content-Type", "application/javascript")
-	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
-	w.Header().Set("Expires", time.Now().Add(7*24*time.Hour).Format(http.TimeFormat))
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Expires", time.Now().Add(1*time.Hour).Format(http.TimeFormat))
 	fmt.Fprint(w, minified)
 }
 

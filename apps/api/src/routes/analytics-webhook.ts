@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { setLiveCount, setLivePages } from "../lib/analytics-live.js";
+import { broadcastToChannel } from "../lib/realtime-ws.js";
 import { rateLimitWebhook } from "../middleware/rate-limit.js";
 import { backupLiveCountToRedis } from "../lib/redis-live.js";
 
@@ -95,6 +96,36 @@ router.post("/page-transition", async (req: Request, res: Response) => {
     res.json({ success: true, inserted: records.length });
   } catch (error: any) {
     console.error("[analytics/page-transition] Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/analytics/event-notify
+// Called by the Go analytics service after a new event (page view) is inserted.
+// Broadcasts to the analytics WebSocket channel so the dashboard updates in real-time.
+router.post("/event-notify", async (req: Request, res: Response) => {
+  try {
+    if (!verifyWebhookSecret(req, res)) return;
+
+    const { websiteId, eventId, url, sessionId } = req.body;
+    if (!websiteId) return res.status(400).json({ error: "Missing websiteId" });
+
+    const website = await prisma.websites.findFirst({
+      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
+      select: { id: true, website_id: true },
+    });
+
+    if (website) {
+      const data = { websiteId: website.id, eventId, url, sessionId, timestamp: new Date().toISOString() };
+      broadcastToChannel(`analytics:${website.id}`, { type: "analytics:event", data });
+      if (website.website_id && website.website_id !== website.id) {
+        broadcastToChannel(`analytics:${website.website_id}`, { type: "analytics:event", data });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("[analytics/event-notify] Error:", error);
     res.status(500).json({ error: error.message });
   }
 });

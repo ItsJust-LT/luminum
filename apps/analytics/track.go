@@ -243,6 +243,8 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go pushEventNotifyToExpress(event.WebsiteID, eventID, event.URL, event.SessionID)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"eventId": eventID})
 }

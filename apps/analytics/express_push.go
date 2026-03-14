@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -10,15 +11,27 @@ import (
 )
 
 var (
-	livePushLast   = make(map[string]time.Time)
-	livePushMutex  sync.Mutex
+	livePushLast     = make(map[string]time.Time)
+	livePushMutex    sync.Mutex
 	livePushDebounce = 500 * time.Millisecond
 )
 
-// pushLiveCountToExpress sends the current live viewer count for a website to the
-// Express API so the dashboard (connected via Express WebSocket) can display it.
+func getExpressClient() *http.Client {
+	return &http.Client{Timeout: 5 * time.Second}
+}
+
+func getAPIURL() string {
+	return os.Getenv("API_URL")
+}
+
+func getWebhookSecret() string {
+	return os.Getenv("WEBHOOK_SECRET")
+}
+
+// pushLiveCountToExpress sends the current live viewer count and per-page
+// breakdown for a website to the Express API.
 func pushLiveCountToExpress(websiteId string) {
-	apiURL := os.Getenv("API_URL")
+	apiURL := getAPIURL()
 	if apiURL == "" {
 		return
 	}
@@ -33,20 +46,98 @@ func pushLiveCountToExpress(websiteId string) {
 	livePushMutex.Unlock()
 
 	count := GetLiveViewerCount(websiteId)
-	body := map[string]interface{}{"websiteId": websiteId, "live": count}
+	pages := GetLivePageCounts(websiteId)
+
+	body := map[string]interface{}{
+		"websiteId": websiteId,
+		"live":      count,
+		"pages":     pages,
+	}
 	jsonData, err := json.Marshal(body)
 	if err != nil {
 		return
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := getExpressClient()
 	req, err := http.NewRequest("POST", apiURL+"/api/analytics/live-update", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if webhookSecret := os.Getenv("WEBHOOK_SECRET"); webhookSecret != "" {
-		req.Header.Set("X-Webhook-Secret", webhookSecret)
+	if secret := getWebhookSecret(); secret != "" {
+		req.Header.Set("X-Webhook-Secret", secret)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+}
+
+// pushPageTransitionToExpress records a page-to-page navigation for a session.
+func pushPageTransitionToExpress(websiteId, sessionId, fromPage, toPage string) {
+	apiURL := getAPIURL()
+	if apiURL == "" {
+		return
+	}
+
+	body := map[string]interface{}{
+		"websiteId": websiteId,
+		"sessionId": sessionId,
+		"fromPage":  fromPage,
+		"toPage":    toPage,
+	}
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return
+	}
+
+	client := getExpressClient()
+	req, err := http.NewRequest("POST", apiURL+"/api/analytics/page-transition", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if secret := getWebhookSecret(); secret != "" {
+		req.Header.Set("X-Webhook-Secret", secret)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[express_push] page-transition error: %v", err)
+		return
+	}
+	resp.Body.Close()
+}
+
+// pushEventNotifyToExpress notifies the Express API that a new event was
+// inserted so the dashboard can update stats in real-time.
+func pushEventNotifyToExpress(websiteId, eventId, url, sessionId string) {
+	apiURL := getAPIURL()
+	if apiURL == "" {
+		return
+	}
+
+	body := map[string]interface{}{
+		"websiteId": websiteId,
+		"eventId":   eventId,
+		"url":       url,
+		"sessionId": sessionId,
+	}
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return
+	}
+
+	client := getExpressClient()
+	req, err := http.NewRequest("POST", apiURL+"/api/analytics/event-notify", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if secret := getWebhookSecret(); secret != "" {
+		req.Header.Set("X-Webhook-Secret", secret)
 	}
 
 	resp, err := client.Do(req)
