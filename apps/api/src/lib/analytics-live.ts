@@ -1,5 +1,5 @@
 /**
- * In-memory state for analytics live viewer counts.
+ * In-memory state for analytics live viewer counts and per-page tracking.
  * Go service pushes updates via POST /api/analytics/live-update.
  * Dashboard clients subscribe via WebSocket and receive broadcasts.
  */
@@ -16,16 +16,19 @@ export function setAnalyticsBroadcaster(fn: BroadcastFn): void {
 // Current live count per websiteId (from Go)
 const liveCountByWebsite = new Map<string, number>();
 
+// Per-page live visitor counts: websiteId -> { page -> count }
+const livePagesByWebsite = new Map<string, Map<string, number>>();
+
 // Dashboard WebSocket clients subscribed per websiteId
 const clientsByWebsite = new Map<string, Set<WebSocket>>();
 
-// Short-lived tokens for WS auth: token -> { websiteId, userId, exp }
+// Short-lived tokens for WS auth
 const tokenStore = new Map<
   string,
   { websiteId: string; userId: string; exp: number }
 >();
 
-const TOKEN_TTL_MS = 60 * 1000; // 1 minute
+const TOKEN_TTL_MS = 60 * 1000;
 
 function randomToken(): string {
   return randomBytes(32).toString("hex");
@@ -35,7 +38,6 @@ export function createLiveToken(websiteId: string, userId: string): { token: str
   const token = randomToken();
   const exp = Date.now() + TOKEN_TTL_MS;
   tokenStore.set(token, { websiteId, userId, exp });
-  // Prune expired
   for (const [t, data] of tokenStore.entries()) {
     if (data.exp < Date.now()) tokenStore.delete(t);
   }
@@ -54,11 +56,13 @@ export function consumeLiveToken(
 export function setLiveCount(websiteId: string, count: number): void {
   liveCountByWebsite.set(websiteId, count);
 
-  // Broadcast to unified WS subscribers
+  const pages = livePagesByWebsite.get(websiteId);
+  const pageData = pages ? Object.fromEntries(pages) : {};
+
   if (_broadcastToChannel) {
     _broadcastToChannel(`analytics:${websiteId}`, {
       type: "analytics:live",
-      data: { websiteId, live: count },
+      data: { websiteId, live: count, pages: pageData },
     });
   }
 
@@ -68,17 +72,35 @@ export function setLiveCount(websiteId: string, count: number): void {
   const payload = JSON.stringify({ type: "live_count", data: { live: count } });
   for (const ws of clients) {
     if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(payload);
-      } catch {
-        clients.delete(ws);
-      }
+      try { ws.send(payload); } catch { clients.delete(ws); }
     }
+  }
+}
+
+export function setLivePages(websiteId: string, pages: Record<string, number>): void {
+  const pageMap = new Map<string, number>();
+  for (const [page, count] of Object.entries(pages)) {
+    if (count > 0) pageMap.set(page, count);
+  }
+  livePagesByWebsite.set(websiteId, pageMap);
+
+  const totalLive = liveCountByWebsite.get(websiteId) ?? 0;
+
+  if (_broadcastToChannel) {
+    _broadcastToChannel(`analytics:${websiteId}`, {
+      type: "analytics:live",
+      data: { websiteId, live: totalLive, pages },
+    });
   }
 }
 
 export function getLiveCount(websiteId: string): number {
   return liveCountByWebsite.get(websiteId) ?? 0;
+}
+
+export function getLivePages(websiteId: string): Record<string, number> {
+  const pages = livePagesByWebsite.get(websiteId);
+  return pages ? Object.fromEntries(pages) : {};
 }
 
 export function subscribeClient(websiteId: string, ws: WebSocket): void {

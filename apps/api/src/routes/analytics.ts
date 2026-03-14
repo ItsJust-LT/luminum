@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { createLiveToken } from "../lib/analytics-live.js";
+import { createLiveToken, getLivePages } from "../lib/analytics-live.js";
 import { cacheGet, cacheSet } from "../lib/redis-cache.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
@@ -354,6 +354,330 @@ router.get("/realtime", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("[analytics] realtime error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/analytics/live-pages?websiteId=X
+// Returns the current per-page live visitor breakdown
+router.get("/live-pages", async (req: Request, res: Response) => {
+  try {
+    const { websiteId } = req.query as Record<string, string>;
+    if (!websiteId) return res.status(400).json({ error: "Missing websiteId" });
+
+    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    if (!website) return res.status(403).json({ error: "Access denied" });
+
+    const pages = getLivePages(websiteId);
+    // Also try with the other ID form
+    const altPages = website.website_id && website.website_id !== websiteId
+      ? getLivePages(website.website_id)
+      : {};
+
+    const merged = { ...altPages, ...pages };
+    res.json({ websiteId: website.id, pages: merged });
+  } catch (error: any) {
+    logger.error("Analytics live-pages failed", { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/analytics/page-flow?websiteId=X&start=...&end=...&limit=50
+// Returns page transition data for flow visualization
+router.get("/page-flow", async (req: Request, res: Response) => {
+  try {
+    const { websiteId, start, end, limit = "50" } = req.query as Record<string, string>;
+    if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
+
+    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    if (!website) return res.status(403).json({ error: "Access denied" });
+
+    const cacheKey = `analytics:page-flow:${website.id}:${start}:${end}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached != null) return res.json(cached);
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const websiteIds = websiteIdFilter(website);
+
+    const transitions = await prisma.page_transitions.findMany({
+      where: {
+        website_id: websiteIds.in[0],
+        created_at: { gte: startDate, lte: endDate },
+      },
+      select: { from_page: true, to_page: true, session_id: true },
+    });
+
+    // Also try with the other ID if available
+    let allTransitions = transitions;
+    if (websiteIds.in.length > 1) {
+      const extra = await prisma.page_transitions.findMany({
+        where: {
+          website_id: websiteIds.in[1],
+          created_at: { gte: startDate, lte: endDate },
+        },
+        select: { from_page: true, to_page: true, session_id: true },
+      });
+      allTransitions = [...transitions, ...extra];
+    }
+
+    // Aggregate transition counts
+    const linkCounts: Record<string, number> = {};
+    const pageSessions: Record<string, Set<string>> = {};
+
+    for (const t of allTransitions) {
+      const key = `${t.from_page}::${t.to_page}`;
+      linkCounts[key] = (linkCounts[key] || 0) + 1;
+
+      if (!pageSessions[t.from_page]) pageSessions[t.from_page] = new Set();
+      if (!pageSessions[t.to_page]) pageSessions[t.to_page] = new Set();
+      pageSessions[t.from_page].add(t.session_id);
+      pageSessions[t.to_page].add(t.session_id);
+    }
+
+    const links = Object.entries(linkCounts)
+      .map(([key, count]) => {
+        const [source, target] = key.split("::");
+        return { source, target, value: count };
+      })
+      .sort((a, b) => b.value - a.value)
+      .slice(0, parseInt(limit));
+
+    // Build nodes from links
+    const nodeSet = new Set<string>();
+    for (const l of links) {
+      nodeSet.add(l.source);
+      nodeSet.add(l.target);
+    }
+    const nodes = Array.from(nodeSet).map(page => ({
+      id: page,
+      sessions: pageSessions[page]?.size ?? 0,
+    }));
+
+    const payload = {
+      nodes,
+      links,
+      totalTransitions: allTransitions.length,
+      uniqueSessions: new Set(allTransitions.map(t => t.session_id)).size,
+    };
+
+    await cacheSet(cacheKey, payload, 120);
+    res.json(payload);
+  } catch (error: any) {
+    logger.error("Analytics page-flow failed", { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/analytics/top-entry-exit?websiteId=X&start=...&end=...
+// Returns top entry and exit pages
+router.get("/top-entry-exit", async (req: Request, res: Response) => {
+  try {
+    const { websiteId, start, end, limit = "10" } = req.query as Record<string, string>;
+    if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
+
+    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    if (!website) return res.status(403).json({ error: "Access denied" });
+
+    const cacheKey = `analytics:entry-exit:${website.id}:${start}:${end}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached != null) return res.json(cached);
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const websiteIds = websiteIdFilter(website);
+
+    // Group events by session, ordered by time, to find first and last page per session
+    const events = await prisma.events.findMany({
+      where: {
+        website_id: websiteIds,
+        created_at: { gte: startDate, lte: endDate },
+        url: { not: null },
+        session_id: { not: null },
+      },
+      select: { session_id: true, url: true, created_at: true },
+      orderBy: { created_at: "asc" },
+    });
+
+    const sessionPages: Record<string, Array<{ url: string; time: Date }>> = {};
+    for (const e of events) {
+      const sid = e.session_id!;
+      if (!sessionPages[sid]) sessionPages[sid] = [];
+      sessionPages[sid].push({ url: e.url!, time: e.created_at ?? new Date() });
+    }
+
+    const entryCounts: Record<string, number> = {};
+    const exitCounts: Record<string, number> = {};
+
+    for (const pages of Object.values(sessionPages)) {
+      if (pages.length === 0) continue;
+      const entry = pages[0].url;
+      const exit = pages[pages.length - 1].url;
+      entryCounts[entry] = (entryCounts[entry] || 0) + 1;
+      exitCounts[exit] = (exitCounts[exit] || 0) + 1;
+    }
+
+    const topEntryPages = Object.entries(entryCounts)
+      .map(([page, count]) => ({ page, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, parseInt(limit));
+
+    const topExitPages = Object.entries(exitCounts)
+      .map(([page, count]) => ({ page, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, parseInt(limit));
+
+    const payload = {
+      totalSessions: Object.keys(sessionPages).length,
+      topEntryPages,
+      topExitPages,
+    };
+    await cacheSet(cacheKey, payload, 120);
+    res.json(payload);
+  } catch (error: any) {
+    logger.error("Analytics top-entry-exit failed", { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/analytics/session-paths?websiteId=X&start=...&end=...&limit=20
+// Returns the most common full session paths (sequences of page visits)
+router.get("/session-paths", async (req: Request, res: Response) => {
+  try {
+    const { websiteId, start, end, limit = "20" } = req.query as Record<string, string>;
+    if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
+
+    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    if (!website) return res.status(403).json({ error: "Access denied" });
+
+    const cacheKey = `analytics:session-paths:${website.id}:${start}:${end}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached != null) return res.json(cached);
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const websiteIds = websiteIdFilter(website);
+
+    const events = await prisma.events.findMany({
+      where: {
+        website_id: websiteIds,
+        created_at: { gte: startDate, lte: endDate },
+        url: { not: null },
+        session_id: { not: null },
+      },
+      select: { session_id: true, url: true, created_at: true },
+      orderBy: { created_at: "asc" },
+    });
+
+    // Build session paths
+    const sessionPages: Record<string, string[]> = {};
+    for (const e of events) {
+      const sid = e.session_id!;
+      if (!sessionPages[sid]) sessionPages[sid] = [];
+      const lastPage = sessionPages[sid][sessionPages[sid].length - 1];
+      if (lastPage !== e.url) {
+        sessionPages[sid].push(e.url!);
+      }
+    }
+
+    // Count path frequencies
+    const pathCounts: Record<string, number> = {};
+    for (const pages of Object.values(sessionPages)) {
+      const pathKey = pages.join(" → ");
+      pathCounts[pathKey] = (pathCounts[pathKey] || 0) + 1;
+    }
+
+    const paths = Object.entries(pathCounts)
+      .map(([path, count]) => ({
+        path,
+        pages: path.split(" → "),
+        count,
+        depth: path.split(" → ").length,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, parseInt(limit));
+
+    const avgDepth = paths.length > 0
+      ? Math.round(paths.reduce((sum, p) => sum + p.depth * p.count, 0) / paths.reduce((sum, p) => sum + p.count, 0) * 10) / 10
+      : 0;
+
+    const payload = {
+      paths,
+      totalSessions: Object.keys(sessionPages).length,
+      avgPagesPerSession: avgDepth,
+    };
+    await cacheSet(cacheKey, payload, 120);
+    res.json(payload);
+  } catch (error: any) {
+    logger.error("Analytics session-paths failed", { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/analytics/page-stats?websiteId=X&start=...&end=...
+// Returns detailed per-page statistics including avg time on page
+router.get("/page-stats", async (req: Request, res: Response) => {
+  try {
+    const { websiteId, start, end, limit = "20" } = req.query as Record<string, string>;
+    if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
+
+    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    if (!website) return res.status(403).json({ error: "Access denied" });
+
+    const cacheKey = `analytics:page-stats:${website.id}:${start}:${end}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached != null) return res.json(cached);
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const websiteIds = websiteIdFilter(website);
+
+    const events = await prisma.events.findMany({
+      where: {
+        website_id: websiteIds,
+        created_at: { gte: startDate, lte: endDate },
+        url: { not: null },
+      },
+      select: { url: true, session_id: true, duration: true },
+    });
+
+    const pageStats: Record<string, {
+      views: number;
+      sessions: Set<string>;
+      totalDuration: number;
+      durCount: number;
+    }> = {};
+
+    for (const e of events) {
+      const url = (e.url || "/").trim() || "/";
+      if (!pageStats[url]) {
+        pageStats[url] = { views: 0, sessions: new Set(), totalDuration: 0, durCount: 0 };
+      }
+      pageStats[url].views += 1;
+      if (e.session_id) pageStats[url].sessions.add(e.session_id);
+      if (e.duration && e.duration > 0) {
+        pageStats[url].totalDuration += e.duration;
+        pageStats[url].durCount += 1;
+      }
+    }
+
+    const totalViews = events.length;
+    const pages = Object.entries(pageStats)
+      .map(([page, s]) => ({
+        page,
+        views: s.views,
+        uniqueVisitors: s.sessions.size,
+        avgDuration: s.durCount > 0 ? Math.round(s.totalDuration / s.durCount) : 0,
+        sharePercent: totalViews > 0 ? Math.round((s.views / totalViews) * 1000) / 10 : 0,
+      }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, parseInt(limit));
+
+    const payload = { pages, totalViews };
+    await cacheSet(cacheKey, payload, 120);
+    res.json(payload);
+  } catch (error: any) {
+    logger.error("Analytics page-stats failed", { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });

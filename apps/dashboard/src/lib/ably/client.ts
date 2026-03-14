@@ -10,12 +10,12 @@ import { useRealtime } from "@/components/realtime/realtime-provider"
  */
 export function useAnalyticsPresence(websiteId: string | null | undefined) {
   const [liveCount, setLiveCount] = useState(0)
+  const [livePages, setLivePages] = useState<Record<string, number>>({})
   const { connected, subscribe, unsubscribe, onMessage } = useRealtime()
   const fallbackWsRef = useRef<WebSocket | null>(null)
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [fallbackConnected, setFallbackConnected] = useState(false)
 
-  // Primary: unified WS channel
   useEffect(() => {
     if (!websiteId || !connected) return
     subscribe(`analytics:${websiteId}`)
@@ -27,11 +27,13 @@ export function useAnalyticsPresence(websiteId: string | null | undefined) {
       if (data?.websiteId === websiteId && typeof data?.live === "number") {
         setLiveCount(data.live)
       }
+      if (data?.websiteId === websiteId && data?.pages && typeof data.pages === "object") {
+        setLivePages(data.pages)
+      }
     })
     return unsub
   }, [websiteId, onMessage])
 
-  // Fallback: legacy WS when unified WS isn't connected
   useEffect(() => {
     if (!websiteId || typeof window === "undefined" || connected) {
       if (fallbackWsRef.current) { fallbackWsRef.current.close(); fallbackWsRef.current = null }
@@ -74,7 +76,7 @@ export function useAnalyticsPresence(websiteId: string | null | undefined) {
     }
   }, [websiteId, connected])
 
-  return { liveCount, connected: connected || fallbackConnected }
+  return { liveCount, livePages, connected: connected || fallbackConnected }
 }
 
 /**

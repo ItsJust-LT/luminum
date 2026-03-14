@@ -1,8 +1,9 @@
 'use client'
-import React, { useEffect, useState, useCallback, useRef } from "react"
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Pie, PieChart, Cell } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import {
@@ -22,8 +23,15 @@ import {
   AlertTriangle,
   Tablet,
   Laptop,
+  ArrowRight,
+  LogIn,
+  LogOut,
+  Route,
+  Network,
+  Layers,
+  ChevronRight,
 } from "lucide-react"
-import type { MetricCount, StatsOverview } from "@/lib/actions/analytics"
+import type { MetricCount, StatsOverview, PageFlowResponse, EntryExitResponse, SessionPathsResponse, PageStatsResponse } from "@/lib/actions/analytics"
 import {
   getAnalyticsOverview,
   getAnalyticsTimeSeries,
@@ -31,6 +39,10 @@ import {
   getAnalyticsCountries,
   getAnalyticsDevices,
   getAnalyticsRealtime,
+  getAnalyticsPageFlow,
+  getAnalyticsEntryExit,
+  getAnalyticsSessionPaths,
+  getAnalyticsPageStats,
 } from "@/lib/actions/analytics"
 import { formatDuration } from "@/lib/utils"
 import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
@@ -191,6 +203,13 @@ export default function AnalyticsPage() {
   const [deviceData, setDeviceData] = useState<MetricCount[]>([])
   const [liveData, setLiveData] = useState<LiveData>({ activeVisitors: 0, recentEvents: [] })
 
+  // Advanced analytics state
+  const [pageFlow, setPageFlow] = useState<PageFlowResponse | null>(null)
+  const [entryExit, setEntryExit] = useState<EntryExitResponse | null>(null)
+  const [sessionPaths, setSessionPaths] = useState<SessionPathsResponse | null>(null)
+  const [pageStats, setPageStats] = useState<PageStatsResponse | null>(null)
+  const [activeTab, setActiveTab] = useState("overview")
+
   // Realtime: refetch when form created/updated (Ably organization channel)
   const fetchAnalyticsDataRef = useRef<() => void>(() => {})
   const onOrgEvent = useCallback((eventType: string) => {
@@ -199,9 +218,15 @@ export default function AnalyticsPage() {
     }
   }, [])
   const { connected: ablyConnected } = useOrganizationChannel(organization?.id ?? null, onOrgEvent)
-  const { liveCount: presenceLiveCount, connected: presenceConnected } = useAnalyticsPresence(website?.id ?? null)
+  const { liveCount: presenceLiveCount, livePages: presenceLivePages, connected: presenceConnected } = useAnalyticsPresence(website?.id ?? null)
   const liveViewersCount = presenceConnected ? presenceLiveCount : liveData.activeVisitors
   const liveConnected = presenceConnected
+
+  const sortedLivePages = useMemo(() => {
+    return Object.entries(presenceLivePages)
+      .map(([page, count]) => ({ page, count }))
+      .sort((a, b) => b.count - a.count)
+  }, [presenceLivePages])
 
   // Fetch website data when organization is available
   useEffect(() => {
@@ -250,13 +275,17 @@ export default function AnalyticsPage() {
     try {
       const { start, end } = getDateRange(dateRange)
 
-      const [overview, timeseries, pages, countries, devices, realtime] = await Promise.all([
+      const [overview, timeseries, pages, countries, devices, realtime, flow, entryExitData, paths, stats] = await Promise.all([
         getAnalyticsOverview(website.id, start, end),
         getAnalyticsTimeSeries(website.id, start, end, dateRange === "24h" ? "hour" : "day"),
         getAnalyticsTopPages(website.id, start, end, 10),
         getAnalyticsCountries(website.id, start, end, 10),
         getAnalyticsDevices(website.id, start, end, 5),
         getAnalyticsRealtime(website.id),
+        getAnalyticsPageFlow(website.id, start, end, 50),
+        getAnalyticsEntryExit(website.id, start, end, 10),
+        getAnalyticsSessionPaths(website.id, start, end, 20),
+        getAnalyticsPageStats(website.id, start, end, 20),
       ])
 
       if (overview) setOverviewData(overview)
@@ -268,6 +297,10 @@ export default function AnalyticsPage() {
         activeVisitors: realtime?.activeVisitors ?? 0,
         recentEvents: realtime?.recentEvents ?? [],
       })
+      setPageFlow(flow)
+      setEntryExit(entryExitData)
+      setSessionPaths(paths)
+      setPageStats(stats)
     } catch (error) {
       console.error("Failed to fetch analytics:", error)
     } finally {
@@ -931,6 +964,391 @@ export default function AnalyticsPage() {
         </Card>
       </div>
 
+      {/* Live Per-Page Visitors */}
+      {sortedLivePages.length > 0 && (
+        <Card className="app-card border-0 bg-gradient-to-br from-cyan-50/30 to-blue-50/30 dark:from-cyan-950/30 dark:to-blue-950/30 shadow-lg ring-1 ring-cyan-200/50 dark:ring-cyan-800/50">
+          <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+            <CardTitle className="flex items-center gap-3">
+              <div className="p-2 bg-cyan-500/10 rounded-xl">
+                <Layers className="h-5 w-5 text-cyan-600" />
+              </div>
+              Live Visitors by Page
+              <Badge variant="secondary" className="ml-auto bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800">
+                <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse mr-2" />
+                {liveViewersCount} online
+              </Badge>
+            </CardTitle>
+            <CardDescription>Real-time breakdown of which pages visitors are currently viewing</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {sortedLivePages.slice(0, 15).map((item, index) => {
+                const maxCount = sortedLivePages[0]?.count || 1
+                const percentage = (item.count / maxCount) * 100
+                let cleanRoute = item.page
+                try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
+                if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+
+                return (
+                  <div key={index} className="group flex items-center gap-4 p-3 rounded-xl bg-background/60 hover:bg-background/80 transition-all duration-200 border border-cyan-200/20 dark:border-cyan-800/20">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                        <Users className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-mono text-sm font-medium truncate text-foreground">{cleanRoute}</div>
+                        <div className="w-full mt-1.5 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-cyan-400 to-cyan-600 rounded-full transition-all duration-700"
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <Badge className="bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800 font-bold tabular-nums">
+                      {item.count} {item.count === 1 ? 'visitor' : 'visitors'}
+                    </Badge>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Advanced Page Analytics Tabs */}
+      <Card className="app-card border-0 bg-gradient-to-br from-background to-muted/10 shadow-lg">
+        <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <CardTitle className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-xl">
+              <Network className="h-5 w-5 text-primary" />
+            </div>
+            Page Intelligence
+          </CardTitle>
+          <CardDescription>Deep insights into visitor navigation patterns and page performance</CardDescription>
+        </CardHeader>
+        <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 gap-1 bg-muted/50 p-1">
+              <TabsTrigger value="overview" className="text-xs sm:text-sm">Page Stats</TabsTrigger>
+              <TabsTrigger value="flow" className="text-xs sm:text-sm">Page Flow</TabsTrigger>
+              <TabsTrigger value="entry-exit" className="text-xs sm:text-sm">Entry & Exit</TabsTrigger>
+              <TabsTrigger value="paths" className="text-xs sm:text-sm">User Journeys</TabsTrigger>
+            </TabsList>
+
+            {/* Page Stats Tab */}
+            <TabsContent value="overview" className="space-y-4 mt-0">
+              {pageStats && pageStats.pages.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-4 gap-4 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <span>Page</span>
+                    <span className="text-right">Views</span>
+                    <span className="text-right">Visitors</span>
+                    <span className="text-right">Avg. Time</span>
+                  </div>
+                  {pageStats.pages.map((page, index) => {
+                    let cleanRoute = page.page
+                    try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
+                    if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                    const maxViews = pageStats.pages[0]?.views || 1
+                    const barWidth = (page.views / maxViews) * 100
+
+                    return (
+                      <div key={index} className="relative group rounded-xl overflow-hidden">
+                        <div
+                          className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent transition-all duration-700"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                        <div className="relative grid grid-cols-4 gap-4 p-4 items-center hover:bg-muted/20 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
+                              {index + 1}
+                            </span>
+                            <span className="font-mono text-sm truncate">{cleanRoute}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-semibold text-sm">{page.views.toLocaleString()}</span>
+                            <span className="text-xs text-muted-foreground ml-1">({page.sharePercent}%)</span>
+                          </div>
+                          <div className="text-right font-medium text-sm">{page.uniqueVisitors.toLocaleString()}</div>
+                          <div className="text-right">
+                            <Badge variant="secondary" className="text-xs font-mono">
+                              {formatDuration(page.avgDuration)}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <div className="flex justify-between items-center px-4 pt-2 text-sm text-muted-foreground border-t">
+                    <span>Total: {pageStats.totalViews.toLocaleString()} views</span>
+                    <span>{pageStats.pages.length} pages tracked</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Layers className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">No page data available yet</p>
+                  <p className="text-sm mt-1">Page statistics will appear as visitors browse your site</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Page Flow Tab */}
+            <TabsContent value="flow" className="space-y-6 mt-0">
+              {pageFlow && pageFlow.links.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-violet-50 to-violet-100/50 dark:from-violet-950/50 dark:to-violet-900/30 text-center">
+                      <div className="text-2xl font-bold text-violet-700 dark:text-violet-300">{pageFlow.totalTransitions.toLocaleString()}</div>
+                      <div className="text-xs font-medium text-violet-600 dark:text-violet-400 mt-1">Total Transitions</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/50 dark:to-blue-900/30 text-center">
+                      <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">{pageFlow.uniqueSessions.toLocaleString()}</div>
+                      <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mt-1">Sessions</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/50 dark:to-emerald-900/30 text-center">
+                      <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{pageFlow.nodes.length}</div>
+                      <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-1">Unique Pages</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/50 dark:to-amber-900/30 text-center">
+                      <div className="text-2xl font-bold text-amber-700 dark:text-amber-300">{pageFlow.links.length}</div>
+                      <div className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1">Flow Paths</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Top Page Transitions</h4>
+                    <div className="space-y-2">
+                      {pageFlow.links.slice(0, 15).map((link, index) => {
+                        let fromClean = link.source
+                        let toClean = link.target
+                        try { if (fromClean.includes('://')) fromClean = new URL(fromClean).pathname } catch {}
+                        try { if (toClean.includes('://')) toClean = new URL(toClean).pathname } catch {}
+                        if (!fromClean.startsWith('/')) fromClean = `/${fromClean}`
+                        if (!toClean.startsWith('/')) toClean = `/${toClean}`
+                        const maxVal = pageFlow.links[0]?.value || 1
+                        const width = (link.value / maxVal) * 100
+
+                        return (
+                          <div key={index} className="relative group rounded-xl overflow-hidden">
+                            <div
+                              className="absolute inset-0 bg-gradient-to-r from-violet-500/5 to-transparent transition-all duration-700"
+                              style={{ width: `${width}%` }}
+                            />
+                            <div className="relative flex items-center gap-3 p-3 hover:bg-muted/20 transition-colors">
+                              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 text-xs font-bold shrink-0">
+                                {index + 1}
+                              </span>
+                              <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
+                                <span className="font-mono text-sm truncate max-w-[40%]">{fromClean}</span>
+                                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <span className="font-mono text-sm truncate max-w-[40%]">{toClean}</span>
+                              </div>
+                              <Badge variant="secondary" className="bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-800 shrink-0">
+                                {link.value.toLocaleString()}
+                              </Badge>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {pageFlow.nodes.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Pages by Session Volume</h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                        {pageFlow.nodes
+                          .sort((a, b) => b.sessions - a.sessions)
+                          .slice(0, 12)
+                          .map((node, index) => {
+                            let cleanRoute = node.id
+                            try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
+                            if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                            return (
+                              <div key={index} className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-primary/10 text-center">
+                                <div className="font-mono text-xs truncate mb-1">{cleanRoute}</div>
+                                <div className="text-lg font-bold text-primary">{node.sessions}</div>
+                                <div className="text-xs text-muted-foreground">sessions</div>
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Network className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">No page flow data available yet</p>
+                  <p className="text-sm mt-1">Page transition tracking will populate as visitors navigate between pages</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Entry & Exit Pages Tab */}
+            <TabsContent value="entry-exit" className="space-y-6 mt-0">
+              {entryExit && (entryExit.topEntryPages.length > 0 || entryExit.topExitPages.length > 0) ? (
+                <>
+                  <div className="text-center p-4 rounded-xl bg-muted/30">
+                    <span className="text-2xl font-bold">{entryExit.totalSessions.toLocaleString()}</span>
+                    <span className="text-sm text-muted-foreground ml-2">total sessions analyzed</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Entry Pages */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <LogIn className="h-4 w-4 text-emerald-600" />
+                        <h4 className="text-sm font-semibold uppercase tracking-wider">Top Entry Pages</h4>
+                        <Badge variant="secondary" className="ml-auto text-xs">Where visitors land</Badge>
+                      </div>
+                      <div className="space-y-2">
+                        {entryExit.topEntryPages.map((item, index) => {
+                          let cleanRoute = item.page
+                          try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
+                          if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                          const maxCount = entryExit.topEntryPages[0]?.count || 1
+                          const barWidth = (item.count / maxCount) * 100
+                          const pct = entryExit.totalSessions > 0 ? ((item.count / entryExit.totalSessions) * 100).toFixed(1) : '0'
+
+                          return (
+                            <div key={index} className="relative rounded-lg overflow-hidden">
+                              <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 to-transparent" style={{ width: `${barWidth}%` }} />
+                              <div className="relative flex items-center justify-between p-3">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-600 text-xs font-bold shrink-0">{index + 1}</span>
+                                  <span className="font-mono text-sm truncate">{cleanRoute}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-muted-foreground">{pct}%</span>
+                                  <Badge variant="secondary" className="text-xs tabular-nums">{item.count.toLocaleString()}</Badge>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Exit Pages */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <LogOut className="h-4 w-4 text-red-500" />
+                        <h4 className="text-sm font-semibold uppercase tracking-wider">Top Exit Pages</h4>
+                        <Badge variant="secondary" className="ml-auto text-xs">Where visitors leave</Badge>
+                      </div>
+                      <div className="space-y-2">
+                        {entryExit.topExitPages.map((item, index) => {
+                          let cleanRoute = item.page
+                          try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
+                          if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                          const maxCount = entryExit.topExitPages[0]?.count || 1
+                          const barWidth = (item.count / maxCount) * 100
+                          const pct = entryExit.totalSessions > 0 ? ((item.count / entryExit.totalSessions) * 100).toFixed(1) : '0'
+
+                          return (
+                            <div key={index} className="relative rounded-lg overflow-hidden">
+                              <div className="absolute inset-0 bg-gradient-to-r from-red-500/8 to-transparent" style={{ width: `${barWidth}%` }} />
+                              <div className="relative flex items-center justify-between p-3">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-5 h-5 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 text-xs font-bold shrink-0">{index + 1}</span>
+                                  <span className="font-mono text-sm truncate">{cleanRoute}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-muted-foreground">{pct}%</span>
+                                  <Badge variant="secondary" className="text-xs tabular-nums">{item.count.toLocaleString()}</Badge>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <LogIn className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">No entry/exit data available yet</p>
+                  <p className="text-sm mt-1">Data will appear once enough sessions are recorded</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* User Journeys Tab */}
+            <TabsContent value="paths" className="space-y-6 mt-0">
+              {sessionPaths && sessionPaths.paths.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/50 dark:from-indigo-950/50 dark:to-indigo-900/30 text-center">
+                      <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-300">{sessionPaths.totalSessions.toLocaleString()}</div>
+                      <div className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-1">Total Sessions</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-teal-50 to-teal-100/50 dark:from-teal-950/50 dark:to-teal-900/30 text-center">
+                      <div className="text-2xl font-bold text-teal-700 dark:text-teal-300">{sessionPaths.avgPagesPerSession}</div>
+                      <div className="text-xs font-medium text-teal-600 dark:text-teal-400 mt-1">Avg. Pages/Session</div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100/50 dark:from-orange-950/50 dark:to-orange-900/30 text-center col-span-2 sm:col-span-1">
+                      <div className="text-2xl font-bold text-orange-700 dark:text-orange-300">{sessionPaths.paths.length}</div>
+                      <div className="text-xs font-medium text-orange-600 dark:text-orange-400 mt-1">Unique Journeys</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Most Common Visitor Journeys</h4>
+                    <div className="space-y-3">
+                      {sessionPaths.paths.map((journey, index) => {
+                        const cleanPages = journey.pages.map(p => {
+                          let clean = p
+                          try { if (clean.includes('://')) clean = new URL(clean).pathname } catch {}
+                          if (!clean.startsWith('/')) clean = `/${clean}`
+                          return clean
+                        })
+
+                        return (
+                          <div key={index} className="p-4 rounded-xl bg-muted/20 hover:bg-muted/30 transition-colors border border-transparent hover:border-primary/10">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <Route className="h-4 w-4 text-primary" />
+                                <span className="text-sm font-semibold">Journey #{index + 1}</span>
+                                <Badge variant="outline" className="text-xs">{journey.depth} pages</Badge>
+                              </div>
+                              <Badge className="bg-primary/10 text-primary border-primary/20 tabular-nums">
+                                {journey.count} {journey.count === 1 ? 'session' : 'sessions'}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center flex-wrap gap-1.5">
+                              {cleanPages.map((page, pageIndex) => (
+                                <React.Fragment key={pageIndex}>
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background border text-xs font-mono truncate max-w-[180px]">
+                                    {page}
+                                  </span>
+                                  {pageIndex < cleanPages.length - 1 && (
+                                    <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  )}
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Route className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">No journey data available yet</p>
+                  <p className="text-sm mt-1">User journeys will appear as visitors navigate multiple pages</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+
       {/* Form Submissions Section */}
       {website && (
         <div className="grid grid-cols-1 gap-8">
@@ -938,10 +1356,9 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {/* Real-time Activity Section - Only show if there's activity */}
+      {/* Real-time Activity Section */}
        {shouldShowLiveActivity() && (
         <div className="grid grid-cols-1 gap-4 sm:gap-6 md:gap-8">
-          {/* Live Activity Feed */}
           <Card className="app-card border-0 bg-gradient-to-br from-green-50/30 to-emerald-50/30 dark:from-green-950/30 dark:to-emerald-950/30 shadow-lg ring-1 ring-green-200/50 dark:ring-green-800/50">
             <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
               <CardTitle className="flex items-center gap-3">
