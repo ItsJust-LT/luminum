@@ -19,33 +19,24 @@ self.addEventListener("push", function (event) {
   // Use the tag from the server (notification id), fallback to timestamp
   const tag = data.tag && data.tag.trim() !== "" ? data.tag : `notif-${Date.now()}`;
 
-  // Enhanced notification options with better Apple/iOS support
-  const options = {
+  // Enhanced notification options with better Apple/iOS support (plain JS for SW)
+  var options = {
     body: data.message || data.body || "You have a new notification",
-    data: data.data || {},               // additional data for clicks
     icon: data.icon || "/android-chrome-192x192.png",
     badge: data.badge || data.badgeColor || "/android-chrome-192x192.png",
-    image: data.image || undefined,      // Large image for better iOS support
-    tag: tag,                            // ensures renotify works
-    renotify: true,                      // safe now
-    requireInteraction: data.requireInteraction || false, // Keep notification visible
-    vibrate: data.vibrate || [200, 100, 200], // Vibration pattern
+    tag: tag,
+    renotify: true,
+    requireInteraction: data.requireInteraction || false,
+    vibrate: data.vibrate || [200, 100, 200],
     timestamp: data.timestamp || Date.now(),
-    // Apple/iOS specific options
-    sound: data.sound || 'default',      // Sound for iOS
-    dir: 'auto',                         // Text direction
-    lang: 'en',                          // Language
+    sound: data.sound || "default",
+    dir: "auto",
+    lang: "en"
   };
-  
-  // Add color for notification (Android/iOS) if provided
-  if (data.color) {
-    options.color = data.color;
-  }
-  
-  // Add actions for notification (if supported)
-  if (data.actions && Array.isArray(data.actions)) {
-    options.actions = data.actions;
-  }
+  options.data = data.data || {};
+  if (data.image) options.image = data.image;
+  if (data.color) options.color = data.color;
+  if (data.actions && Array.isArray(data.actions)) options.actions = data.actions;
 
   event.waitUntil(
     self.registration.showNotification(title, options)
