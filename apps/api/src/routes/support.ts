@@ -3,6 +3,7 @@ import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
 import { notifySupportTicketCreated, notifySupportMessage, notifySupportTicketResolved, notifySupportTicketUpdated } from "../lib/notifications/helpers.js";
+import { broadcastToTicket } from "../lib/realtime-ws.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -207,6 +208,11 @@ router.patch("/tickets/:id", async (req: Request, res: Response) => {
           await notifySupportTicketUpdated(ticket.id, ticket.ticket_number, ticket.title, ticket.user_id, ticket.organization_id || undefined);
         }
       }
+
+      broadcastToTicket(id, {
+        type: "support:status",
+        data: { ticketId: id, status: updates.status || ticket.status, changes, updatedBy: req.user.name },
+      });
     }
 
     res.json({ success: true, ticket: updated });
@@ -275,7 +281,12 @@ router.post("/tickets/:id/messages", async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ success: true, message: { ...msg, sender: msg.user_support_messages_sender_idTouser } });
+    const formattedMsg = { ...msg, sender: msg.user_support_messages_sender_idTouser };
+    if (!isInternal) {
+      broadcastToTicket(ticketId, { type: "support:message", data: formattedMsg }, req.user.id);
+    }
+
+    res.json({ success: true, message: formattedMsg });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 

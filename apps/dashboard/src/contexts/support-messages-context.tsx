@@ -2,24 +2,20 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useSession } from '@/lib/auth/client'
-import { addSupportMessage, getSupportTicket, getNewMessages, markTicketRead } from '@/lib/actions/support-actions'
+import { addSupportMessage, getSupportTicket, markTicketRead } from '@/lib/actions/support-actions'
 import { uploadFileToCloudinary } from '@/lib/actions/cloudinary-actions'
+import { useRealtime } from '@/components/realtime/realtime-provider'
 import type { SupportMessage, SupportTicket } from '@/lib/types/support'
 
 interface SupportMessagesContextType {
-  // State
   messages: SupportMessage[]
   ticket: SupportTicket | null
   loading: boolean
   sending: boolean
   uploading: boolean
-  
-  // Actions
   sendMessage: (message: string, attachments?: File[]) => Promise<boolean>
   refreshMessages: () => Promise<void>
   markAsRead: (messageId: string) => Promise<void>
-  
-  // Real-time
   isConnected: boolean
   reconnect: () => void
 }
@@ -32,23 +28,21 @@ interface SupportMessagesProviderProps {
   organizationId?: string
 }
 
-export function SupportMessagesProvider({ 
-  children, 
-  ticketId, 
-  organizationId 
+export function SupportMessagesProvider({
+  children,
+  ticketId,
+  organizationId,
 }: SupportMessagesProviderProps) {
   const { data: session } = useSession()
+  const { connected, subscribe, unsubscribe, onMessage } = useRealtime()
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [ticket, setTicket] = useState<SupportTicket | null>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [isConnected, setIsConnected] = useState(false)
 
-  // Fetch ticket and messages
   const fetchTicketAndMessages = useCallback(async () => {
     if (!session || !ticketId) return
-
     setLoading(true)
     try {
       const result = await getSupportTicket(ticketId)
@@ -63,41 +57,26 @@ export function SupportMessagesProvider({
     }
   }, [session, ticketId])
 
-  // Send message
   const sendMessage = useCallback(async (message: string, attachments?: File[]): Promise<boolean> => {
     if (!session || !ticketId || sending) return false
-
     setSending(true)
     try {
-      // Upload attachments if any
       let attachmentData: any[] = []
       if (attachments && attachments.length > 0) {
         setUploading(true)
         try {
-          console.log('Starting upload of', attachments.length, 'files')
           const uploadPromises = attachments.map(async (file) => {
-            console.log('Uploading file:', file.name, file.size, file.type)
             const formData = new FormData()
             formData.append('file', file)
             const result = await uploadFileToCloudinary(formData)
-            
-            console.log('Upload result:', result)
-            
-            if (!result.success) {
-              throw new Error(result.error || 'Upload failed')
-            }
-            
+            if (!result.success) throw new Error(result.error || 'Upload failed')
             return {
-              filename: file.name,
-              original_filename: file.name,
-              file_size: file.size,
-              mime_type: file.type,
-              cloudinary_public_id: result.data!.public_id,
-              cloudinary_url: result.data!.secure_url
+              filename: file.name, original_filename: file.name, file_size: file.size,
+              mime_type: file.type, cloudinary_public_id: result.data!.public_id,
+              cloudinary_url: result.data!.secure_url,
             }
           })
           attachmentData = await Promise.all(uploadPromises)
-          console.log('All uploads completed:', attachmentData)
         } catch (error) {
           console.error('Error uploading attachments:', error)
           throw new Error('Failed to upload attachments')
@@ -106,14 +85,8 @@ export function SupportMessagesProvider({
         }
       }
 
-      // Send message
-      const result = await addSupportMessage(ticketId, {
-        message,
-        attachments: attachmentData
-      })
-
+      const result = await addSupportMessage(ticketId, { message, attachments: attachmentData })
       if (result.success && result.data) {
-        // Add message to local state immediately for better UX
         const newMessage: SupportMessage = {
           id: result.data.id,
           ticket_id: ticketId,
@@ -125,14 +98,11 @@ export function SupportMessagesProvider({
           created_at: result.data.created_at ? (typeof result.data.created_at === 'string' ? result.data.created_at : result.data.created_at.toISOString()) : new Date().toISOString(),
           updated_at: result.data.created_at ? (typeof result.data.created_at === 'string' ? result.data.created_at : result.data.created_at.toISOString()) : new Date().toISOString(),
           sender: {
-            id: session.user.id,
-            name: session.user.name || 'You',
-            email: session.user.email,
-            image: session.user.image || undefined,
-            role: (session.user as { role?: string }).role || undefined
-          }
+            id: session.user.id, name: session.user.name || 'You',
+            email: session.user.email, image: session.user.image || undefined,
+            role: (session.user as { role?: string }).role || undefined,
+          },
         }
-        
         setMessages(prev => [...prev, newMessage])
         return true
       }
@@ -145,7 +115,6 @@ export function SupportMessagesProvider({
     }
   }, [session, ticketId, sending])
 
-  // Refresh messages
   const refreshMessages = useCallback(async () => {
     await fetchTicketAndMessages()
   }, [fetchTicketAndMessages])
@@ -155,48 +124,47 @@ export function SupportMessagesProvider({
   }, [ticketId])
 
   const reconnect = useCallback(() => {
-    setIsConnected(false)
-    fetchTicketAndMessages().then(() => setIsConnected(true))
+    fetchTicketAndMessages()
   }, [fetchTicketAndMessages])
 
+  // Initial fetch
   useEffect(() => {
     fetchTicketAndMessages()
   }, [fetchTicketAndMessages])
 
-  // Poll for new messages every 4 seconds
+  // Subscribe to support ticket channel via unified WS
   useEffect(() => {
-    if (!session || !ticketId) return
-    let lastPoll = new Date().toISOString()
-    setIsConnected(true)
+    if (!ticketId || !connected) return
+    subscribe(`support:${ticketId}`)
+    return () => { unsubscribe(`support:${ticketId}`) }
+  }, [ticketId, connected, subscribe, unsubscribe])
 
-    const interval = setInterval(async () => {
-      try {
-        const result = await getNewMessages(ticketId, lastPoll)
-        if (result.success && result.data?.length > 0) {
-          setMessages(prev => {
-            const existingIds = new Set(prev.map(m => m.id))
-            const newMsgs = result.data.filter((m: any) => !existingIds.has(m.id))
-            return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev
-          })
-          lastPoll = new Date().toISOString()
-        }
-      } catch {}
-    }, 4000)
+  // Listen for new messages via WS
+  useEffect(() => {
+    const unsub = onMessage("support:message", (data: any) => {
+      if (data?.ticket_id !== ticketId && data?.ticketId !== ticketId) return
+      const msg = data as SupportMessage
+      setMessages(prev => {
+        if (prev.find(m => m.id === msg.id)) return prev
+        return [...prev, msg]
+      })
+    })
+    return unsub
+  }, [ticketId, onMessage])
 
-    return () => clearInterval(interval)
-  }, [session, ticketId])
+  // Listen for status changes
+  useEffect(() => {
+    const unsub = onMessage("support:status", (data: any) => {
+      if (data?.ticketId !== ticketId) return
+      setTicket(prev => prev ? { ...prev, status: data.status } : prev)
+    })
+    return unsub
+  }, [ticketId, onMessage])
 
   const value: SupportMessagesContextType = {
-    messages,
-    ticket,
-    loading,
-    sending,
-    uploading,
-    sendMessage,
-    refreshMessages,
-    markAsRead,
-    isConnected,
-    reconnect
+    messages, ticket, loading, sending, uploading,
+    sendMessage, refreshMessages, markAsRead,
+    isConnected: connected, reconnect,
   }
 
   return (

@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import {
+  Activity,
   Building2,
   ChevronDown,
   LayoutDashboard,
@@ -73,6 +74,7 @@ export function AdminSidebar({
     },
     { title: "Emails", href: "/admin/emails", icon: Mail },
     { title: "Websites", href: "/admin/websites", icon: Globe },
+    { title: "User Activity", href: "/admin/activity", icon: Activity },
   ]
 
   const managementItems = [

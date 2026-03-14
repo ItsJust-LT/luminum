@@ -6,7 +6,7 @@ import { toNodeHandler } from "better-auth/node";
 import { config } from "./config.js";
 import { logger } from "./lib/logger.js";
 import { auth } from "./auth/config.js";
-import { attachAnalyticsLiveWS } from "./lib/analytics-live-ws.js";
+import { attachRealtimeWS } from "./lib/realtime-ws.js";
 import { emailsRouter } from "./routes/emails.js";
 import { formsRouter } from "./routes/forms.js";
 import { organizationSettingsRouter } from "./routes/organization-settings.js";
@@ -33,6 +33,7 @@ import { adminAnalyticsRouter } from "./routes/admin-analytics.js";
 import { adminFormsRouter } from "./routes/admin-forms.js";
 import { adminEmailsRouter } from "./routes/admin-emails.js";
 import { adminWebsitesRouter } from "./routes/admin-websites.js";
+import { adminActivityRouter } from "./routes/admin-activity.js";
 import { cronRouter } from "./routes/cron.js";
 
 const app = express();
@@ -101,6 +102,7 @@ app.use("/api/admin/analytics", adminAnalyticsRouter);
 app.use("/api/admin/forms", adminFormsRouter);
 app.use("/api/admin/emails", adminEmailsRouter);
 app.use("/api/admin/websites", adminWebsitesRouter);
+app.use("/api/admin/activity", adminActivityRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/paystack", paystackRouter);
 app.use("/api/support", supportRouter);
@@ -117,7 +119,7 @@ app.use("/api/analytics", analyticsRouter);
 
 // ─── HTTP server & WebSocket ──────────────────────────────────────────────
 const httpServer = createServer(app);
-attachAnalyticsLiveWS(httpServer);
+attachRealtimeWS(httpServer);
 
 httpServer.listen(config.port, () => {
   logger.info("API server started", {

@@ -9,6 +9,7 @@ import {
   formatNotificationMessage,
 } from "./templates.js";
 import { auth } from "../../auth/config.js";
+import { broadcastToUser } from "../realtime-ws.js";
 
 
 async function getOrganizationSlug(
@@ -145,6 +146,12 @@ export async function sendNotification({
 
     if (inserted && inserted.length > 0) {
       await sendPushNotifications(inserted);
+
+      for (const notif of inserted) {
+        if (notif.user_id) {
+          broadcastToUser(notif.user_id, { type: "notification", data: notif });
+        }
+      }
     }
 
     return { success: true, notifications: inserted };

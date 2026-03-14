@@ -1,4 +1,4 @@
-generator client {
+ generator client {
   provider = "prisma-client-js"
 }
 
@@ -421,7 +421,9 @@ model user {
   banned                                            Boolean?
   banReason                                         String?
   banExpires                                        DateTime?                     @db.Timestamp(6)
+  lastSeenAt                                        DateTime?                     @db.Timestamp(6)
   accounts                                          account[]
+  dashboard_activity                                dashboard_activity[]
   device_subscriptions                              device_subscriptions[]
   invitation                                        invitation[]
   member                                            member[]
@@ -434,6 +436,18 @@ model user {
   support_ticket_participants                       support_ticket_participants[]
   support_tickets_support_tickets_assigned_toTouser support_tickets[]             @relation("support_tickets_assigned_toTouser")
   support_tickets_support_tickets_user_idTouser     support_tickets[]             @relation("support_tickets_user_idTouser")
+}
+
+model dashboard_activity {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String
+  session_start DateTime  @db.Timestamp(6)
+  session_end   DateTime? @db.Timestamp(6)
+  duration_ms   Int       @default(0)
+  date          DateTime  @db.Date
+  user          user      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, date])
 }
 
 model verification {

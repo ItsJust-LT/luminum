@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Users, Shield, User2, UserMinus, Mail, X } from "lucide-react"
+import { useRealtime } from "@/components/realtime/realtime-provider"
 import { OrganizationInviteDialog } from "@/components/dashboard/organization-invite-dialog"
 import { RemoveMemberDialog } from "@/components/dashboard/remove-member-dialog"
 import { CancelInvitationDialog } from "@/components/dashboard/cancel-invitation-dialog"
@@ -43,6 +44,7 @@ interface OrganizationInvitation {
 export default function TeamPage() {
   const router = useRouter()
   const { organization, userRole, loading: orgLoading, error: orgError } = useOrganization()
+  const { onlineUsers } = useRealtime()
   const [members, setMembers] = useState<OrganizationMember[]>([])
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>([])
   const [loading, setLoading] = useState(true)
@@ -202,16 +204,22 @@ export default function TeamPage() {
             <div className="py-12 sm:py-16 text-center text-muted-foreground text-sm">No members found.</div>
           ) : (
             <div className="divide-y divide-border/50">
-              {members.map((m) => (
+              {members.map((m) => {
+                const isOnline = m.userId ? onlineUsers.has(m.userId) : false
+                return (
                 <div key={m.id} className="flex items-center gap-3 sm:gap-4 py-3.5 sm:py-4">
-                  <Avatar className="h-9 w-9">
-                    <AvatarImage src={m.user?.image || ""} />
-                    <AvatarFallback>{(m.user?.name?.[0] || m.user?.email?.[0] || "U").toUpperCase()}</AvatarFallback>
-                  </Avatar>
+                  <div className="relative">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={m.user?.image || ""} />
+                      <AvatarFallback>{(m.user?.name?.[0] || m.user?.email?.[0] || "U").toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-background ${isOnline ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600"}`} />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-foreground truncate">{m.user?.name || m.user?.email || "User"}</span>
                       {m.role === "owner" ? <Shield className="h-4 w-4 text-violet-500" /> : m.role === "admin" ? <Shield className="h-4 w-4 text-slate-500" /> : <User2 className="h-4 w-4 text-emerald-500" />}
+                      {isOnline && <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">Online</span>}
                     </div>
                     {m.user?.email && (
                       <div className="text-xs text-muted-foreground truncate">{m.user.email}</div>
@@ -232,7 +240,8 @@ export default function TeamPage() {
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>

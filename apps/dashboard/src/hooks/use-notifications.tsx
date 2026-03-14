@@ -1,13 +1,12 @@
 /**
- * React hook for notifications with Ably realtime support
+ * React hook for notifications with unified WebSocket realtime support
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from '@/lib/auth/client';
 import { fetchNotifications, getUnreadCount as getUnreadCountAction, markNotificationRead, markAllNotificationsRead } from '@/lib/notifications/actions';
 import { Notification, NotificationFilter, NotificationStats } from '@/lib/notifications/types';
-import { useUserNotificationChannel } from '@/lib/ably/client';
-import { UserNotificationEvents } from '@/lib/ably/events';
+import { useRealtime } from '@/components/realtime/realtime-provider';
 
 // Convert database notification to client notification format
 function convertToNotification(record: any): Notification {
@@ -27,19 +26,18 @@ function convertToNotification(record: any): Notification {
   };
 }
 
-// Convert Ably notification data to client notification format
-function convertAblyNotification(eventType: string, data: any): Notification {
+function convertWsNotification(data: any): Notification {
   return {
-    id: data.id || `ably-${Date.now()}-${Math.random()}`,
+    id: data.id || `ws-${Date.now()}-${Math.random()}`,
     type: (data.type as any) || 'info',
     title: data.title || 'Notification',
     message: data.message || '',
     data: data.data || data,
-    timestamp: data.timestamp ? new Date(data.timestamp).getTime() : Date.now(),
+    timestamp: data.created_at ? new Date(data.created_at).getTime() : Date.now(),
     read: false,
-    priority: (data.priority === 'urgent' ? 'high' : data.priority) || 'normal',
-    userId: data.userId,
-    organizationId: data.organizationId,
+    priority: (data.data?.priority === 'urgent' ? 'high' : data.data?.priority) || 'normal',
+    userId: data.user_id,
+    organizationId: data.data?.organizationId,
   };
 }
 
@@ -110,36 +108,34 @@ export function useNotifications() {
     });
   }, []);
 
-  // Handle realtime notifications from Ably
-  const handleRealtimeNotification = useCallback((eventType: string, data: any) => {
-    const notification = convertAblyNotification(eventType, data);
-    
-    // Add notification to the list
-    setNotifications(prev => {
-      const exists = prev.find(n => n.id === notification.id);
-      if (exists) return prev;
-      return [notification, ...prev];
-    });
-    
-    // Update stats
-    setStats(prev => ({
-      ...prev,
-      total: prev.total + 1,
-      unread: prev.unread + 1,
-    }));
-    
-    // Trigger custom event for popup component
-    window.dispatchEvent(new CustomEvent('realtime-notification', { 
-      detail: notification 
-    }));
-  }, []);
+  const { connected: wsConnected, onMessage } = useRealtime()
 
-  // Subscribe to user notification channel
-  const { connected: ablyConnected } = useUserNotificationChannel(handleRealtimeNotification)
-  
   useEffect(() => {
-    setIsConnected(ablyConnected)
-  }, [ablyConnected])
+    setIsConnected(wsConnected)
+  }, [wsConnected])
+
+  useEffect(() => {
+    const unsubscribe = onMessage("notification", (data: any) => {
+      const notification = convertWsNotification(data);
+
+      setNotifications(prev => {
+        if (prev.find(n => n.id === notification.id)) return prev;
+        return [notification, ...prev];
+      });
+
+      setStats(prev => ({
+        ...prev,
+        total: prev.total + 1,
+        unread: prev.unread + 1,
+      }));
+
+      window.dispatchEvent(new CustomEvent('realtime-notification', {
+        detail: notification,
+      }));
+    });
+
+    return unsubscribe;
+  }, [onMessage])
 
   // Load initial notifications
   useEffect(() => {

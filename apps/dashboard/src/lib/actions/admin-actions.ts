@@ -105,3 +105,16 @@ export async function updateUser(userId: string, data: any) {
 export async function deactivateUser(userId: string, reason?: string) {
   return serverPost(`/api/user-management/users/${userId}/deactivate`, { reason })
 }
+
+// Activity analytics
+export async function getActivityOverview() {
+  return serverGet("/api/admin/activity/overview")
+}
+
+export async function getActivityUsers(period: string = "week", search?: string, limit: number = 50, offset: number = 0) {
+  return serverGet("/api/admin/activity/users", { period, search, limit, offset })
+}
+
+export async function getActivityUser(userId: string, period: string = "month") {
+  return serverGet(`/api/admin/activity/user/${userId}`, { period })
+}

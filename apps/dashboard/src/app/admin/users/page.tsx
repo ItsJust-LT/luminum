@@ -53,9 +53,11 @@ import { reactivateUser } from "@/lib/actions/admin-actions"
 import { formatDate, formatNumber } from "@/lib/utils"
 import { toast } from "sonner"
 import { authClient } from "@/lib/auth/client"
+import { useRealtime } from "@/components/realtime/realtime-provider"
 
 export default function AdminUsersPage() {
   const router = useRouter()
+  const { onlineUsers } = useRealtime()
   const [users, setUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -281,16 +283,21 @@ export default function AdminUsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((user) => (
+                {filtered.map((user) => {
+                  const isOnline = onlineUsers.has(user.id)
+                  return (
                   <TableRow key={user.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9">
-                          <AvatarImage src={user.image || ""} />
-                          <AvatarFallback className="text-xs bg-primary/10 text-primary font-medium">
-                            {user.name?.charAt(0).toUpperCase() || "U"}
-                          </AvatarFallback>
-                        </Avatar>
+                        <div className="relative">
+                          <Avatar className="h-9 w-9">
+                            <AvatarImage src={user.image || ""} />
+                            <AvatarFallback className="text-xs bg-primary/10 text-primary font-medium">
+                              {user.name?.charAt(0).toUpperCase() || "U"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-background ${isOnline ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600"}`} />
+                        </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{user.name || "Unknown"}</p>
                           <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -306,11 +313,15 @@ export default function AdminUsersPage() {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{user._count?.session || 0}</TableCell>
                     <TableCell>
-                      {user.banned ? (
-                        <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 text-xs">Banned</Badge>
-                      ) : (
-                        <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-xs">Active</Badge>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {user.banned ? (
+                          <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 text-xs">Banned</Badge>
+                        ) : isOnline ? (
+                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-xs">Online</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Offline</Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {formatDate(user.createdAt, { relative: true })}
@@ -355,7 +366,8 @@ export default function AdminUsersPage() {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           ) : (

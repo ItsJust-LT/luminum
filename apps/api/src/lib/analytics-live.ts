@@ -6,6 +6,13 @@
 import { WebSocket } from "ws";
 import { randomBytes } from "node:crypto";
 
+type BroadcastFn = (channel: string, message: { type: string; data: any }) => void;
+let _broadcastToChannel: BroadcastFn | null = null;
+
+export function setAnalyticsBroadcaster(fn: BroadcastFn): void {
+  _broadcastToChannel = fn;
+}
+
 // Current live count per websiteId (from Go)
 const liveCountByWebsite = new Map<string, number>();
 
@@ -46,6 +53,16 @@ export function consumeLiveToken(
 
 export function setLiveCount(websiteId: string, count: number): void {
   liveCountByWebsite.set(websiteId, count);
+
+  // Broadcast to unified WS subscribers
+  if (_broadcastToChannel) {
+    _broadcastToChannel(`analytics:${websiteId}`, {
+      type: "analytics:live",
+      data: { websiteId, live: count },
+    });
+  }
+
+  // Legacy WS clients
   const clients = clientsByWebsite.get(websiteId);
   if (!clients) return;
   const payload = JSON.stringify({ type: "live_count", data: { live: count } });
