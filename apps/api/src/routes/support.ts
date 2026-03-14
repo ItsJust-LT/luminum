@@ -353,7 +353,7 @@ router.get("/stats", adminOnly, async (_req: Request, res: Response) => {
     });
     let avgResolutionMs = 0;
     if (recentlyResolved.length > 0) {
-      const totalMs = recentlyResolved.reduce((sum, t) => sum + ((t.resolved_at?.getTime() || 0) - t.created_at.getTime()), 0);
+      const totalMs = recentlyResolved.reduce((sum, t) => sum + ((t.resolved_at?.getTime() || 0) - (t.created_at?.getTime() || 0)), 0);
       avgResolutionMs = totalMs / recentlyResolved.length;
     }
     const avgResolutionHours = Math.round(avgResolutionMs / (1000 * 60 * 60));
@@ -367,7 +367,7 @@ router.get("/stats", adminOnly, async (_req: Request, res: Response) => {
     for (const t of firstResponseTimes) {
       const adminReply = t.support_messages.find((m, i) => i > 0);
       if (adminReply) {
-        avgFirstResponseMs += adminReply.created_at.getTime() - t.created_at.getTime();
+        avgFirstResponseMs += (adminReply.created_at?.getTime() || 0) - (t.created_at?.getTime() || 0);
         responseCount++;
       }
     }

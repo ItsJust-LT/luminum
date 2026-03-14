@@ -71,8 +71,8 @@ router.get("/", async (req: Request, res: Response) => {
     if (search) {
       where.OR = [
         { subject: { contains: search, mode: "insensitive" } },
-        { from_address: { contains: search, mode: "insensitive" } },
-        { to_address: { contains: search, mode: "insensitive" } },
+        { from: { contains: search, mode: "insensitive" } },
+        { to: { contains: search, mode: "insensitive" } },
       ];
     }
 
@@ -80,7 +80,7 @@ router.get("/", async (req: Request, res: Response) => {
       prisma.email.findMany({
         where,
         select: {
-          id: true, subject: true, from_address: true, to_address: true,
+          id: true, subject: true, from: true, to: true,
           direction: true, read: true, receivedAt: true, organization_id: true,
           organization: { select: { id: true, name: true, slug: true } },
         },
