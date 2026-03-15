@@ -87,6 +87,21 @@ router.get("/organizations", adminOnly, async (req: Request, res: Response) => {
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 
+// GET /api/admin/organizations/by-slug?slug=...
+// Returns full organization by slug so admins can access any org's dashboard without being a member.
+router.get("/organizations/by-slug", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const slug = (req.query as { slug?: string }).slug;
+    if (!slug) return res.status(400).json({ success: false, error: "Missing slug" });
+    const org = await prisma.organization.findUnique({
+      where: { slug },
+      include: { members: { include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true, invitations: { where: { status: "pending" } } },
+    });
+    if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
+    jsonSafe(res, { success: true, organization: org, members: org.members });
+  } catch (error: any) { res.json({ success: false, error: error.message }); }
+});
+
 // GET /api/admin/organizations/:id
 router.get("/organizations/:id", adminOnly, async (req: Request, res: Response) => {
   try {

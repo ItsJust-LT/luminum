@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { createLiveToken, getLivePages } from "../lib/analytics-live.js";
-import { cacheGet, cacheSet } from "../lib/redis-cache.js";
+import { cacheGet, cacheSet, isAnalyticsDirty } from "../lib/redis-cache.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 
@@ -65,8 +65,11 @@ router.get("/overview", async (req: Request, res: Response) => {
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:overview:${website.id}:${start}:${end}`;
-    const cached = await cacheGet(cacheKey);
-    if (cached != null) return res.json(cached);
+    const skipCache = await isAnalyticsDirty(website.id);
+    if (!skipCache) {
+      const cached = await cacheGet(cacheKey);
+      if (cached != null) return res.json(cached);
+    }
 
     const startDate = new Date(start);
     const endDate = new Date(end);
@@ -113,8 +116,11 @@ router.get("/timeseries", async (req: Request, res: Response) => {
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:timeseries:${website.id}:${start}:${end}:${granularity}`;
-    const cached = await cacheGet(cacheKey);
-    if (cached != null) return res.json(cached);
+    const skipCache = await isAnalyticsDirty(website.id);
+    if (!skipCache) {
+      const cached = await cacheGet(cacheKey);
+      if (cached != null) return res.json(cached);
+    }
 
     const startDate = new Date(start);
     const endDate = new Date(end);

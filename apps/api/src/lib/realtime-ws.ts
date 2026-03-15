@@ -9,6 +9,8 @@ import {
   subscribeClient as legacySubscribe,
   unsubscribeClient as legacyUnsubscribe,
   setAnalyticsBroadcaster,
+  getLiveCount,
+  getLivePages,
 } from "./analytics-live.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -246,6 +248,16 @@ function handleClientMessage(client: ConnectedClient, msg: WsMessage): void {
     case "subscribe":
       if (msg.channel && canSubscribe(client, msg.channel)) {
         subscribe(client, msg.channel);
+        // When subscribing to analytics channel, send current live state immediately
+        if (msg.channel.startsWith("analytics:")) {
+          const websiteId = msg.channel.slice("analytics:".length);
+          const live = getLiveCount(websiteId);
+          const pages = getLivePages(websiteId);
+          safeSend(client.ws, JSON.stringify({
+            type: "analytics:live",
+            data: { websiteId, live, pages },
+          }));
+        }
       }
       break;
 

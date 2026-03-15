@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { setLiveCount, setLivePages } from "../lib/analytics-live.js";
 import { broadcastToChannel } from "../lib/realtime-ws.js";
+import { setAnalyticsDirty } from "../lib/redis-cache.js";
 import { rateLimitWebhook } from "../middleware/rate-limit.js";
 import { backupLiveCountToRedis } from "../lib/redis-live.js";
 
@@ -20,6 +21,7 @@ function verifyWebhookSecret(req: Request, res: Response): boolean {
 // POST /api/analytics/live-update
 // Called by the Go analytics service when viewer count changes for a website.
 // Now also accepts per-page visitor counts.
+// Store under both website.id and website.website_id so dashboard gets count regardless of which it subscribes with.
 router.post("/live-update", async (req: Request, res: Response) => {
   try {
     if (!verifyWebhookSecret(req, res)) return;
@@ -34,6 +36,19 @@ router.post("/live-update", async (req: Request, res: Response) => {
 
     if (pages && typeof pages === "object") {
       setLivePages(websiteId, pages);
+    }
+
+    const website = await prisma.websites.findFirst({
+      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
+      select: { id: true, website_id: true },
+    });
+    if (website && website.id !== websiteId) {
+      setLiveCount(website.id, live);
+      if (pages && typeof pages === "object") setLivePages(website.id, pages);
+    }
+    if (website?.website_id && website.website_id !== websiteId) {
+      setLiveCount(website.website_id, live);
+      if (pages && typeof pages === "object") setLivePages(website.website_id, pages);
     }
 
     res.json({ success: true });
@@ -120,6 +135,10 @@ router.post("/event-notify", async (req: Request, res: Response) => {
       broadcastToChannel(`analytics:${website.id}`, { type: "analytics:event", data });
       if (website.website_id && website.website_id !== website.id) {
         broadcastToChannel(`analytics:${website.website_id}`, { type: "analytics:event", data });
+      }
+      await setAnalyticsDirty(website.id);
+      if (website.website_id && website.website_id !== website.id) {
+        await setAnalyticsDirty(website.website_id);
       }
     }
 

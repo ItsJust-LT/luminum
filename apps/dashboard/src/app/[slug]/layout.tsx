@@ -44,6 +44,7 @@ import NotificationBell from "@/components/NotificationBell"
 import { getUnseenFormsCount } from "@/lib/actions/forms"
 import { getUnreadEmailCount } from "@/lib/actions/emails"
 import { getOrganizationEmailsEnabled } from "@/lib/actions/organization-settings"
+import { getFullOrganizationBySlugForAdmin } from "@/lib/actions/admin-organization-actions"
 import { UserNotificationProvider } from "@/components/realtime/user-notification-provider"
 import { useDisplayMode } from "@/lib/hooks/use-display-mode"
 import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
@@ -130,18 +131,21 @@ export default function SlugLayout({
         }
       }
 
-      // Find the organization by slug
+      // Find the organization by slug (from orgs user is a member of)
       let targetOrg = orgsResult.data?.find?.((org) => org.slug === slug)
+      let adminOrgData: { organization: any; members: any[] } | null = null
+
       if (!targetOrg) {
-        // Try resolve via Better Auth by slug for admins
-        const isAdminBySlug = (session?.user as { role?: string })?.role === "admin" || (session?.user as { role?: string })?.role?.includes?.("admin")
-        if (isAdminBySlug) {
-          const bySlug = await orgApi.getFullOrganization({
-            query: { organizationSlug: slug, membersLimit: 200 },
-          })
-          const bySlugData: any = (bySlug as any).data
-          if (!bySlug.error && bySlugData && (bySlugData.organization || bySlugData.id)) {
-            targetOrg = (bySlugData.organization ?? bySlugData) as any
+        const isAdmin = (session?.user as { role?: string })?.role === "admin" || (session?.user as { role?: string })?.role?.includes?.("admin")
+        if (isAdmin) {
+          const adminRes = await getFullOrganizationBySlugForAdmin(slug)
+          const data = adminRes as { organization?: any; members?: any[] }
+          if (data?.organization) {
+            targetOrg = data.organization
+            adminOrgData = {
+              organization: data.organization,
+              members: data.members ?? data.organization?.members ?? [],
+            }
           } else {
             setState({
               organization: null,
@@ -164,31 +168,24 @@ export default function SlugLayout({
         }
       }
 
-      // Get detailed organization information including user's role
-      if (!targetOrg) {
-        setState({
-          organization: null,
-          loading: false,
-          error: "Organization not found",
-          userRole: null,
-          sidebarData: null,
+      // Get detailed organization information (skip if we already have it from admin API)
+      let orgData: { organization: any; members: any[] }
+      if (adminOrgData) {
+        orgData = adminOrgData
+      } else {
+        const orgDetailsResult = await orgApi.getFullOrganization({
+          query: {
+            organizationId: targetOrg!.id,
+            organizationSlug: slug,
+            membersLimit: 200,
+          },
         })
-        return
+        if (orgDetailsResult.error) {
+          throw new Error(orgDetailsResult.error.message || "Failed to fetch organization details")
+        }
+        orgData = (orgDetailsResult.data as any) || {}
       }
 
-      const orgDetailsResult = await orgApi.getFullOrganization({
-        query: {
-          organizationId: targetOrg.id,
-          organizationSlug: slug,
-          membersLimit: 200,
-        },
-      })
-
-      if (orgDetailsResult.error) {
-        throw new Error(orgDetailsResult.error.message || "Failed to fetch organization details")
-      }
-
-      const orgData = orgDetailsResult.data as any
       const organization = orgData.organization || targetOrg
       const members = orgData.members || []
 

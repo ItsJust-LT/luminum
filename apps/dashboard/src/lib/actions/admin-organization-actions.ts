@@ -10,6 +10,11 @@ export async function getOrganizationDetailsAsAdmin(organizationId: string) {
   return serverGet(`/api/admin/organizations/${organizationId}`)
 }
 
+/** Fetch full organization by slug (admin only). Used so admins can open any org's dashboard without being a member. */
+export async function getFullOrganizationBySlugForAdmin(slug: string) {
+  return serverGet("/api/admin/organizations/by-slug", { slug })
+}
+
 export async function createOrganizationWithOwner(data: any) {
   return serverPost("/api/admin/create-organization", data)
 }
