@@ -303,9 +303,9 @@ export default function AnalyticsPage() {
 
       if (overview) setOverviewData(overview as OverviewData)
       setTimeSeriesData(Array.isArray((timeseries as { data?: unknown[] })?.data) ? (timeseries as { data: unknown[] }).data : [])
-      setTopPages(pages ?? [])
-      setTopCountries(countries ?? [])
-      setDeviceData(devices ?? [])
+      setTopPages((pages ?? []) as MetricCount[])
+      setTopCountries((countries ?? []) as MetricCount[])
+      setDeviceData((devices ?? []) as MetricCount[])
       setLiveData({
         activeVisitors: (realtime as { activeVisitors?: number })?.activeVisitors ?? 0,
         recentEvents: ((realtime as { recentEvents?: LiveData["recentEvents"] })?.recentEvents ?? []) as LiveData["recentEvents"],
