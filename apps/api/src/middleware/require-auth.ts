@@ -20,7 +20,7 @@ const UNAUTHENTICATED_MESSAGE = "Authentication required";
  * Ensures user has role set (for admin bypass). Session may not include role; load from DB if missing.
  * Exported for use in WebSocket upgrade (realtime-ws) so admin role is available there too.
  */
-export async function ensureUserRole(user: { id: string; role?: string }): Promise<void> {
+export async function ensureUserRole(user: { id: string; role?: string | null }): Promise<void> {
   if (user.role !== undefined && user.role !== null) return;
   const row = await prisma.user.findUnique({
     where: { id: user.id },

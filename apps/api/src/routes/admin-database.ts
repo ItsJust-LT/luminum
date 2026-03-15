@@ -51,10 +51,15 @@ router.get("/tables", requireAuth, adminOnly, async (_req: Request, res: Respons
   }
 });
 
+function paramTableName(req: Request): string {
+  const p = req.params.tableName;
+  return Array.isArray(p) ? (p[0] ?? "") : (p ?? "");
+}
+
 /** GET /api/admin/database/tables/:tableName/schema — columns + primary key */
 router.get("/tables/:tableName/schema", requireAuth, adminOnly, async (req: Request, res: Response) => {
   try {
-    const tableName = req.params.tableName;
+    const tableName = paramTableName(req);
     const valid = await validateTableName(tableName);
     if (!valid) {
       res.status(400).json({ success: false, error: "Invalid or unknown table" });
@@ -95,7 +100,7 @@ router.get("/tables/:tableName/schema", requireAuth, adminOnly, async (req: Requ
 /** GET /api/admin/database/tables/:tableName/rows?page=1&limit=50 */
 router.get("/tables/:tableName/rows", requireAuth, adminOnly, async (req: Request, res: Response) => {
   try {
-    const tableName = req.params.tableName;
+    const tableName = paramTableName(req);
     const valid = await validateTableName(tableName);
     if (!valid) {
       res.status(400).json({ success: false, error: "Invalid or unknown table" });
@@ -131,7 +136,7 @@ router.get("/tables/:tableName/rows", requireAuth, adminOnly, async (req: Reques
 /** PATCH /api/admin/database/tables/:tableName/rows — update one row by primary key */
 router.patch("/tables/:tableName/rows", requireAuth, adminOnly, async (req: Request, res: Response) => {
   try {
-    const tableName = req.params.tableName;
+    const tableName = paramTableName(req);
     const valid = await validateTableName(tableName);
     if (!valid) {
       res.status(400).json({ success: false, error: "Invalid or unknown table" });
