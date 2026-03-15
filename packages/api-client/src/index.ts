@@ -71,6 +71,12 @@ function createApiClient(baseUrl: string = "") {
   const emails = {
     checkEnabled: (organizationId: string) =>
       get("/api/emails/enabled", { organizationId }),
+    getSetupStatus: (organizationId: string) =>
+      get("/api/emails/setup-status", { organizationId }),
+    setupDomain: (organizationId: string, websiteId: string) =>
+      post("/api/emails/setup-domain", { organizationId, websiteId }),
+    verifyDns: (organizationId: string) =>
+      post("/api/emails/verify-dns", { organizationId }),
     getAddresses: (organizationId: string) =>
       get("/api/emails/addresses", { organizationId }),
     list: (
@@ -188,7 +194,8 @@ function createApiClient(baseUrl: string = "") {
   // ─── Admin ────────────────────────────────────────────────
   const admin = {
     getDashboardStats: () => get("/api/admin/dashboard-stats"),
-    getOrganizations: () => get("/api/admin/organizations"),
+    getOrganizations: (params?: Record<string, string>) =>
+      get("/api/admin/organizations", params),
     getOrganization: (id: string) => get(`/api/admin/organizations/${id}`),
     createOrganization: (data: any) =>
       post("/api/admin/create-organization", data),
@@ -197,6 +204,46 @@ function createApiClient(baseUrl: string = "") {
       post("/api/admin/search-paystack-customers", { email }),
     checkDomain: (domain: string) =>
       post("/api/admin/check-domain", { domain }),
+    getActivityOverview: (params?: { period?: string }) =>
+      get("/api/admin/activity/overview", params),
+    getActivityUsers: (params?: { period?: string; search?: string; limit?: number; offset?: number }) =>
+      get("/api/admin/activity/users", params),
+    getServerMetrics: () => get("/api/admin/monitoring/metrics"),
+    getSystemLogs: (params?: { page?: number; limit?: number; service?: string; level?: string; since?: string }) =>
+      get("/api/admin/logs", params),
+    getAdminEmails: (params?: Record<string, any>) =>
+      get("/api/admin/emails", params),
+    getAdminEmailStats: (params?: { start?: string; end?: string }) =>
+      get("/api/admin/emails/stats", params),
+    getAdminWebsites: (params?: Record<string, any>) =>
+      get("/api/admin/websites", params),
+    getAdminWebsiteStats: () => get("/api/admin/websites/stats"),
+    getAdminFormSubmissions: (params?: Record<string, any>) =>
+      get("/api/admin/forms/submissions", params),
+    getAdminFormStats: () => get("/api/admin/forms/stats"),
+    updateAdminFormSubmissionStatus: (id: string, data: { seen?: boolean; contacted?: boolean }) =>
+      patch(`/api/admin/forms/submissions/${id}/status`, data),
+    getAdminAnalyticsOverview: (start: string, end: string) =>
+      get("/api/admin/analytics/overview", { start, end }),
+    getAdminAnalyticsTimeseries: (start: string, end: string, granularity?: string) =>
+      get("/api/admin/analytics/timeseries", { start, end, granularity }),
+    getAdminAnalyticsBreakdown: (start: string, end: string, by?: string, limit?: number) =>
+      get("/api/admin/analytics/breakdown", { start, end, by, limit }),
+    getAdminAnalyticsTopPages: (start: string, end: string, limit?: number) =>
+      get("/api/admin/analytics/top-pages", { start, end, limit }),
+    getAdminAnalyticsCountries: (start: string, end: string, limit?: number) =>
+      get("/api/admin/analytics/countries", { start, end, limit }),
+    getAdminAnalyticsDevices: (start: string, end: string, limit?: number) =>
+      get("/api/admin/analytics/devices", { start, end, limit }),
+    getDatabaseTables: () => get("/api/admin/database/tables"),
+    getDatabaseTableSchema: (tableName: string) =>
+      get(`/api/admin/database/tables/${encodeURIComponent(tableName)}/schema`),
+    getDatabaseTableRows: (tableName: string, params?: { page?: number; limit?: number }) =>
+      get(`/api/admin/database/tables/${encodeURIComponent(tableName)}/rows`, params),
+    updateDatabaseRow: (tableName: string, data: { primaryKey: Record<string, unknown>; data: Record<string, unknown> }) =>
+      patch(`/api/admin/database/tables/${encodeURIComponent(tableName)}/rows`, data),
+    runDatabaseSql: (query: string) =>
+      post("/api/admin/database/sql", { query }),
   };
 
   // ─── Paystack ─────────────────────────────────────────────
@@ -222,6 +269,112 @@ function createApiClient(baseUrl: string = "") {
       get(`/api/paystack/transaction-timeline/${id}`),
   };
 
+  // ─── Analytics ────────────────────────────────────────────
+  const analytics = {
+    getOverview: (websiteId: string, start: string, end: string) =>
+      get("/api/analytics/overview", { websiteId, start, end }),
+    getTimeSeries: (
+      websiteId: string,
+      start: string,
+      end: string,
+      granularity: "hour" | "day"
+    ) =>
+      get("/api/analytics/timeseries", {
+        websiteId,
+        start,
+        end,
+        granularity,
+      }),
+    getTopPages: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/top-pages", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 10,
+      }),
+    getCountries: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/countries", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 10,
+      }),
+    getDevices: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/devices", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 5,
+      }),
+    getRealtime: (websiteId: string) =>
+      get("/api/analytics/realtime", { websiteId }),
+    getLivePages: (websiteId: string) =>
+      get("/api/analytics/live-pages", { websiteId }),
+    getPageFlow: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/page-flow", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 50,
+      }),
+    getEntryExit: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/top-entry-exit", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 10,
+      }),
+    getSessionPaths: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/session-paths", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 20,
+      }),
+    getPageStats: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/page-stats", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 20,
+      }),
+  };
+
   // ─── Support ──────────────────────────────────────────────
   const support = {
     createTicket: (data: {
@@ -243,6 +396,12 @@ function createApiClient(baseUrl: string = "") {
       ticketId: string,
       data: { message: string; attachments?: any[] }
     ) => post(`/api/support/tickets/${ticketId}/messages`, data),
+    markTicketRead: (ticketId: string) =>
+      post(`/api/support/tickets/${ticketId}/read`, {}),
+    addInternalNote: (ticketId: string, message: string) =>
+      post(`/api/support/tickets/${ticketId}/internal-notes`, { message }),
+    getNewMessages: (ticketId: string, since: string) =>
+      get(`/api/support/tickets/${ticketId}/messages`, { since }),
     getStats: () => get("/api/support/stats"),
     getAdminUsers: () => get("/api/support/admin-users"),
     getOrgBySlug: (slug: string) => get("/api/support/org-by-slug", { slug }),
@@ -285,6 +444,8 @@ function createApiClient(baseUrl: string = "") {
     }) => post("/api/uploads/logo-r2", data),
     logoToCloudinary: (data: {
       logoBase64: string;
+      fileName?: string;
+      contentType?: string;
       organizationName?: string;
       organizationId?: string;
     }) => post("/api/uploads/logo-cloudinary", data),
@@ -345,6 +506,8 @@ function createApiClient(baseUrl: string = "") {
       patch(`/api/user-management/users/${id}`, data),
     deactivateUser: (id: string, reason?: string) =>
       post(`/api/user-management/users/${id}/deactivate`, { reason }),
+    reactivateUser: (id: string) =>
+      post(`/api/user-management/users/${id}/reactivate`, {}),
     getStats: () => get("/api/user-management/stats"),
     getPaystackPayments: (userId: string) =>
       get("/api/user-management/paystack-payments", { userId }),
@@ -359,6 +522,7 @@ function createApiClient(baseUrl: string = "") {
     organizationManagement,
     admin,
     paystack,
+    analytics,
     support,
     notifications,
     notificationPreferences,
@@ -368,6 +532,11 @@ function createApiClient(baseUrl: string = "") {
     members,
     subscriptions,
     userManagement,
+    /** Low-level API methods for endpoints not covered by the above. Use in client components. */
+    get: <T = any>(path: string, params?: Record<string, any>) => get<T>(path, params),
+    post: <T = any>(path: string, body?: any) => post<T>(path, body),
+    patch: <T = any>(path: string, body?: any) => patch<T>(path, body),
+    del: <T = any>(path: string, body?: any) => del<T>(path, body),
   };
 }
 
