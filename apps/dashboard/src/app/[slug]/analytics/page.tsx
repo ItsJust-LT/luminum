@@ -301,8 +301,8 @@ export default function AnalyticsPage() {
         api.analytics.getPageStats(website.id, start, end, 20).catch(() => null),
       ])
 
-      if (overview) setOverviewData(overview)
-      setTimeSeriesData(timeseries?.data ?? [])
+      if (overview) setOverviewData(overview as OverviewData)
+      setTimeSeriesData(Array.isArray(timeseries?.data) ? timeseries.data : [])
       setTopPages(pages ?? [])
       setTopCountries(countries ?? [])
       setDeviceData(devices ?? [])
@@ -310,10 +310,10 @@ export default function AnalyticsPage() {
         activeVisitors: realtime?.activeVisitors ?? 0,
         recentEvents: realtime?.recentEvents ?? [],
       })
-      setPageFlow(flow)
-      setEntryExit(entryExitData)
-      setSessionPaths(paths)
-      setPageStats(stats)
+      setPageFlow(flow as PageFlowResponse | null)
+      setEntryExit(entryExitData as EntryExitResponse | null)
+      setSessionPaths(paths as SessionPathsResponse | null)
+      setPageStats(stats as PageStatsResponse | null)
     } catch (error) {
       console.error("Failed to fetch analytics:", error)
     } finally {
