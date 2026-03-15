@@ -22,7 +22,7 @@ import {
   Inbox, Timer, CircleDot, XCircle, Hourglass,
 } from "lucide-react"
 import { SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES } from "@/lib/types/support"
-import { getSupportTickets, getSupportStats, updateSupportTicket, getAdminUsers } from "@/lib/actions/support-actions"
+import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 
@@ -82,27 +82,27 @@ export default function AdminSupportPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [ticketsResult, statsResult] = await Promise.all([getSupportTickets(), getSupportStats()])
-      if (ticketsResult.success) setTickets(ticketsResult.data || [])
-      if (statsResult.success) setStats(statsResult.data)
+      const [ticketsResult, statsResult] = await Promise.all([api.support.getTickets(), api.support.getStats()]) as any[]
+      if (ticketsResult?.success) setTickets(ticketsResult.tickets ?? ticketsResult.data ?? [])
+      if (statsResult?.success) setStats(statsResult.stats ?? statsResult.data)
     } catch { toast.error("Failed to fetch data") }
     finally { setLoading(false) }
   }, [])
 
   const fetchAdminUsers = async () => {
-    const result = await getAdminUsers()
-    if (result.success) setAdminUsers(result.data || [])
+    const result = await api.support.getAdminUsers() as any
+    if (result?.success) setAdminUsers(result.users ?? result.data ?? [])
   }
 
   const handleQuickAssign = async (ticketId: string, adminId: string) => {
-    const result = await updateSupportTicket(ticketId, { assigned_to: adminId } as any)
-    if (result.success) { toast.success("Ticket assigned"); fetchData() }
+    const result = await api.support.updateTicket(ticketId, { assigned_to: adminId }) as any
+    if (result?.success) { toast.success("Ticket assigned"); fetchData() }
     else toast.error("Failed to assign")
   }
 
   const handleQuickStatusChange = async (ticketId: string, status: string) => {
-    const result = await updateSupportTicket(ticketId, { status } as any)
-    if (result.success) { toast.success("Status updated"); fetchData() }
+    const result = await api.support.updateTicket(ticketId, { status }) as any
+    if (result?.success) { toast.success("Status updated"); fetchData() }
     else toast.error("Failed to update status")
   }
 

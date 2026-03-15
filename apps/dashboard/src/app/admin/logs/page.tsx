@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Info, Bug, AlertTriangle, Wifi } from "lucide-react"
-import { getSystemLogs } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 
 const LEVEL_OPTIONS = ["", "info", "warn", "error", "debug"]
@@ -51,7 +51,7 @@ export default function AdminLogsPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await getSystemLogs({
+      const result = await api.admin.getSystemLogs({
         page,
         limit: 50,
         service: service || undefined,

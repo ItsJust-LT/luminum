@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { FileText, Eye, Clock, User, Mail, MessageSquare, CheckCircle, AlertCircle, ArrowRight } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { getFormSubmissions } from "@/lib/actions/forms"
+import { api } from "@/lib/api"
 import type { FormSubmission } from "@/lib/types/forms"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { detectFormFields, getPrimaryFields } from "@/lib/utils/field-detection"
@@ -32,7 +32,7 @@ export function FormSubmissionsInfo({ websiteId }: FormSubmissionsInfoProps) {
       setLoading(true)
       setError(null)
 
-      const result = await getFormSubmissions(websiteId)
+      const result = await api.forms.list(websiteId)
 
       if (result.success && result.submissions) {
         setSubmissions(result.submissions)

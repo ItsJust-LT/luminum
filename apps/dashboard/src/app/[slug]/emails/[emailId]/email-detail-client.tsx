@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { deleteEmail, getEmailAttachmentUrl } from "@/lib/actions/emails"
+import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -112,21 +112,25 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this email?")) return
 
-    const result = await deleteEmail(email.id)
-    if (result.success) {
+    try {
+      await api.emails.delete(email.id)
       toast.success("Email deleted")
       router.push(`/${organizationSlug}/emails`)
-    } else {
-      toast.error(result.error || "Failed to delete email")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete email")
     }
   }
 
   const handleDownloadAttachment = async (attachmentIndex: number) => {
-    const result = await getEmailAttachmentUrl(email.id, attachmentIndex)
-    if (result.success && result.url) {
-      window.open(result.url, "_blank")
-    } else {
-      toast.error(result.error || "Failed to get attachment URL")
+    try {
+      const result = await api.emails.getAttachmentUrl(email.id, attachmentIndex) as { success?: boolean; url?: string; error?: string }
+      if (result?.url) {
+        window.open(result.url, "_blank")
+      } else {
+        toast.error(result?.error || "Failed to get attachment URL")
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to get attachment URL")
     }
   }
 
@@ -137,27 +141,32 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
 
     setLoadingPreview(true)
     setTextPreviewContent(null)
-    const result = await getEmailAttachmentUrl(email.id, attachmentIndex)
-    setLoadingPreview(false)
+    try {
+      const result = await api.emails.getAttachmentUrl(email.id, attachmentIndex) as { success?: boolean; url?: string; error?: string }
+      setLoadingPreview(false)
 
-    if (!result.success || !result.url) {
-      toast.error(result.error || "Failed to load preview")
-      return
-    }
+      if (!result?.url) {
+        toast.error(result?.error || "Failed to load preview")
+        return
+      }
 
-    setPreview({
-      url: result.url,
-      filename: attachment.filename || "attachment",
-      type,
-      index: attachmentIndex,
-    })
+      setPreview({
+        url: result.url,
+        filename: attachment.filename || "attachment",
+        type,
+        index: attachmentIndex,
+      })
 
-    if (type === "text") {
-      setTextPreviewContent(null)
-      fetch(result.url)
+      if (type === "text") {
+        setTextPreviewContent(null)
+        fetch(result.url)
         .then((r) => (r.ok ? r.text() : Promise.reject(new Error("Failed to load"))))
         .then(setTextPreviewContent)
         .catch(() => setTextPreviewContent("(Unable to load text preview. You can download the file.)"))
+      }
+    } catch (err) {
+      setLoadingPreview(false)
+      toast.error(err instanceof Error ? err.message : "Failed to load preview")
     }
   }
 

@@ -1,12 +1,8 @@
 "use client"
 
 import { createContext, useContext, type ReactNode, useState, useEffect, useCallback } from "react"
-import {
-  getOrganizationSubscriptionsEnhanced,
-  type SubscriptionData,
-  type PaymentData,
-} from "@/lib/actions/subscription-management"
-import { getSubscriptionDetails, getCustomerTransactions } from "@/lib/actions/paystack-billing"
+import { api } from "@/lib/api"
+import type { SubscriptionData, PaymentData } from "@/lib/types/subscription"
 
 interface Organization {
   id: string
@@ -123,47 +119,42 @@ export const OrganizationProvider = ({
     setSubscriptionsError(null)
 
     try {
-      const result = await getOrganizationSubscriptionsEnhanced(organization.id)
+      const result = await api.subscriptions.list(organization.id)
 
       if (result.success) {
         const enhancedSubscriptions: SubscriptionInfo[] = []
 
-        // Enhance subscriptions with external provider data
+        // Fetch Paystack details once for the org (used for active subscription)
+        let paystackData: any = null
+        try {
+          const extRes = await api.paystack.getSubscriptionDetails(organization.id)
+          if (extRes.success && extRes.paystackData) paystackData = extRes.paystackData
+        } catch (e) {
+          console.warn("Failed to fetch Paystack subscription details:", e)
+        }
+
         for (const sub of result.subscriptions || []) {
-          const enhancedSub = { 
+          const enhancedSub = {
             ...sub,
             payments: (sub.payments || []).map((p: any) => ({
               ...p,
               subscription_id: sub.id,
               provider: sub.provider,
               amount: Number(p.amount),
-              created_at: p.created_at ? (typeof p.created_at === 'string' ? p.created_at : p.created_at.toISOString()) : new Date().toISOString(),
-              paid_at: p.paid_at ? (typeof p.paid_at === 'string' ? p.paid_at : p.paid_at.toISOString()) : undefined,
+              created_at: p.created_at ? (typeof p.created_at === "string" ? p.created_at : p.created_at.toISOString()) : new Date().toISOString(),
+              paid_at: p.paid_at ? (typeof p.paid_at === "string" ? p.paid_at : p.paid_at.toISOString()) : undefined,
               payment_method: p.payment_method ?? undefined,
-              metadata: p.metadata && typeof p.metadata === 'object' ? p.metadata : {},
+              metadata: p.metadata && typeof p.metadata === "object" ? p.metadata : {},
             })),
+            external_details: sub.provider === "paystack" && paystackData ? paystackData : undefined,
           }
-
-          // Fetch external subscription details if available
-          if (sub.provider_subscription_id && sub.provider === "paystack") {
-            try {
-              const externalResult = await getSubscriptionDetails(sub.provider_subscription_id)
-              if (externalResult.success) {
-                (enhancedSub as any).external_details = externalResult.data
-              }
-            } catch (error) {
-              console.warn("Failed to fetch external subscription details:", error)
-            }
-          }
-
           enhancedSubscriptions.push(enhancedSub as any)
         }
 
         setSubscriptions(enhancedSubscriptions)
 
-        // Set primary subscription
-        const primary = enhancedSubscriptions.find((sub) => sub.id === result.primarySubscriptionId)
-        setPrimarySubscription(primary || enhancedSubscriptions[0] || null)
+        const primary = enhancedSubscriptions.find((sub) => sub.id === organization.primary_subscription_id) ?? enhancedSubscriptions[0]
+        setPrimarySubscription(primary || null)
       } else {
         setSubscriptionsError(result.error || "Failed to load subscriptions")
       }
@@ -227,9 +218,10 @@ export const OrganizationProvider = ({
           // Get recent transactions
           if (external.customer?.customer_code) {
             try {
-              const transactionsResult = await getCustomerTransactions(organization.id)
-              if (transactionsResult.success && transactionsResult.data) {
-                recentTransactions = [...recentTransactions, ...transactionsResult.data]
+              const transactionsResult = await api.paystack.getCustomerTransactions(organization.id)
+              const tx = transactionsResult as { success?: boolean; transactions?: any[]; data?: any[] }
+              if (tx.success && (tx.transactions || tx.data)) {
+                recentTransactions = [...recentTransactions, ...(tx.transactions || tx.data || [])]
               }
             } catch (error) {
               console.warn("Failed to fetch transactions:", error)
@@ -284,8 +276,7 @@ export const OrganizationProvider = ({
       // This would call the sync function from subscription-management.ts
       // and then refresh the subscriptions
       try {
-        const { syncSubscription: syncFn } = await import("@/lib/actions/subscription-management")
-        await syncFn(subscriptionId)
+        await api.subscriptions.sync(subscriptionId)
         await loadSubscriptions()
       } catch (error) {
         console.error("Failed to sync subscription:", error)

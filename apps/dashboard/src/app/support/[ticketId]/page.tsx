@@ -28,7 +28,7 @@ import {
   FileText
 } from "lucide-react"
 import { SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES } from "@/lib/types/support"
-import { getSupportTicket, addSupportMessage } from "@/lib/actions/support-actions"
+import { api } from "@/lib/api"
 import { SupportMessagesProvider } from "@/contexts/support-messages-context"
 import { ChatUI } from "@/components/support/chat-ui"
 import { toast } from "sonner"
@@ -59,9 +59,9 @@ export default function SupportTicketDetailPage() {
   const fetchTicket = async () => {
     setLoading(true)
     try {
-      const result = await getSupportTicket(ticketId)
+      const result = await api.support.getTicket(ticketId) as { success?: boolean; data?: any; ticket?: any; error?: string }
       if (result.success) {
-        setTicket(result.data)
+        setTicket(result.data ?? result.ticket)
       } else {
         toast.error(result.error || "Failed to fetch ticket")
         router.push("/support")
@@ -84,15 +84,16 @@ export default function SupportTicketDetailPage() {
 
     setSending(true)
     try {
-      const result = await addSupportMessage(ticketId, {
+      const result = await api.support.addMessage(ticketId, {
         message: newMessage.trim()
-      })
-      if (result.success) {
+      }) as { success?: boolean; error?: string }
+      const ok = (result as { success?: boolean })?.success !== false
+      if (ok) {
         setNewMessage("")
         fetchTicket() // Refresh to get new message
         toast.success("Message sent successfully!")
       } else {
-        toast.error(result.error || "Failed to send message")
+        toast.error((result as { error?: string })?.error || "Failed to send message")
       }
     } catch (error) {
       console.error("Error sending message:", error)

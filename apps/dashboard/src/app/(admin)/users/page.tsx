@@ -43,7 +43,7 @@ import {
   Star,
   Zap
 } from "lucide-react"
-import { getAllUsersWithDetails, getUserStats } from "@/lib/actions/user-management"
+import { api } from "@/lib/api"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -147,21 +147,24 @@ export default function UsersPage() {
 
       // Fetch users and stats in parallel
       const [usersResult, statsResult] = await Promise.all([
-        getAllUsersWithDetails(queryParams),
-        getUserStats()
+        api.userManagement.getUsers(),
+        api.userManagement.getStats()
       ])
       
-      if (usersResult.success) {
-        setUsers(usersResult.data || [])
-        if (usersResult.pagination) {
-          setPagination(usersResult.pagination)
+      const usersData = usersResult as { success?: boolean; users?: User[]; data?: User[]; pagination?: any; error?: string }
+      if (usersData.success) {
+        const list = usersData.users ?? usersData.data ?? []
+        setUsers(list)
+        if (usersData.pagination) {
+          setPagination(usersData.pagination)
         }
       } else {
-        setError(usersResult.error || "Failed to fetch users")
+        setError(usersData.error || "Failed to fetch users")
       }
 
-      if (statsResult.success && statsResult.data) {
-        setStats(statsResult.data)
+      const statsData = statsResult as { success?: boolean; stats?: UserStats; data?: UserStats }
+      if (statsData.success && (statsData.stats || statsData.data)) {
+        setStats(statsData.stats ?? statsData.data!)
       }
     } catch (err) {
       setError("An unexpected error occurred")

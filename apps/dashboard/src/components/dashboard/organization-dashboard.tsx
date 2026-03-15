@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Globe, LayoutDashboard, Sparkles } from "lucide-react"
-import { getWebsitesByOrganization } from "@/lib/supabase/websites"
+import { api } from "@/lib/api"
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
 import type { Website } from "@/lib/types/websites"
 import { useOrganization } from "@/lib/contexts/organization-context"
@@ -33,7 +33,8 @@ export function OrganizationDashboard() {
     
     try {
       setWebsiteLoading(true)
-      const { data: websites } = await getWebsitesByOrganization(organization.id)
+      const res = await api.websites.list(organization.id) as { data?: Website[] }
+      const websites = res?.data
       if (websites && websites.length > 0) {
         setWebsite(websites[0])
       }

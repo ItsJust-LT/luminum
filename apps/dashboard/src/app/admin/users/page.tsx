@@ -48,8 +48,7 @@ import {
   UserCheck,
   Crown,
 } from "lucide-react"
-import { getAllUsersWithDetails, getUserStats, deactivateUser } from "@/lib/actions/user-management"
-import { reactivateUser } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 import { formatDate, formatNumber } from "@/lib/utils"
 import { toast } from "sonner"
 import { authClient } from "@/lib/auth/client"
@@ -72,12 +71,12 @@ export default function AdminUsersPage() {
     setError(null)
     try {
       const [usersRes, statsRes] = await Promise.all([
-        getAllUsersWithDetails(),
-        getUserStats(),
-      ])
-      if (usersRes.success) setUsers(usersRes.users || [])
-      else setError(usersRes.error || "Failed to load users")
-      if (statsRes.success) setStats(statsRes.stats)
+        api.userManagement.getUsers(),
+        api.userManagement.getStats(),
+      ]) as any[]
+      if (usersRes?.success) setUsers(usersRes.users ?? usersRes.data ?? [])
+      else setError(usersRes?.error || "Failed to load users")
+      if (statsRes?.success) setStats(statsRes.stats ?? statsRes.data)
     } catch (err: any) {
       setError(err.message || "An error occurred")
     } finally {
@@ -89,7 +88,7 @@ export default function AdminUsersPage() {
 
   const handleBan = async (userId: string) => {
     try {
-      const res = await deactivateUser(userId, "Banned by admin")
+      const res = await api.userManagement.deactivateUser(userId, "Banned by admin") as any
       if (res.success) {
         toast.success("User banned")
         fetchData()
@@ -102,7 +101,7 @@ export default function AdminUsersPage() {
 
   const handleUnban = async (userId: string) => {
     try {
-      const res = await reactivateUser(userId)
+      const res = await api.userManagement.reactivateUser(userId) as any
       if (res.success) {
         toast.success("User reactivated")
         fetchData()

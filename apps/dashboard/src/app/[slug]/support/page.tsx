@@ -32,7 +32,7 @@ import {
   Users
 } from "lucide-react"
 import { SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES } from "@/lib/types/support"
-import { createSupportTicket, getSupportTickets, getOrganizationBySlug } from "@/lib/actions/support-actions"
+import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
@@ -74,19 +74,20 @@ export default function OrganizationSupportPage() {
     setLoading(true)
     try {
       // First, get the organization by slug
-      const orgResult = await getOrganizationBySlug(organizationSlug)
-      if (!orgResult.success) {
-        toast.error(orgResult.error || "Organization not found")
+      const orgResult = await api.support.getOrgBySlug(organizationSlug) as { success?: boolean; data?: { id: string }; error?: string }
+      const orgData = orgResult?.data ?? (orgResult as any)?.organization
+      if (!orgResult?.success || !orgData?.id) {
+        toast.error(orgResult?.error || "Organization not found")
         router.push("/dashboard")
         return
       }
 
-      setOrganizationId(orgResult.data!.id)
+      setOrganizationId(orgData.id)
 
       // Fetch tickets for this organization
-      const result = await getSupportTickets({ organizationId: orgResult.data!.id })
+      const result = await api.support.getTickets({ organizationId: orgData.id }) as { success?: boolean; tickets?: any[]; data?: any[]; error?: string }
       if (result.success) {
-        setTickets(result.data || [])
+        setTickets(result.tickets || result.data || [])
       } else {
         toast.error(result.error || "Failed to fetch tickets")
       }
@@ -112,11 +113,11 @@ export default function OrganizationSupportPage() {
 
     setCreating(true)
     try {
-      const result = await createSupportTicket({
+      const result = await api.support.createTicket({
         ...newTicket,
         organization_id: organizationId
-      })
-      if (result.success) {
+      }) as { success?: boolean; error?: string }
+      if (result?.success !== false) {
         toast.success("Support ticket created successfully!")
         setNewTicket({ title: "", description: "", category: "general", priority: "medium" })
         setActiveTab("tickets")

@@ -27,14 +27,7 @@ import {
   Tablet,
 } from "lucide-react"
 import { formatNumber } from "@/lib/utils"
-import {
-  getAdminAnalyticsOverview,
-  getAdminAnalyticsTimeseries,
-  getAdminAnalyticsBreakdown,
-  getAdminAnalyticsTopPages,
-  getAdminAnalyticsCountries,
-  getAdminAnalyticsDevices,
-} from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 
@@ -69,20 +62,20 @@ export default function AdminAnalyticsPage() {
 
     try {
       const [overviewRes, timeseriesRes, breakdownRes, topPagesRes, countriesRes, devicesRes] = await Promise.all([
-        getAdminAnalyticsOverview(start, end),
-        getAdminAnalyticsTimeseries(start, end, granularity),
-        getAdminAnalyticsBreakdown(start, end, breakdownBy),
-        getAdminAnalyticsTopPages(start, end, 10),
-        getAdminAnalyticsCountries(start, end, 10),
-        getAdminAnalyticsDevices(start, end, 5),
-      ])
+        api.admin.getAdminAnalyticsOverview(start, end),
+        api.admin.getAdminAnalyticsTimeseries(start, end, granularity),
+        api.admin.getAdminAnalyticsBreakdown(start, end, breakdownBy),
+        api.admin.getAdminAnalyticsTopPages(start, end, 10),
+        api.admin.getAdminAnalyticsCountries(start, end, 10),
+        api.admin.getAdminAnalyticsDevices(start, end, 5),
+      ]) as any[]
 
-      if (overviewRes.success) setOverview(overviewRes.overview)
-      if (timeseriesRes.success) setTimeseries(timeseriesRes.data || [])
-      if (breakdownRes.success) setBreakdown(breakdownRes.breakdown || [])
-      if (topPagesRes.success) setTopPages(topPagesRes.data || [])
-      if (countriesRes.success) setCountries(countriesRes.data || [])
-      if (devicesRes.success) setDevices(devicesRes.data || [])
+      if (overviewRes?.success) setOverview(overviewRes.overview)
+      if (timeseriesRes?.success) setTimeseries(timeseriesRes.data || [])
+      if (breakdownRes?.success) setBreakdown(breakdownRes.breakdown || [])
+      if (topPagesRes?.success) setTopPages(topPagesRes.data || [])
+      if (countriesRes?.success) setCountries(countriesRes.data || [])
+      if (devicesRes?.success) setDevices(devicesRes.data || [])
     } catch (err: any) {
       setError(err.message || "Failed to load analytics")
     } finally {

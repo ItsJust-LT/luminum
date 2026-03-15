@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { BarChart3, AlertCircle, CheckCircle, Settings, Shield } from "lucide-react"
-import { toggleWebsiteAnalytics } from "@/lib/supabase/websites"
+import { api } from "@/lib/api"
 import { useSession } from "@/lib/auth/client"
 import type { Website } from "@/lib/types/websites"
 
@@ -37,7 +37,7 @@ export function AnalyticsStatus({
 
     setIsToggling(true)
     try {
-      const result = await toggleWebsiteAnalytics(website.id, enabled)
+      const result = await api.websites.toggleAnalytics(website.id, enabled)
       if (result.data) {
         setAnalyticsEnabled(enabled)
         onAnalyticsToggle?.(enabled)

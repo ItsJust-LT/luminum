@@ -13,7 +13,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { UserMinus, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
-import { removeMemberFromOrganization } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 
 interface RemoveMemberDialogProps {
   isOpen: boolean
@@ -45,7 +45,7 @@ export function RemoveMemberDialog({
     setError("")
 
     try {
-      const result = await removeMemberFromOrganization({
+      const result = await api.organizationActions.removeMember({
         memberId: member.id,
         memberEmail: member.email,
         memberName: member.name,

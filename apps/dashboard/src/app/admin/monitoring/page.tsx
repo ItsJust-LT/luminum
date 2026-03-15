@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { RefreshCw, Server, Cpu, HardDrive, MemoryStick, Activity, Clock, Wifi, Activity as PulseIcon } from "lucide-react"
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Line, LineChart } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-import { getServerMetrics } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { AnimatedNumber } from "@/components/ui/animated-number"
 
@@ -94,7 +94,7 @@ export default function AdminMonitoringPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = (await getServerMetrics()) as {
+      const result = (await api.admin.getServerMetrics()) as {
         success?: boolean
         current?: CurrentSnapshot
         history?: Array<Record<string, unknown>>

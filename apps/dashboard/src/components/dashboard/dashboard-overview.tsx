@@ -17,13 +17,8 @@ import {
   LayoutDashboard,
 } from "lucide-react"
 import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
-import type { MetricCount } from "@/lib/actions/analytics"
-import {
-  getAnalyticsOverview,
-  getAnalyticsRealtime,
-  getAnalyticsCountries,
-  getAnalyticsDevices,
-} from "@/lib/actions/analytics"
+import type { MetricCount } from "@/lib/types/analytics"
+import { api } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
@@ -68,10 +63,10 @@ export function DashboardOverview({
       const endStr = end.toISOString()
 
       const [overviewRes, realtimeRes, devicesRes, countriesRes] = await Promise.all([
-        getAnalyticsOverview(websiteId, startStr, endStr),
-        getAnalyticsRealtime(websiteId),
-        getAnalyticsDevices(websiteId, startStr, endStr, 5),
-        getAnalyticsCountries(websiteId, startStr, endStr, 6),
+        api.get("/api/analytics/overview", { websiteId, start: startStr, end: endStr }),
+        api.get("/api/analytics/realtime", { websiteId }),
+        api.get("/api/analytics/devices", { websiteId, start: startStr, end: endStr, limit: 5 }),
+        api.get("/api/analytics/countries", { websiteId, start: startStr, end: endStr, limit: 6 }),
       ])
 
       if (overviewRes) {

@@ -39,8 +39,7 @@ import {
   TrendingDown,
   Activity
 } from "lucide-react"
-import { getOrganizationsAsAdmin } from "@/lib/actions/admin-organization-actions"
-import { getOrganizationStats } from "@/lib/actions/organization-management"
+import { api } from "@/lib/api"
 import { formatCurrency } from "@/lib/utils"
 import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-organization-creator-dialog"
 import { toast } from "sonner"
@@ -105,18 +104,20 @@ export default function OrganizationsPage() {
       
       // Fetch organizations and stats in parallel
       const [orgsResult, statsResult] = await Promise.all([
-        getOrganizationsAsAdmin(),
-        getOrganizationStats()
+        api.admin.getOrganizations(),
+        api.organizationManagement.getStats()
       ])
       
-      if (orgsResult.success) {
-        setOrganizations(orgsResult.data || [])
+      const orgs = orgsResult as { success?: boolean; organizations?: Organization[]; data?: Organization[]; error?: string }
+      if (orgs.success) {
+        setOrganizations(orgs.organizations || orgs.data || [])
       } else {
-        setError(orgsResult.error || "Failed to fetch organizations")
+        setError(orgs.error || "Failed to fetch organizations")
       }
 
-      if (statsResult.success && statsResult.data) {
-        setStats(statsResult.data)
+      const st = statsResult as { success?: boolean; data?: OrganizationStats; stats?: Partial<OrganizationStats> }
+      if (st?.success && (st?.data || st?.stats)) {
+        setStats((prev) => ({ ...prev, ...(st.data || st.stats || {}) }))
       }
     } catch (err) {
       setError("An unexpected error occurred")

@@ -21,7 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { authClient } from "@/lib/auth/client"
-import { addMemberToOrganization } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 
 interface ExistingUser {
   id: string
@@ -152,7 +152,7 @@ export function AddClientToOrganizationDialog({
         userName: selectedUser.name,
       })
 
-      const result = await addMemberToOrganization({
+      const result = await api.organizationActions.addMember({
         email: selectedUser.email,
         role: selectedRole as "admin" | "member",
         organizationId: organizationId,

@@ -24,11 +24,7 @@ import {
   ChevronRight, ExternalLink, RefreshCw, Info,
 } from "lucide-react"
 import { SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES } from "@/lib/types/support"
-import {
-  getSupportTicket, addSupportMessage, updateSupportTicket,
-  getAdminUsers, addInternalNote, getNewMessages, markTicketRead,
-} from "@/lib/actions/support-actions"
-import { uploadFileToCloudinary } from "@/lib/actions/cloudinary-actions"
+import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { formatMessageTime } from "@/lib/utils/chat-utils"
@@ -82,7 +78,7 @@ export default function AdminSupportTicketDetailPage() {
   useEffect(() => {
     if (!isPending && !session) { router.push("/sign-in"); return }
     if (session && (session.user as any)?.role !== "admin") { router.push("/dashboard"); return }
-    if (session && ticketId) { fetchTicket(); fetchAdminUsers(); markTicketRead(ticketId) }
+    if (session && ticketId) { fetchTicket(); fetchAdminUsers(); api.support.markTicketRead(ticketId) }
   }, [session, isPending, ticketId])
 
   useEffect(() => {
@@ -99,16 +95,17 @@ export default function AdminSupportTicketDetailPage() {
     pollIntervalRef.current = setInterval(async () => {
       try {
         const since = lastPoll || new Date(Date.now() - 5000).toISOString()
-        const result = await getNewMessages(ticketId, since)
-        if (result.success && result.data?.length > 0) {
+        const result = await api.support.getNewMessages(ticketId, since) as { success?: boolean; data?: any[]; messages?: any[] }
+        const msgs = result?.messages ?? result?.data ?? []
+        if (result?.success && msgs.length > 0) {
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id))
-            const newMsgs = result.data.filter((m: any) => !existingIds.has(m.id) && m.message_type !== "internal")
+            const newMsgs = msgs.filter((m: any) => !existingIds.has(m.id) && m.message_type !== "internal")
             return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev
           })
           setInternalNotes(prev => {
             const existingIds = new Set(prev.map(m => m.id))
-            const newNotes = result.data.filter((m: any) => !existingIds.has(m.id) && m.message_type === "internal")
+            const newNotes = msgs.filter((m: any) => !existingIds.has(m.id) && m.message_type === "internal")
             return newNotes.length > 0 ? [...prev, ...newNotes] : prev
           })
           setLastPoll(new Date().toISOString())
@@ -121,11 +118,12 @@ export default function AdminSupportTicketDetailPage() {
   const fetchTicket = async () => {
     setLoading(true)
     try {
-      const result = await getSupportTicket(ticketId)
-      if (result.success && result.data) {
-        setTicket(result.data)
-        setMessages(result.data.messages || [])
-        setInternalNotes(result.data.internal_notes || [])
+      const result = await api.support.getTicket(ticketId) as { success?: boolean; data?: any; ticket?: any }
+      const data = result?.data ?? result?.ticket
+      if (result?.success && data) {
+        setTicket(data)
+        setMessages(data.messages || [])
+        setInternalNotes(data.internal_notes || [])
         setLastPoll(new Date().toISOString())
       } else {
         toast.error("Ticket not found")
@@ -138,8 +136,8 @@ export default function AdminSupportTicketDetailPage() {
   }
 
   const fetchAdminUsers = async () => {
-    const result = await getAdminUsers()
-    if (result.success) setAdminUsers(result.data || [])
+    const result = await api.support.getAdminUsers() as any
+    if (result?.success) setAdminUsers(result.users ?? result.data ?? [])
   }
 
   const handleSendMessage = async () => {
@@ -151,18 +149,20 @@ export default function AdminSupportTicketDetailPage() {
         setUploading(true)
         try {
           const uploads = await Promise.all(attachments.map(async file => {
-            const fd = new FormData(); fd.append("file", file)
-            const r = await uploadFileToCloudinary(fd)
-            if (!r.success) throw new Error(r.error || "Upload failed")
-            return { filename: file.name, original_filename: file.name, file_size: file.size, mime_type: file.type, cloudinary_public_id: r.data!.public_id, cloudinary_url: r.data!.secure_url }
+            const bytes = await file.arrayBuffer()
+            const fileBase64 = btoa(String.fromCharCode(...new Uint8Array(bytes)))
+            const r = await api.uploads.fileToCloudinary({ fileBase64, contentType: file.type }) as { success?: boolean; data?: { public_id: string; secure_url: string }; error?: string }
+            if (!r?.data) throw new Error(r?.error || "Upload failed")
+            return { filename: file.name, original_filename: file.name, file_size: file.size, mime_type: file.type, cloudinary_public_id: r.data.public_id, cloudinary_url: r.data.secure_url }
           }))
           attachmentData = uploads
         } finally { setUploading(false) }
       }
 
-      const result = await addSupportMessage(ticketId, { message: newMessage.trim(), attachments: attachmentData })
-      if (result.success && result.data) {
-        const msg = { ...result.data, sender: result.data.sender || { id: session!.user.id, name: session!.user.name, image: session!.user.image, role: "admin" } }
+      const result = await api.support.addMessage(ticketId, { message: newMessage.trim(), attachments: attachmentData }) as any
+      const msgData = result?.message ?? result?.data
+      if (result?.success && msgData) {
+        const msg = { ...msgData, sender: msgData.sender || { id: session!.user.id, name: session!.user.name, image: session!.user.image, role: "admin" } }
         setMessages(prev => [...prev, msg])
         setNewMessage("")
         setAttachments([])
@@ -176,9 +176,10 @@ export default function AdminSupportTicketDetailPage() {
     if (!newNote.trim()) return
     setSending(true)
     try {
-      const result = await addInternalNote(ticketId, newNote.trim())
-      if (result.success && result.data) {
-        const note = { ...result.data, sender: result.data.sender || { id: session!.user.id, name: session!.user.name, image: session!.user.image, role: "admin" } }
+      const result = await api.support.addInternalNote(ticketId, newNote.trim()) as any
+      const noteData = result?.note ?? result?.data
+      if (result?.success && noteData) {
+        const note = { ...noteData, sender: noteData.sender || { id: session!.user.id, name: session!.user.name, image: session!.user.image, role: "admin" } }
         setInternalNotes(prev => [...prev, note])
         setNewNote("")
         toast.success("Note added")
@@ -192,7 +193,7 @@ export default function AdminSupportTicketDetailPage() {
     try {
       const data: any = {}
       data[field] = value === "unassigned" ? null : value
-      const result = await updateSupportTicket(ticketId, data)
+      const result = await api.support.updateTicket(ticketId, data) as any
       if (result.success) {
         await fetchTicket()
         toast.success(`${field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, " ")} updated`)

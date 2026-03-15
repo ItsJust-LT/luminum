@@ -4,8 +4,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Activity, Users, FileText, Eye, Clock, Wifi, WifiOff } from "lucide-react"
-import { getAnalyticsRealtime } from "@/lib/actions/analytics"
-import { getFormSubmissions } from "@/lib/actions/forms"
+import { api } from "@/lib/api"
 import { useAnalyticsPresence } from "@/lib/ably/client"
 import { formatDuration } from "@/lib/utils"
 
@@ -37,8 +36,8 @@ export function RealtimeMetrics({ websiteId }: RealtimeMetricsProps) {
     const fetchInitialData = async () => {
       try {
         const [realtimeData, formResult] = await Promise.all([
-          getAnalyticsRealtime(websiteId),
-          getFormSubmissions(websiteId),
+          api.get("/api/analytics/realtime", { websiteId }),
+          api.forms.list(websiteId),
         ])
 
         const formTotal = formResult?.success && formResult.submissions ? formResult.submissions.length : 0

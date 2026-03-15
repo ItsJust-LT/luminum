@@ -18,7 +18,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { UserPlus, Mail, Shield, Users, Loader2, CheckCircle } from "lucide-react"
 import { toast } from "sonner"
 import { authClient } from "@/lib/auth/client"
-import { sendOrganizationInvitation } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 
 interface OrganizationInviteDialogProps {
   organizationId: string
@@ -62,16 +62,11 @@ export function OrganizationInviteDialog({
         throw new Error("You must be logged in to send invitations")
       }
 
-      const result = await sendOrganizationInvitation({
+      const result = await api.organizationActions.sendInvitation({
         email,
         role: role as "admin" | "member",
         organizationId,
         organizationName,
-        invitedBy: {
-          name: session.user.name || "Someone",
-          email: session.user.email,
-          id: session.user.id,
-        }
       })
 
       if (!result.success) {

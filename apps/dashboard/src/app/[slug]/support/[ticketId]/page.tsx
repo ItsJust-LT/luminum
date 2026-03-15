@@ -28,7 +28,7 @@ import {
   Building2
 } from "lucide-react"
 import { SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES } from "@/lib/types/support"
-import { getSupportTicket, addSupportMessage, getOrganizationBySlug } from "@/lib/actions/support-actions"
+import { api } from "@/lib/api"
 import { SupportMessagesProvider } from "@/contexts/support-messages-context"
 import { ChatUI } from "@/components/support/chat-ui"
 import { toast } from "sonner"
@@ -61,16 +61,17 @@ export default function OrganizationSupportTicketDetailPage() {
     setLoading(true)
     try {
       // First verify organization access
-      const orgResult = await getOrganizationBySlug(organizationSlug)
-      if (!orgResult.success) {
-        toast.error(orgResult.error || "Organization not found")
+      const orgResult = await api.support.getOrgBySlug(organizationSlug) as { success?: boolean; data?: any; error?: string }
+      const orgData = orgResult?.data ?? (orgResult as any)?.organization
+      if (!orgResult?.success || !orgData?.id) {
+        toast.error(orgResult?.error || "Organization not found")
         router.push("/dashboard")
         return
       }
 
-      const result = await getSupportTicket(ticketId)
+      const result = await api.support.getTicket(ticketId) as { success?: boolean; data?: any; ticket?: any; error?: string }
       if (result.success) {
-        setTicket(result.data)
+        setTicket(result.data ?? result.ticket)
       } else {
         toast.error(result.error || "Failed to fetch ticket")
         router.push(`/${organizationSlug}/support`)
@@ -93,9 +94,9 @@ export default function OrganizationSupportTicketDetailPage() {
 
     setSending(true)
     try {
-      const result = await addSupportMessage(ticketId, {
+      const result = await api.support.addMessage(ticketId, {
         message: newMessage.trim()
-      })
+      }) as { success?: boolean; error?: string }
       if (result.success) {
         setNewMessage("")
         fetchTicket() // Refresh to get new message

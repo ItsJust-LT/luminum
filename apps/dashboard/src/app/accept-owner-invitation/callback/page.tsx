@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, CheckCircle, XCircle } from "lucide-react"
 import { authClient } from "@/lib/auth/client"
-import { acceptOwnerInvitation } from "@/lib/actions/admin-organization-actions"
+import { api } from "@/lib/api"
 import { toast } from "sonner"
 
 function OwnerInvitationCallbackContent() {
@@ -39,7 +39,7 @@ function OwnerInvitationCallbackContent() {
         setLoadingMessage("Accepting invitation...")
 
         // Accept the owner invitation with the Google user data
-        const result = await acceptOwnerInvitation({
+        const result = await api.organizationActions.acceptInvitation({
           invitationId,
           name: session.user.name || "User",
           email: session.user.email,

@@ -41,10 +41,7 @@ import { OrganizationProvider } from "@/lib/contexts/organization-context"
 import { EmailsProvider } from "@/lib/contexts/emails-context"
 import { OrganizationSidebarWrapper } from "@/components/organization/organization-sidebar-wrapper"
 import NotificationBell from "@/components/NotificationBell"
-import { getUnseenFormsCount } from "@/lib/actions/forms"
-import { getUnreadEmailCount } from "@/lib/actions/emails"
-import { getOrganizationEmailsEnabled } from "@/lib/actions/organization-settings"
-import { getFullOrganizationBySlugForAdmin } from "@/lib/actions/admin-organization-actions"
+import { api } from "@/lib/api"
 import { UserNotificationProvider } from "@/components/realtime/user-notification-provider"
 import { useDisplayMode } from "@/lib/hooks/use-display-mode"
 import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
@@ -138,7 +135,7 @@ export default function SlugLayout({
       if (!targetOrg) {
         const isAdmin = (session?.user as { role?: string })?.role === "admin" || (session?.user as { role?: string })?.role?.includes?.("admin")
         if (isAdmin) {
-          const adminRes = await getFullOrganizationBySlugForAdmin(slug)
+          const adminRes = await api.get("/api/admin/organizations/by-slug", { slug })
           const data = adminRes as { organization?: any; members?: any[] }
           if (data?.organization) {
             targetOrg = data.organization
@@ -189,11 +186,11 @@ export default function SlugLayout({
       const organization = orgData.organization || targetOrg
       const members = orgData.members || []
 
-      // Fetch emails_enabled from database using server action
+      // Fetch emails_enabled from API
       let emailsEnabled = false
       try {
-        const { getOrganizationEmailsEnabled } = await import("@/lib/actions/organization-settings")
-        emailsEnabled = await getOrganizationEmailsEnabled(organization.id)
+        const res = await api.organizationSettings.getEmailsEnabled(organization.id)
+        emailsEnabled = res?.enabled ?? false
       } catch (error) {
         console.error("Failed to fetch emails_enabled:", error)
       }
@@ -224,8 +221,8 @@ export default function SlugLayout({
       // Fetch sidebar data server-side in parallel for better performance
       // These are cached at the request level, so multiple calls in the same request are deduplicated
       const [unseenFormsResult, unreadEmailsResult] = await Promise.all([
-        getUnseenFormsCount(organization.id),
-        emailsEnabled ? getUnreadEmailCount(organization.id) : Promise.resolve({ success: true, count: 0 }),
+        api.forms.getUnseenCount(organization.id),
+        emailsEnabled ? api.emails.getUnreadCount(organization.id) : Promise.resolve({ success: true, count: 0 }),
       ])
       
       setState({

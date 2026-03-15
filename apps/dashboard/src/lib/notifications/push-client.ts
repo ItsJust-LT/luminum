@@ -87,9 +87,8 @@ export async function unsubscribeFromPush(userId: string): Promise<boolean> {
 	if (!sub) return true;
 	const endpoint = sub.endpoint;
 	try {
-		// Use server action instead of API route
-		const { removePushSubscription } = await import('./actions');
-		await removePushSubscription(endpoint);
+		const { api } = await import('@/lib/api');
+		await api.notifications.removePushSubscription(endpoint);
 		await sub.unsubscribe();
 		return true;
 	} catch (e) {
@@ -98,11 +97,10 @@ export async function unsubscribeFromPush(userId: string): Promise<boolean> {
 	}
 }
 
-async function saveSubscription(userId: string, subscription: PushSubscription): Promise<void> {
+async function saveSubscription(_userId: string, subscription: PushSubscription): Promise<void> {
 	try {
-		// Use server action instead of API route
-		const { upsertPushSubscription } = await import('./actions');
-		await upsertPushSubscription(subscription);
+		const { api } = await import('@/lib/api');
+		await api.notifications.upsertPushSubscription(subscription);
 	} catch (e) {
 		console.error("Failed to save subscription", e);
 	}

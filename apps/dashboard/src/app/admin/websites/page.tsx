@@ -26,7 +26,7 @@ import {
   ExternalLink,
 } from "lucide-react"
 import { formatNumber, formatDate } from "@/lib/utils"
-import { getAdminWebsites, getAdminWebsiteStats } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 
 export default function AdminWebsitesPage() {
   const [loading, setLoading] = useState(true)
@@ -49,9 +49,9 @@ export default function AdminWebsitesPage() {
       if (search.trim()) params.search = search.trim()
 
       const [websitesRes, statsRes] = await Promise.all([
-        getAdminWebsites(params),
-        getAdminWebsiteStats(),
-      ])
+        api.admin.getAdminWebsites(params),
+        api.admin.getAdminWebsiteStats(),
+      ]) as any[]
 
       if (websitesRes.success) {
         setWebsites(websitesRes.websites || [])

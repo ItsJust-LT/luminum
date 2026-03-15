@@ -12,7 +12,7 @@ import { authClient } from "@/lib/auth/client"
 import { toast } from "sonner"
 import { Separator } from "@/components/ui/separator"
 import { signUpWithGoogle } from "@/lib/auth/sign-up"
-import { acceptOrganizationInvitation } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 
 interface AcceptOrganizationInvitationFormProps {
   invitation: {
@@ -88,7 +88,7 @@ export function AcceptOrganizationInvitationForm({ invitation }: AcceptOrganizat
     setLoading(true)
     try {
       // First, create the user account if needed
-      const result = await acceptOrganizationInvitation({
+      const result = await api.organizationActions.acceptInvitation({
         invitationId: invitation.id,
         name: formData.name,
         email: formData.email,

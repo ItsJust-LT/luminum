@@ -17,7 +17,7 @@ import {
   Download,
   RefreshCw,
 } from "lucide-react"
-import { generateUpdateCardLink } from "@/lib/actions/paystack-billing"
+import { api } from "@/lib/api"
 import { useOrganization, usePrimarySubscription, useBillingInfo } from "@/lib/contexts/organization-context"
 
 export function BillingPageContent() {
@@ -42,7 +42,7 @@ export function BillingPageContent() {
     if (!primarySubscription?.provider_subscription_id) return
 
     try {
-      const result = await generateUpdateCardLink(String(primarySubscription.provider_subscription_id))
+      const result = await api.paystack.generateUpdateCardLink(String(primarySubscription.provider_subscription_id))
       if (result.success && result.data?.link) {
         window.open(result.data.link, "_blank")
       } else {

@@ -29,7 +29,7 @@ import {
   User as UserIcon
 } from "lucide-react"
 import { SUPPORT_CATEGORIES, SUPPORT_PRIORITIES, SUPPORT_STATUSES } from "@/lib/types/support"
-import { createSupportTicket, getSupportTickets } from "@/lib/actions/support-actions"
+import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
@@ -66,11 +66,12 @@ export default function SupportPage() {
   const fetchTickets = async () => {
     setLoading(true)
     try {
-      const result = await getSupportTickets()
-      if (result.success) {
-        setTickets(result.data || [])
+      const result = await api.support.getTickets()
+      const res = result as { success?: boolean; tickets?: any[]; data?: any[]; error?: string }
+      if (res.success) {
+        setTickets(res.tickets || res.data || [])
       } else {
-        toast.error(result.error || "Failed to fetch tickets")
+        toast.error(res.error || "Failed to fetch tickets")
       }
     } catch (error) {
       console.error("Error fetching tickets:", error)
@@ -89,7 +90,7 @@ export default function SupportPage() {
 
     setCreating(true)
     try {
-      const result = await createSupportTicket(newTicket)
+      const result = await api.support.createTicket(newTicket)
       if (result.success) {
         toast.success("Support ticket created successfully!")
         setNewTicket({ title: "", description: "", category: "general", priority: "medium" })

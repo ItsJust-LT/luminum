@@ -22,7 +22,7 @@ import {
 import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-organization-creator-dialog"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { getAdminDashboardStats } from "@/lib/actions/admin-dashboard-actions"
+import { api } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCurrency } from "@/lib/utils"
@@ -115,10 +115,11 @@ export function AdminDashboard() {
     setError(null)
     
     try {
-      const result = await getAdminDashboardStats()
-      if (result.success && result.data) {
-        setStats(result.data)
-        setOrganizations(result.data.recent.organizations || [])
+      const result = await api.admin.getDashboardStats() as { success?: boolean; stats?: any; data?: any; error?: string }
+      const data = result?.stats ?? result?.data
+      if (result?.success && data) {
+        setStats(data)
+        setOrganizations(data.recent?.organizations ?? data.recentOrgs ?? [])
       } else {
         setError(result.error || "Failed to fetch dashboard data")
       }

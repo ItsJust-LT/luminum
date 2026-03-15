@@ -22,7 +22,7 @@ import {
   CreditCard,
 } from "lucide-react"
 import { formatNumber, formatDate } from "@/lib/utils"
-import { getAdminDashboardStats } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 
 interface DashboardStats {
   totalOrgs: number
@@ -50,7 +50,7 @@ export default function AdminHomePage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await getAdminDashboardStats()
+      const result = await api.admin.getDashboardStats() as { success?: boolean; stats?: DashboardStats; error?: string }
       if (result.success && result.stats) {
         setStats(result.stats)
       } else {

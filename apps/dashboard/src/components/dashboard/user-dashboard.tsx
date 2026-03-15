@@ -30,7 +30,7 @@ import { authClient } from "@/lib/auth/client"
 import { useState, useEffect } from "react"
 import { CardSkeleton } from "@/components/ui/skeleton-loader"
 import { ClientProjectManagement } from "@/components/dashboard/client-project-management"
-import { getWebsitesByOrganization } from "@/lib/supabase/websites"
+import { api } from "@/lib/api"
 import type { Website } from "@/lib/types/websites"
 import { AnalyticsOverview } from "@/components/analytics/analytics-overview"
 
@@ -60,7 +60,8 @@ export function UserDashboard() {
         const projectsWithWebsites = await Promise.all(
           result.data.map(async (project) => {
             // Get website data for this organization using server action
-            const { data: websites } = await getWebsitesByOrganization(project.id)
+            const res = await api.websites.list(project.id) as { data?: Website[] }
+            const websites = res?.data
             const website = websites?.[0] // Assuming one website per organization for now
 
             return {

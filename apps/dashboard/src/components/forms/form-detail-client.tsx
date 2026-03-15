@@ -22,7 +22,7 @@ import {
   Globe,
   FileText
 } from "lucide-react"
-import { updateFormSubmissionStatus } from "@/lib/actions/forms"
+import { api } from "@/lib/api"
 import type { FormSubmission } from "@/lib/types/forms"
 import { 
   detectFormFields, 
@@ -45,8 +45,9 @@ export function FormDetailClient({ submission, organizationSlug }: FormDetailCli
 
   const handleContactedToggle = async (newContacted: boolean) => {
     setContacted(newContacted)
-    const result = await updateFormSubmissionStatus(submission.id, { contacted: newContacted })
-    if (!result.success) {
+    try {
+      await api.forms.updateStatus(submission.id, { contacted: newContacted })
+    } catch {
       setContacted(!newContacted) // Revert on error
     }
   }

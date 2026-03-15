@@ -41,7 +41,7 @@ import {
   Mail,
   FileText,
 } from "lucide-react"
-import { getOrganizationsAsAdmin } from "@/lib/actions/admin-organization-actions"
+import { api } from "@/lib/api"
 import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-organization-creator-dialog"
 import { formatDate, formatNumber } from "@/lib/utils"
 import { toast } from "sonner"
@@ -58,7 +58,7 @@ export default function AdminOrganizationsPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await getOrganizationsAsAdmin()
+      const result = await api.admin.getOrganizations() as { success?: boolean; organizations?: any[]; data?: any[]; error?: string }
       if (result.success) {
         setOrganizations(result.organizations || result.data || [])
       } else {

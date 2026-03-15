@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { useEmailsContext } from "@/lib/contexts/emails-context"
 import type { EmailListItem } from "@/lib/contexts/emails-context"
-import { getEmails, deleteEmail, getEmailAddresses, getEmailSetupStatus, setEmailSetupDomain, verifyEmailDns, type EmailSetupStatus } from "@/lib/actions/emails"
-import { getWebsitesByOrganization } from "@/lib/prisma/websites"
+import { api } from "@/lib/api"
+import type { EmailSetupStatus } from "@/lib/types/emails"
 import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { Button } from "@/components/ui/button"
@@ -107,7 +107,7 @@ export default function EmailsPage() {
 
   useEffect(() => {
     if (!organization?.id) return
-    getEmailSetupStatus(organization.id).then(setSetupStatus)
+    api.emails.getSetupStatus(organization.id).then(setSetupStatus)
   }, [organization?.id])
 
   // When setup required and no domain, fetch websites so owner/admin can select one
@@ -115,7 +115,7 @@ export default function EmailsPage() {
     if (!organization?.id || !setupStatus || setupStatus.setupComplete || setupStatus.domain) return
     const canSetDomain = userRole === "owner" || userRole === "admin"
     if (!canSetDomain) return
-    getWebsitesByOrganization(organization.id).then((res) => {
+    api.websites.list(organization.id).then((res: any) => {
       if (res?.data?.length) setWebsites(res.data)
     })
   }, [organization?.id, setupStatus, userRole])
@@ -129,7 +129,7 @@ export default function EmailsPage() {
       if (refresh) setLoading(true)
       else setLoadingMore(true)
       try {
-        const result = await getEmails(
+        const result = await api.emails.list(
           organization.id,
           pageNum,
           50,
@@ -152,7 +152,7 @@ export default function EmailsPage() {
         } else {
           toast.error(result.error || "Failed to fetch emails")
         }
-        const emailAddressesResult = await getEmailAddresses(organization.id)
+        const emailAddressesResult = await api.emails.getAddresses(organization.id)
         if (emailAddressesResult.success && Array.isArray(emailAddressesResult.emailAddresses)) {
           setAvailableEmailAddresses(emailAddressesResult.emailAddresses)
         } else {
@@ -196,7 +196,7 @@ export default function EmailsPage() {
 
   const handleDeleteEmail = useCallback((e: React.MouseEvent, emailId: string) => {
     e.stopPropagation()
-    deleteEmail(emailId)
+    api.emails.delete(emailId)
     setEmails((prev) => prev.filter((email) => email.id !== emailId))
   }, [setEmails])
 
@@ -300,10 +300,10 @@ export default function EmailsPage() {
       if (!organization?.id) return
       setSettingDomain(true)
       try {
-        const res = await setEmailSetupDomain(organization.id, websiteId)
+        const res = await api.emails.setupDomain(organization.id, websiteId)
         if (res?.success) {
           toast.success("Domain set. Add the MX record below, then click Verify DNS.")
-          const next = await getEmailSetupStatus(organization.id)
+          const next = await api.emails.getSetupStatus(organization.id)
           setSetupStatus(next)
         } else {
           toast.error((res as { error?: string })?.error || "Failed to set domain")
@@ -319,19 +319,19 @@ export default function EmailsPage() {
       if (!organization?.id) return
       setVerifyingDns(true)
       try {
-        const res = await verifyEmailDns(organization.id) as { success?: boolean; error?: string; message?: string }
+        const res = await api.emails.verifyDns(organization.id) as { success?: boolean; error?: string; message?: string }
         if (res?.success) {
           toast.success(res?.message || "DNS verified. You can send and receive email.")
-          const next = await getEmailSetupStatus(organization.id)
+          const next = await api.emails.getSetupStatus(organization.id)
           setSetupStatus(next)
         } else {
           toast.error(res?.error || "DNS check failed. Fix the MX record and try again.")
-          const next = await getEmailSetupStatus(organization.id)
+          const next = await api.emails.getSetupStatus(organization.id)
           setSetupStatus(next)
         }
       } catch {
         toast.error("Verification failed")
-        const next = await getEmailSetupStatus(organization.id)
+        const next = await api.emails.getSetupStatus(organization.id)
         setSetupStatus(next)
       } finally {
         setVerifyingDns(false)

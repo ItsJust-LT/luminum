@@ -36,13 +36,7 @@ import {
   Code2,
   Loader2,
 } from "lucide-react"
-import {
-  getAdminDatabaseTables,
-  getAdminDatabaseSchema,
-  getAdminDatabaseRows,
-  updateAdminDatabaseRow,
-  runAdminDatabaseSql,
-} from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 
 type TableMeta = { name: string; rowCount: number }
 type ColumnMeta = { name: string; type: string; nullable: boolean; default: string | null }
@@ -87,7 +81,7 @@ export default function AdminDatabasePage() {
     setTablesLoading(true)
     setTablesError(null)
     try {
-      const res = await getAdminDatabaseTables() as { success?: boolean; tables?: TableMeta[]; error?: string }
+      const res = await api.admin.getDatabaseTables() as { success?: boolean; tables?: TableMeta[]; error?: string }
       if (res?.success && Array.isArray(res.tables)) {
         setTables(res.tables)
       } else {
@@ -107,7 +101,7 @@ export default function AdminDatabasePage() {
   const fetchSchema = useCallback(async (tableName: string) => {
     setSchemaLoading(true)
     try {
-      const res = await getAdminDatabaseSchema(tableName) as SchemaResult & { error?: string }
+      const res = await api.admin.getDatabaseTableSchema(tableName) as SchemaResult & { error?: string }
       if (res?.success && res.columns) {
         setSchema({
           success: true,
@@ -129,7 +123,7 @@ export default function AdminDatabasePage() {
     async (tableName: string, page: number = 1) => {
       setRowsLoading(true)
       try {
-        const res = await getAdminDatabaseRows(tableName, page, pagination.limit) as {
+        const res = await api.admin.getDatabaseTableRows(tableName, { page, limit: pagination.limit }) as {
           success?: boolean
           rows?: Record<string, unknown>[]
           pagination?: { page: number; limit: number; total: number; totalPages: number }
@@ -196,7 +190,7 @@ export default function AdminDatabasePage() {
     setSaving(true)
     setSaveError(null)
     try {
-      const res = await updateAdminDatabaseRow(selectedTable, primaryKey, data) as { success?: boolean; updated?: number; error?: string }
+      const res = await api.admin.updateDatabaseRow(selectedTable, { primaryKey, data }) as { success?: boolean; updated?: number; error?: string }
       if (res?.success) {
         closeEdit()
         fetchRows(selectedTable, pagination.page)
@@ -215,7 +209,7 @@ export default function AdminDatabasePage() {
     setSqlError(null)
     setSqlResult(null)
     try {
-      const res = await runAdminDatabaseSql(sqlQuery) as {
+      const res = await api.admin.runDatabaseSql(sqlQuery) as {
         success?: boolean
         type?: "select" | "write"
         rows?: Record<string, unknown>[]

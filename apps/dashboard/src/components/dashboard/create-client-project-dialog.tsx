@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { authClient } from "@/lib/auth/client"
-import { createWebsite, checkDomainAvailability } from "@/lib/supabase/websites"
+import { api } from "@/lib/api"
 
 interface CreateClientProjectDialogProps {
   onProjectCreated?: () => void
@@ -80,14 +80,14 @@ export function CreateClientProjectDialog({ onProjectCreated }: CreateClientProj
         throw new Error("Please enter a complete domain (e.g., example.com, site.org)")
       }
 
-      // Check if domain already exists using server action
-      const { available, error: availabilityError } = await checkDomainAvailability(domain)
+      // Check if domain already exists
+      const domainCheck = await api.websites.checkDomain(domain) as { available?: boolean; error?: string }
 
-      if (availabilityError) {
-        throw new Error(availabilityError)
+      if (domainCheck.error) {
+        throw new Error(domainCheck.error)
       }
 
-      if (!available) {
+      if (!domainCheck.available) {
         throw new Error(`Domain "${domain}" is already taken. Please choose a different domain.`)
       }
 
@@ -105,17 +105,16 @@ export function CreateClientProjectDialog({ onProjectCreated }: CreateClientProj
         throw new Error(orgResult.error.message || "Failed to create organization")
       }
 
-      // Create the website entry in Supabase using server action
-      const websiteResult = await createWebsite({
-        name: projectName,
-        domain: domain, // Now stores complete domain
-        organization_id: orgResult.data?.id || "",
-      })
-
-      if (websiteResult.error) {
+      // Create the website entry
+      try {
+        await api.websites.create({
+          name: projectName,
+          domain: domain,
+          organization_id: orgResult.data?.id || "",
+        })
+      } catch (websiteErr: any) {
         // If website creation fails, we should ideally clean up the organization
-        // For now, we'll just show the error
-        throw new Error(websiteResult.error)
+        throw new Error(websiteErr?.message || "Failed to create website")
       }
 
       setSuccess(true)

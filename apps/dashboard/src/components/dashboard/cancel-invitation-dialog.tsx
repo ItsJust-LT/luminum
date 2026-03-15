@@ -13,7 +13,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { X, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
-import { cancelOrganizationInvitation } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 
 interface CancelInvitationDialogProps {
   isOpen: boolean
@@ -42,7 +42,7 @@ export function CancelInvitationDialog({
     setError("")
 
     try {
-      const result = await cancelOrganizationInvitation(invitation.id)
+      const result = await api.organizationActions.cancelInvitation(invitation.id)
 
       if (!result.success) {
         throw new Error(result.error || "Failed to cancel invitation")

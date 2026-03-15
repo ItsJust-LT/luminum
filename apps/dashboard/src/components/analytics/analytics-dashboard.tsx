@@ -23,15 +23,8 @@ import {
 import { AnalyticsChart } from "./analytics-chart"
 import { TopPagesTable } from "./top-pages-table"
 import { FormSubmissionsInfo } from "./form-submissions-info"
-import type { MetricCount } from "@/lib/actions/analytics"
-import {
-  getAnalyticsOverview,
-  getAnalyticsTimeSeries,
-  getAnalyticsTopPages,
-  getAnalyticsCountries,
-  getAnalyticsDevices,
-  getAnalyticsRealtime,
-} from "@/lib/actions/analytics"
+import type { MetricCount } from "@/lib/types/analytics"
+import { api } from "@/lib/api"
 import { formatDuration } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -91,12 +84,12 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
       const end = endDate.toISOString()
 
       const [overview, timeseries, pages, realtimeData, devices, countries] = await Promise.all([
-        getAnalyticsOverview(websiteId, start, end),
-        getAnalyticsTimeSeries(websiteId, start, end, dateRange === "24h" ? "hour" : "day"),
-        getAnalyticsTopPages(websiteId, start, end, 10),
-        getAnalyticsRealtime(websiteId),
-        getAnalyticsDevices(websiteId, start, end, 5),
-        getAnalyticsCountries(websiteId, start, end, 10),
+        api.get("/api/analytics/overview", { websiteId, start, end }),
+        api.get("/api/analytics/timeseries", { websiteId, start, end, granularity: dateRange === "24h" ? "hour" : "day" }),
+        api.get("/api/analytics/top-pages", { websiteId, start, end, limit: 10 }),
+        api.get("/api/analytics/realtime", { websiteId }),
+        api.get("/api/analytics/devices", { websiteId, start, end, limit: 5 }),
+        api.get("/api/analytics/countries", { websiteId, start, end, limit: 10 }),
       ])
 
       if (overview) {

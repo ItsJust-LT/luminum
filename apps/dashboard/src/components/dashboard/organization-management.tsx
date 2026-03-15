@@ -12,7 +12,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { authClient } from "@/lib/auth/client"
 import { OrganizationInviteDialog } from "@/components/dashboard/organization-invite-dialog"
 import { AddClientToOrganizationDialog } from "@/components/dashboard/add-client-to-organization-dialog"
-import { removeMemberFromOrganization, updateMemberRole } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 
 interface Organization {
   id: string
@@ -119,7 +119,7 @@ export function OrganizationManagement({ onOrganizationChange }: OrganizationMan
   const handleRemoveMember = async (member: any) => {
     if (confirm("Are you sure you want to remove this member?")) {
       try {
-        const result = await removeMemberFromOrganization({
+        const result = await api.organizationActions.removeMember({
           memberId: member.userId,
           memberEmail: member.user.email,
           memberName: member.user.name,
@@ -142,7 +142,7 @@ export function OrganizationManagement({ onOrganizationChange }: OrganizationMan
 
   const handleUpdateMemberRole = async (userId: string, newRole: "admin" | "member") => {
     try {
-      const result = await updateMemberRole({
+      const result = await api.organizationActions.updateRole({
         memberId: userId,
         newRole: newRole,
         organizationId: activeOrg?.id || "",

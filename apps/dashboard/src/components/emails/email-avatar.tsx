@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react"
 import { cn } from "@/lib/utils"
-import { getAvatarForEmail } from "@/lib/actions/avatar"
+import { api } from "@/lib/api"
 
 const CLEARBIT_BASE = "https://logo.clearbit.com"
 const FAVICON_BASE = "https://icons.duckduckgo.com/ip3"
@@ -76,7 +76,7 @@ export function EmailAvatar({ email, imageUrl: initialImageUrl, className, size 
     if (requestedRef.current === cacheKey) return
     requestedRef.current = cacheKey
     let cancelled = false
-    getAvatarForEmail(normalizedEmail)
+    api.avatar.getForEmail(normalizedEmail)
       .then((result) => {
         if (!cancelled) {
           const urls = {

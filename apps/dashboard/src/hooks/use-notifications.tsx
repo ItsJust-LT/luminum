@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from '@/lib/auth/client';
-import { fetchNotifications, getUnreadCount as getUnreadCountAction, markNotificationRead, markAllNotificationsRead } from '@/lib/notifications/actions';
+import { api } from '@/lib/api';
 import { Notification, NotificationFilter, NotificationStats } from '@/lib/notifications/types';
 import { useRealtime } from '@/components/realtime/realtime-provider';
 
@@ -63,7 +63,7 @@ export function useNotifications() {
     setError(null);
     
     try {
-      const { items } = await fetchNotifications(undefined, 50);
+      const { items } = await api.notifications.fetch(undefined, 50);
       const converted = items.map(convertToNotification);
       setNotifications(converted);
       updateStats(converted);
@@ -80,7 +80,7 @@ export function useNotifications() {
     if (!userId) return;
     
     try {
-      const result = await getUnreadCountAction();
+      const result = await api.notifications.getUnreadCount();
       if (result && typeof result === 'object' && 'unread' in result) {
         setStats(prev => ({ ...prev, unread: result.unread }));
       }
@@ -165,7 +165,7 @@ export function useNotifications() {
     if (!session?.user?.id) return;
     
     try {
-      await markNotificationRead(notificationId);
+      await api.notifications.markRead(notificationId);
       setNotifications(prev => 
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
@@ -181,7 +181,7 @@ export function useNotifications() {
     if (!session?.user?.id) return;
     
     try {
-      await markAllNotificationsRead();
+      await api.notifications.markAllRead();
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       updateStats(notifications.map(n => ({ ...n, read: true })));
       await loadUnreadCount(session.user.id);

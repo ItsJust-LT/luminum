@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useSession } from '@/lib/auth/client';
-import { getNotificationPreferences, updateNotificationPreferences } from '@/lib/notifications/preferences-actions';
+import { api } from '@/lib/api';
 import { NotificationType } from '@/lib/types/notifications';
 import { getNotificationTypeStyle } from '@/lib/notifications/utils';
 import { Loader2, Check } from 'lucide-react';
@@ -42,7 +42,7 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
     
     setLoading(true);
     try {
-      const result = await getNotificationPreferences();
+      const result = await api.notificationPreferences.get();
       if (result.success && result.preferences) {
         setPreferences({
           pushEnabled: result.preferences.pushEnabled,
@@ -65,7 +65,7 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
     
     setSaving(true);
     try {
-      const result = await updateNotificationPreferences({
+      const result = await api.notificationPreferences.update({
         push_enabled: preferences.pushEnabled,
         in_app_enabled: preferences.inAppEnabled,
         email_enabled: preferences.emailEnabled,

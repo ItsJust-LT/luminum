@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useNotifications } from '@/hooks/use-notifications';
 import { isPushEnabled, subscribeToPush, unsubscribeFromPush } from '@/lib/notifications/push-client';
-import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from '@/lib/notifications/actions';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/auth/client';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { getNotificationTypeStyle } from '@/lib/notifications/utils';
@@ -36,8 +36,8 @@ export function NotificationBell() {
   // Load notifications
   useEffect(() => {
     if (!userId) return;
-    fetchNotifications(undefined, 20).then(({ items: initial, nextCursor }) => {
-      setNotifications(initial);
+    api.notifications.fetch(undefined, 20).then(({ items: initial, nextCursor }: any) => {
+      setNotifications(initial || []);
       setCursor(nextCursor);
     });
   }, [userId]);
@@ -45,8 +45,8 @@ export function NotificationBell() {
   // Reload notifications when dropdown opens
   useEffect(() => {
     if (open && userId) {
-      fetchNotifications(undefined, 20).then(({ items: initial, nextCursor }) => {
-        setNotifications(initial);
+      api.notifications.fetch(undefined, 20).then(({ items: initial, nextCursor }: any) => {
+        setNotifications(initial || []);
         setCursor(nextCursor);
       });
     }
@@ -70,13 +70,13 @@ export function NotificationBell() {
 
   const onMarkAllRead = async () => {
     if (!userId) return;
-    await markAllNotificationsRead();
+    await api.notifications.markAllRead();
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
   const onMarkRead = async (id: string) => {
     if (!userId) return;
-    await markNotificationRead(id);
+    await api.notifications.markRead(id);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   };
 
@@ -84,7 +84,7 @@ export function NotificationBell() {
     if (!userId || !cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const { items: more, nextCursor } = await fetchNotifications(cursor, 20);
+      const { items: more, nextCursor } = await api.notifications.fetch(cursor, 20);
       setNotifications(prev => [...prev, ...more]);
       setCursor(nextCursor);
     } finally {

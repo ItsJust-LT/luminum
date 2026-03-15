@@ -1,5 +1,3 @@
-"use server"
-
 import { NotificationType, NotificationData, NotificationTarget } from "@/lib/types/notifications"
 
 export interface SendNotificationParams {

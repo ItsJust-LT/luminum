@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { authClient } from "@/lib/auth/client"
-import { getAllWebsites, deleteWebsite } from "@/lib/supabase/websites"
+import { api } from "@/lib/api"
 import { Website } from "@/lib/types/websites"
 
 interface ClientProject {
@@ -41,10 +41,11 @@ export function ClientProjectsList() {
       const orgResult = (await authClient.organization.list()) as { data?: Array<{ id: string; name?: string; slug?: string; createdAt?: Date | string; [key: string]: unknown }> }
 
       // Get websites
-      const { data: websites, error: websiteError } = await getAllWebsites()
+      const websitesRes = await api.websites.list() as { data?: any[]; error?: string }
+      const websites = websitesRes?.data
 
-      if (websiteError) {
-        console.error("Error fetching websites:", websiteError)
+      if (websitesRes?.error) {
+        console.error("Error fetching websites:", websitesRes.error)
       }
 
       if (orgResult.data) {
@@ -74,8 +75,9 @@ export function ClientProjectsList() {
       try {
         // Delete website first if it exists
         if (project.website) {
-          const { success, error: websiteError } = await deleteWebsite(project.website.id)
-          if (!success && websiteError) {
+          try {
+            await api.websites.delete(project.website.id)
+          } catch (websiteError) {
             console.error("Error deleting website:", websiteError)
             // Continue with organization deletion even if website deletion fails
           }

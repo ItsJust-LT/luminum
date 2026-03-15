@@ -27,7 +27,7 @@ import {
   ArrowUpRight,
 } from "lucide-react"
 import { formatNumber, formatDate } from "@/lib/utils"
-import { getAdminEmails, getAdminEmailStats } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 
 export default function AdminEmailsPage() {
   const [loading, setLoading] = useState(true)
@@ -52,9 +52,9 @@ export default function AdminEmailsPage() {
       if (search.trim()) params.search = search.trim()
 
       const [emailsRes, statsRes] = await Promise.all([
-        getAdminEmails(params),
-        getAdminEmailStats(),
-      ])
+        api.admin.getAdminEmails(params),
+        api.admin.getAdminEmailStats(),
+      ]) as any[]
 
       if (emailsRes.success) {
         setEmails(emailsRes.emails || [])

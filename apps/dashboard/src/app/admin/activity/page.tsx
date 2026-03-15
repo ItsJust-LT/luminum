@@ -27,7 +27,7 @@ import {
   Eye,
   Wifi,
 } from "lucide-react"
-import { getActivityOverview, getActivityUsers } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 
 function formatDuration(ms: number): string {
@@ -60,11 +60,11 @@ export default function AdminActivityPage() {
     setLoading(true)
     try {
       const [overviewRes, usersRes] = await Promise.all([
-        getActivityOverview(),
-        getActivityUsers(period, search || undefined),
-      ])
-      if (overviewRes.success) setOverview(overviewRes.overview)
-      if (usersRes.success) {
+        api.admin.getActivityOverview({ period }),
+        api.admin.getActivityUsers({ period, search: search || undefined }),
+      ]) as [{ success?: boolean; overview?: any }, { success?: boolean; users?: any[]; total?: number }]
+      if (overviewRes?.success) setOverview(overviewRes.overview)
+      if (usersRes?.success) {
         setUsers(usersRes.users || [])
         setTotal(usersRes.total || 0)
       }

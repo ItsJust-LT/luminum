@@ -1,14 +1,31 @@
+"use client"
+
 import { notFound } from "next/navigation"
 import { AcceptOrganizationInvitationForm } from "@/components/dashboard/accept-organization-invitation-form"
-import { getOrganizationInvitation } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
+import { useEffect, useState } from "react"
+import { useParams } from "next/navigation"
 
-export default async function AcceptOrganizationInvitationPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
-  const { id } = await params
-  const result = await getOrganizationInvitation(id)
+export default function AcceptOrganizationInvitationPage() {
+  const params = useParams()
+  const id = params.id as string
+  const [result, setResult] = useState<{ success?: boolean; invitation?: any; error?: string } | null>(null)
+
+  useEffect(() => {
+    if (!id) return
+    api.organizationActions
+      .getInvitation(id)
+      .then((res: any) => setResult(res))
+      .catch(() => setResult({ success: false, error: "Failed to load invitation" }))
+  }, [id])
+
+  if (result === null) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
+        <p className="text-muted-foreground">Loading invitation…</p>
+      </div>
+    )
+  }
 
   if (!result.success || !result.invitation) {
     notFound()

@@ -32,7 +32,7 @@ import {
   Building2,
 } from "lucide-react"
 import { formatNumber, formatDate } from "@/lib/utils"
-import { getAdminFormSubmissions, getAdminFormStats, updateAdminFormSubmissionStatus } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 import { toast } from "sonner"
 
 export default function AdminFormsPage() {
@@ -55,9 +55,9 @@ export default function AdminFormsPage() {
       else if (statusFilter === "contacted") params.contacted = true
 
       const [subsRes, statsRes] = await Promise.all([
-        getAdminFormSubmissions(params),
-        getAdminFormStats(),
-      ])
+        api.admin.getAdminFormSubmissions(params),
+        api.admin.getAdminFormStats(),
+      ]) as any[]
 
       if (subsRes.success) {
         setSubmissions(subsRes.submissions || [])
@@ -75,7 +75,7 @@ export default function AdminFormsPage() {
 
   const handleStatusUpdate = async (id: string, data: { seen?: boolean; contacted?: boolean }) => {
     try {
-      const res = await updateAdminFormSubmissionStatus(id, data)
+      const res = await api.admin.updateAdminFormSubmissionStatus(id, data) as any
       if (res.success) {
         toast.success("Status updated")
         fetchData()

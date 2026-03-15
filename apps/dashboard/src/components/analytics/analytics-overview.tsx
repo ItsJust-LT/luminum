@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { getAnalyticsOverview, getAnalyticsRealtime } from "@/lib/actions/analytics"
+import { api } from "@/lib/api"
 import { useAnalyticsPresence } from "@/lib/ably/client"
 import { formatDuration } from "@/lib/utils"
 import { Eye, Users, Clock, TrendingUp, Activity, FileText, BarChart3 } from "lucide-react"
@@ -39,17 +39,17 @@ export function AnalyticsOverview({ websiteId, analyticsEnabled }: AnalyticsOver
         const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000) // Last 7 days
 
         const [overview, realtime] = await Promise.all([
-          getAnalyticsOverview(websiteId, start.toISOString(), end.toISOString()),
-          getAnalyticsRealtime(websiteId),
+          api.get("/api/analytics/overview", { websiteId, start: start.toISOString(), end: end.toISOString() }),
+          api.get("/api/analytics/realtime", { websiteId }),
         ])
 
+        const ov = overview as { pageViews?: number; uniqueSessions?: number; avgDuration?: number } | null
         const mappedData: OverviewData = {
-          pageViews: overview?.pageViews ?? 0,
-          uniqueVisitors: overview?.uniqueSessions ?? 0,
-          avgSessionDuration: overview?.avgDuration ?? 0,
-          bounceRate: 0, // Not available in current API
+          pageViews: ov?.pageViews ?? 0,
+          uniqueVisitors: ov?.uniqueSessions ?? 0,
+          avgSessionDuration: ov?.avgDuration ?? 0,
+          bounceRate: 0,
         }
-
         setData(mappedData)
       } catch (error) {
         console.error("Failed to fetch analytics:", error)

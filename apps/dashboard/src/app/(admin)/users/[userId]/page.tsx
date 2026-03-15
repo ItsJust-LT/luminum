@@ -31,7 +31,7 @@ import {
   Phone,
   MapPin
 } from "lucide-react"
-import { getUserById } from "@/lib/actions/user-management"
+import { api } from "@/lib/api"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -69,12 +69,12 @@ export default function UserDetailPage() {
     try {
       setLoading(true)
       setError(null)
-      const result = await getUserById(userId)
-      
-      if (result.success) {
-        setUser(result.data || null)
+      const result = await api.userManagement.getUser(userId) as { success?: boolean; user?: User; data?: User; error?: string }
+      const userData = result?.user ?? result?.data
+      if (result?.success && userData) {
+        setUser(userData)
       } else {
-        setError(result.error || "Failed to fetch user")
+        setError(result?.error || "Failed to fetch user")
       }
     } catch (err) {
       setError("An unexpected error occurred")

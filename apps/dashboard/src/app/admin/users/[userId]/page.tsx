@@ -23,8 +23,7 @@ import {
   Clock,
   ExternalLink,
 } from "lucide-react"
-import { getUserById } from "@/lib/actions/user-management"
-import { reactivateUser, deactivateUser } from "@/lib/actions/admin-actions"
+import { api } from "@/lib/api"
 import { formatDate } from "@/lib/utils"
 import { toast } from "sonner"
 import { authClient } from "@/lib/auth/client"
@@ -42,7 +41,7 @@ export default function AdminUserDetailPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await getUserById(userId)
+      const result = await api.userManagement.getUser(userId) as any
       if (result.success) {
         setUser(result.user || result.data || null)
       } else {
@@ -59,7 +58,7 @@ export default function AdminUserDetailPage() {
 
   const handleBan = async () => {
     try {
-      const res = await deactivateUser(userId, "Banned by admin")
+      const res = await api.userManagement.deactivateUser(userId, "Banned by admin") as any
       if (res.success) { toast.success("User banned"); fetchUser() }
       else toast.error(res.error || "Failed")
     } catch { toast.error("Failed to ban user") }
@@ -67,7 +66,7 @@ export default function AdminUserDetailPage() {
 
   const handleUnban = async () => {
     try {
-      const res = await reactivateUser(userId)
+      const res = await api.userManagement.reactivateUser(userId) as any
       if (res.success) { toast.success("User reactivated"); fetchUser() }
       else toast.error(res.error || "Failed")
     } catch { toast.error("Failed to reactivate") }

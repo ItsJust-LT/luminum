@@ -9,7 +9,7 @@ import { getNotificationTypeStyle, formatRelativeTime } from '@/lib/notification
 import { Notification } from '@/lib/notifications/types';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
-import { markNotificationRead } from '@/lib/notifications/actions';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/auth/client';
 
 interface RealtimeNotificationPopupProps {
@@ -57,7 +57,7 @@ export function RealtimeNotificationPopup({
     // Mark as read if user is logged in and notification has a valid ID
     if (userId && notification.id && !notification.id.startsWith('ably-')) {
       try {
-        await markNotificationRead(notification.id);
+        await api.notifications.markRead(notification.id);
       } catch (error) {
         console.error('Error marking notification as read:', error);
       }
@@ -73,7 +73,7 @@ export function RealtimeNotificationPopup({
     // Mark as read
     if (userId && notification.id && !notification.id.startsWith('ably-')) {
       try {
-        await markNotificationRead(notification.id);
+        await api.notifications.markRead(notification.id);
       } catch (error) {
         console.error('Error marking notification as read:', error);
       }

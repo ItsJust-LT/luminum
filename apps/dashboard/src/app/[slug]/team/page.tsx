@@ -14,7 +14,7 @@ import { useRealtime } from "@/components/realtime/realtime-provider"
 import { OrganizationInviteDialog } from "@/components/dashboard/organization-invite-dialog"
 import { RemoveMemberDialog } from "@/components/dashboard/remove-member-dialog"
 import { CancelInvitationDialog } from "@/components/dashboard/cancel-invitation-dialog"
-import { getOrganizationInvitations } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
 
 interface MemberUser {
@@ -85,7 +85,7 @@ export default function TeamPage() {
   const fetchInvitations = async () => {
     if (!organization) return
     try {
-      const result = await getOrganizationInvitations(organization.id)
+      const result = await api.organizationActions.getInvitations(organization.id) as { success?: boolean; invitations?: OrganizationInvitation[]; error?: string }
       if (result.success) {
         setInvitations(result.invitations || [])
       } else {

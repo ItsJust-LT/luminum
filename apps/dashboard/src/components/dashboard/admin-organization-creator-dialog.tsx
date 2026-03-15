@@ -37,13 +37,7 @@ import {
   Clock,
   Sparkles,
 } from "lucide-react"
-import {
-  createOrganizationWithOwner,
-  checkDomainAvailability,
-  getAllUsers,
-} from "@/lib/actions/admin-organization-actions"
-import { uploadLogoToCloudinary } from "@/lib/actions/cloudinary-upload"
-import { getCustomersWithActiveSubscriptions } from "@/lib/actions/paystack-customers"
+import { api } from "@/lib/api"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -148,7 +142,7 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
   }, [formData.clientEmail, subscriptionType])
 
   const fetchUsers = async () => {
-    const result = await getAllUsers()
+    const result = await api.admin.getUsers()
     if (result.success) {
       setUsers(result.users ?? [])
     }
@@ -160,7 +154,7 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
       return
     }
 
-    const result = await checkDomainAvailability(domain)
+    const result = await api.admin.checkDomain(domain)
     setDomainAvailable(result.available)
   }
 
@@ -197,15 +191,21 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
 
       setLogoUploading(true)
       try {
-        const uploadFormData = new FormData()
-        uploadFormData.append("logo", file)
+        const bytes = await file.arrayBuffer()
+        const logoBase64 = btoa(String.fromCharCode(...new Uint8Array(bytes)))
 
-        const result = await uploadLogoToCloudinary(uploadFormData)
+        const result = await api.uploads.logoToCloudinary({
+          logoBase64,
+          organizationName: formData.name,
+          fileName: file.name,
+          contentType: file.type,
+        })
 
-        if (result.success) {
-          setFormData((prev) => ({ ...prev, logoUrl: result.url }))
+        const res = result as { success?: boolean; url?: string; error?: string }
+        if (res.success && res.url) {
+          setFormData((prev) => ({ ...prev, logoUrl: res.url! }))
         } else {
-          setError(result.error || "Failed to upload logo")
+          setError(res.error || "Failed to upload logo")
         }
       } catch (error) {
         setError("Failed to upload logo")
@@ -234,7 +234,7 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
     setError("")
 
     try {
-      const result = await getCustomersWithActiveSubscriptions(customerSearchQuery.trim())
+      const result = await api.admin.searchPaystackCustomers(customerSearchQuery.trim())
 
       if (result.success && result.customers) {
         setFoundCustomers(result.customers)
@@ -295,7 +295,7 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
         throw new Error("Please select a customer and subscription")
       }
 
-      const result = await createOrganizationWithOwner({
+      const result = await api.admin.createOrganization({
         organizationData: {
           name: formData.name.trim(),
           slug: formData.slug.trim(),
@@ -895,11 +895,13 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
                         {foundCustomers.length > 0 && (
                           <div className="space-y-3">
                             <Label className="text-sm font-medium">Found Customers</Label>
-                            {foundCustomers.map((customerData) => (
+                            {foundCustomers.map((customerData) => {
+                              const c = (customerData as { customer?: { id: string; first_name?: string; last_name?: string; email?: string } }).customer
+                              return (
                               <Card
-                                key={customerData.customer.id}
+                                key={c?.id ?? (customerData as { id?: string }).id}
                                 className={`cursor-pointer transition-all duration-200 ${
-                                  selectedCustomer?.customer.id === customerData.customer.id
+                                  (selectedCustomer as { customer?: { id: string } } | null)?.customer?.id === c?.id
                                     ? "ring-2 ring-primary bg-primary/5 shadow-md"
                                     : "hover:bg-muted/50 hover:shadow-sm"
                                 }`}
@@ -912,24 +914,26 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
                                   <div className="flex justify-between items-start">
                                     <div>
                                       <p className="font-medium">
-                                        {customerData.customer.first_name} {customerData.customer.last_name}
+                                        {c?.first_name} {c?.last_name}
                                       </p>
-                                      <p className="text-sm text-muted-foreground">{customerData.customer.email}</p>
+                                      <p className="text-sm text-muted-foreground">{c?.email}</p>
                                       <p className="text-xs text-muted-foreground">
-                                        {customerData.activeSubscriptions.length} active subscription(s)
+                                        {(customerData as { activeSubscriptions?: unknown[] }).activeSubscriptions?.length ?? 0} active subscription(s)
                                       </p>
                                     </div>
                                   </div>
                                 </CardContent>
                               </Card>
-                            ))}
+                            ); })}
                           </div>
                         )}
 
-                        {selectedCustomer && selectedCustomer.activeSubscriptions.length > 0 && (
+                        {selectedCustomer && ((selectedCustomer as { activeSubscriptions?: unknown[] }).activeSubscriptions?.length ?? 0) > 0 && (
                           <div className="space-y-3">
                             <Label className="text-sm font-medium">Select Subscription</Label>
-                            {selectedCustomer.activeSubscriptions.map((subscription) => (
+                            {((selectedCustomer as { activeSubscriptions: PaystackSubscription[] }).activeSubscriptions ?? []).map((sub) => {
+                              const subscription = sub as PaystackSubscription & { plan?: { name?: string; currency?: string; amount?: number }; next_payment_date?: string }
+                              return (
                               <Card
                                 key={subscription.id}
                                 className={`cursor-pointer transition-all duration-200 ${
@@ -937,17 +941,17 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
                                     ? "ring-2 ring-primary bg-primary/5 shadow-md"
                                     : "hover:bg-muted/50 hover:shadow-sm"
                                 }`}
-                                onClick={() => setSelectedSubscription(subscription)}
+                                onClick={() => setSelectedSubscription(sub)}
                               >
                                 <CardContent className="p-4">
                                   <div className="flex justify-between items-start">
                                     <div>
-                                      <p className="font-medium">{subscription.plan.name}</p>
+                                      <p className="font-medium">{subscription.plan?.name}</p>
                                       <p className="text-sm text-muted-foreground">
-                                        {subscription.plan.currency} {(subscription.plan.amount / 100).toLocaleString()}
+                                        {subscription.plan?.currency} {((subscription.plan?.amount ?? 0) / 100).toLocaleString()}
                                       </p>
                                       <p className="text-xs text-muted-foreground">
-                                        Next payment: {new Date(subscription.next_payment_date).toLocaleDateString()}
+                                        Next payment: {subscription.next_payment_date ? new Date(subscription.next_payment_date).toLocaleDateString() : "—"}
                                       </p>
                                     </div>
                                     <div className="text-right">
@@ -958,7 +962,7 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
                                   </div>
                                 </CardContent>
                               </Card>
-                            ))}
+                            ); }) }
                           </div>
                         )}
                       </CardContent>

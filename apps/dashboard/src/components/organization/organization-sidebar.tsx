@@ -26,10 +26,7 @@ import { Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Se
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { getWebsitesByOrganization } from "@/lib/supabase/websites"
-import { getFormSubmissions } from "@/lib/actions/forms"
-import { getUnreadEmailCount } from "@/lib/actions/emails"
-import { getOrganizationEmailsEnabled } from "@/lib/actions/organization-settings"
+import { api } from "@/lib/api"
 
 interface Organization {
   id: string

@@ -22,7 +22,7 @@ import {
   Globe,
   FileText
 } from "lucide-react"
-import { getFormSubmission, updateFormSubmissionStatus } from "@/lib/actions/forms"
+import { api } from "@/lib/api"
 import type { FormSubmission } from "@/lib/types/forms"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { 
@@ -49,15 +49,19 @@ export function FormDetailPage({ formId }: FormDetailPageProps) {
   useEffect(() => {
     const fetchSubmission = async () => {
       setLoading(true)
-      const result = await getFormSubmission(formId)
-
-      if (result.success) {
-        setSubmission(result.submission || null)
-        setError(null)
-      } else {
-        setError(result.error || "Failed to fetch submission")
+      try {
+        const result = await api.forms.getById(formId) as { success?: boolean; submission?: FormSubmission; error?: string }
+        if (result.success && result.submission) {
+          setSubmission(result.submission)
+          setError(null)
+        } else {
+          setError(result.error || "Failed to fetch submission")
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch submission")
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
 
     fetchSubmission()
@@ -71,10 +75,11 @@ export function FormDetailPage({ formId }: FormDetailPageProps) {
   const handleContactedToggle = async (contacted: boolean) => {
     if (!submission) return
 
-    const result = await updateFormSubmissionStatus(submission.id, { contacted })
-
-    if (result.success) {
+    try {
+      await api.forms.updateStatus(submission.id, { contacted })
       setSubmission((prev) => (prev ? { ...prev, contacted } : null))
+    } catch {
+      // ignore
     }
   }
 

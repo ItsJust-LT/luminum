@@ -2,8 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useSession } from '@/lib/auth/client'
-import { addSupportMessage, getSupportTicket, markTicketRead } from '@/lib/actions/support-actions'
-import { uploadFileToCloudinary } from '@/lib/actions/cloudinary-actions'
+import { api } from '@/lib/api'
 import { useRealtime } from '@/components/realtime/realtime-provider'
 import type { SupportMessage, SupportTicket } from '@/lib/types/support'
 
@@ -45,10 +44,11 @@ export function SupportMessagesProvider({
     if (!session || !ticketId) return
     setLoading(true)
     try {
-      const result = await getSupportTicket(ticketId)
-      if (result.success && result.data) {
-        setTicket(result.data)
-        setMessages(result.data.messages || [])
+      const result = await api.support.getTicket(ticketId) as { success?: boolean; data?: any; ticket?: any }
+      const data = result?.data ?? result?.ticket
+      if (result?.success !== false && data) {
+        setTicket(data)
+        setMessages(data.messages || [])
       }
     } catch (error) {
       console.error('Error fetching ticket and messages:', error)
@@ -66,14 +66,17 @@ export function SupportMessagesProvider({
         setUploading(true)
         try {
           const uploadPromises = attachments.map(async (file) => {
-            const formData = new FormData()
-            formData.append('file', file)
-            const result = await uploadFileToCloudinary(formData)
-            if (!result.success) throw new Error(result.error || 'Upload failed')
+            const bytes = await file.arrayBuffer()
+            const fileBase64 = btoa(String.fromCharCode(...new Uint8Array(bytes)))
+            const result = await api.uploads.fileToCloudinary({
+              fileBase64,
+              contentType: file.type,
+            }) as { success?: boolean; data?: { public_id: string; secure_url: string }; error?: string }
+            if (!result?.data) throw new Error(result?.error || 'Upload failed')
             return {
               filename: file.name, original_filename: file.name, file_size: file.size,
-              mime_type: file.type, cloudinary_public_id: result.data!.public_id,
-              cloudinary_url: result.data!.secure_url,
+              mime_type: file.type, cloudinary_public_id: result.data.public_id,
+              cloudinary_url: result.data.secure_url,
             }
           })
           attachmentData = await Promise.all(uploadPromises)
@@ -85,7 +88,7 @@ export function SupportMessagesProvider({
         }
       }
 
-      const result = await addSupportMessage(ticketId, { message, attachments: attachmentData })
+      const result = await api.support.addMessage(ticketId, { message, attachments: attachmentData }) as { success?: boolean; data?: any }
       if (result.success && result.data) {
         const newMessage: SupportMessage = {
           id: result.data.id,
@@ -120,7 +123,7 @@ export function SupportMessagesProvider({
   }, [fetchTicketAndMessages])
 
   const markAsRead = useCallback(async (_messageId: string) => {
-    if (ticketId) await markTicketRead(ticketId)
+    if (ticketId) await api.support.markTicketRead(ticketId)
   }, [ticketId])
 
   const reconnect = useCallback(() => {

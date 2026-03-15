@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, CheckCircle, XCircle } from "lucide-react"
 import { authClient } from "@/lib/auth/client"
 import { toast } from "sonner"
-import { acceptOrganizationInvitation } from "@/lib/actions/organization-actions"
+import { api } from "@/lib/api"
 
 function OrganizationInvitationCallbackContent() {
   const searchParams = useSearchParams()
@@ -38,8 +38,7 @@ function OrganizationInvitationCallbackContent() {
 
         setLoadingMessage("Accepting invitation...")
 
-        // Accept the organization invitation with the Google user data
-        const result = await acceptOrganizationInvitation({
+        const result = await api.organizationActions.acceptInvitation({
           invitationId,
           name: session.user.name || "User",
           email: session.user.email,

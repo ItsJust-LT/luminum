@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { authClient } from "@/lib/auth/client"
-import { getWebsitesByOrganization } from "@/lib/supabase/websites"
+import { api } from "@/lib/api"
 import type { Website } from "@/lib/types/websites"
 import LoadingAnimation from "@/components/LoadingAnimation"
 
@@ -52,12 +52,13 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
         const orgsWithDetails = await Promise.all(
           result.data.map(async (org) => {
             // Get website data for this organization
-            const { data: websites } = await getWebsitesByOrganization(org.id)
+            const res = await api.websites.list(org.id) as { data?: any[] }
+            const websites = res?.data
             const website = websites?.[0] // Assuming one website per organization for now
 
-            // Get member data using Prisma server action
-            const { getMembersByOrganization } = await import('@/lib/prisma/members')
-            const { data: members } = await getMembersByOrganization(org.id)
+            // Get member data
+            const membersRes = await api.members.list(org.id) as { data?: any[]; members?: any[] }
+            const members = membersRes?.data ?? membersRes?.members
 
             // Find current user's role in this organization
             const currentUserMember = members?.find((member: any) => 

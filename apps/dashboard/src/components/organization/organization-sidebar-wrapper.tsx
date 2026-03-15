@@ -4,8 +4,7 @@ import { useState, useCallback } from "react"
 import { OrganizationSidebar } from "./organization-sidebar"
 import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
-import { getUnreadEmailCount } from "@/lib/actions/emails"
-import { getUnseenFormsCount } from "@/lib/actions/forms"
+import { api } from "@/lib/api"
 
 interface Organization {
   id: string
@@ -53,7 +52,7 @@ export function OrganizationSidebarWrapper({
           break
         case OrganizationEvents.EMAIL_DELETED:
           // Refresh unread emails count (email might have been unread)
-          const emailResult = await getUnreadEmailCount(organization.id)
+          const emailResult = await api.emails.getUnreadCount(organization.id)
           if (emailResult.success) {
             setUnreadEmailsCount(emailResult.count || 0)
           }
@@ -64,14 +63,14 @@ export function OrganizationSidebarWrapper({
           break
         case OrganizationEvents.FORM_SUBMISSION_UPDATED:
           // Refresh unseen forms count (form might have been marked as seen)
-          const formsResult = await getUnseenFormsCount(organization.id)
+          const formsResult = await api.forms.getUnseenCount(organization.id)
           if (formsResult.success) {
             setUnseenFormsCount(formsResult.count || 0)
           }
           break
         case OrganizationEvents.FORM_SUBMISSION_DELETED:
           // Refresh unseen forms count
-          const formsResult2 = await getUnseenFormsCount(organization.id)
+          const formsResult2 = await api.forms.getUnseenCount(organization.id)
           if (formsResult2.success) {
             setUnseenFormsCount(formsResult2.count || 0)
           }

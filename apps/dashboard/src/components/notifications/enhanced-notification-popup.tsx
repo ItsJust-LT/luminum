@@ -11,7 +11,7 @@ import { EmailAvatar } from '@/components/emails/email-avatar';
 import { getNotificationIconForBadge } from '@/components/notifications/notification-icons';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
-import { markNotificationRead } from '@/lib/notifications/actions';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/auth/client';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -75,7 +75,7 @@ export function EnhancedNotificationPopup({
     
     if (userId && notification.id && !notification.id.startsWith('ably-')) {
       try {
-        await markNotificationRead(notification.id);
+        await api.notifications.markRead(notification.id);
       } catch (error) {
         console.error('Error marking notification as read:', error);
       }
@@ -89,7 +89,7 @@ export function EnhancedNotificationPopup({
   const handleClick = async () => {
     if (userId && notification.id && !notification.id.startsWith('ably-')) {
       try {
-        await markNotificationRead(notification.id);
+        await api.notifications.markRead(notification.id);
       } catch (error) {
         console.error('Error marking notification as read:', error);
       }

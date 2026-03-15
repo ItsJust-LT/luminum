@@ -1,18 +1,13 @@
-import { redirect } from "next/navigation"
-import { getEmailById, checkEmailsEnabled, markEmailAsRead } from "@/lib/actions/emails"
+"use client"
+
+import { useRouter } from "next/navigation"
 import { EmailDetailClient } from "./email-detail-client"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Mail } from "lucide-react"
 import Link from "next/link"
-import { markEmailNotificationsRead } from "@/lib/notifications/actions"
-import { requireAuth } from "@/lib/auth/require-auth"
-
-interface EmailDetailPageProps {
-  params: Promise<{
-    slug: string
-    emailId: string
-  }>
-}
+import { api } from "@/lib/api"
+import { useEffect, useState } from "react"
+import { useParams } from "next/navigation"
 
 function parseEmailAddresses(value: any): string[] {
   if (!value) return []
@@ -33,13 +28,100 @@ function parseEmailAddresses(value: any): string[] {
   return []
 }
 
-export default async function EmailDetailPage({ params }: EmailDetailPageProps) {
-  const { slug, emailId } = await params
+export default function EmailDetailPage() {
+  const params = useParams()
+  const slug = params.slug as string
+  const emailId = params.emailId as string
+  const router = useRouter()
+  const [state, setState] = useState<{
+    status: "loading" | "error" | "redirect" | "ready"
+    error?: string
+    email?: any
+  }>({ status: "loading" })
 
-  // Get email data
-  const result = await getEmailById(emailId)
+  useEffect(() => {
+    if (!emailId) return
 
-  if (!result.success || !result.data) {
+    let cancelled = false
+
+    async function load() {
+      try {
+        const result = await api.emails.getById(emailId) as { success?: boolean; data?: any; error?: string }
+        if (cancelled) return
+        if (!result.success || !result.data) {
+          setState({ status: "error", error: result.error || "Email not found" })
+          return
+        }
+        const emailData = result.data
+
+        const enabledResult = await api.emails.checkEnabled(emailData.organization_id) as { enabled?: boolean }
+        if (cancelled) return
+        if (!enabledResult.enabled) {
+          setState({ status: "redirect" })
+          router.replace(`/${slug}/emails`)
+          return
+        }
+
+        if (!emailData.read) {
+          await api.emails.markAsRead(emailId)
+        } else {
+          try {
+            await api.notifications.markEmailNotificationsRead(emailId)
+          } catch {}
+        }
+
+        const email = {
+          id: emailData.id,
+          from: emailData.from || "",
+          to: parseEmailAddresses(emailData.to),
+          cc: parseEmailAddresses(emailData.cc),
+          bcc: parseEmailAddresses(emailData.bcc),
+          subject: emailData.subject || "(No subject)",
+          date: emailData.receivedAt || emailData.createdAt,
+          textBody: emailData.text || null,
+          htmlBody: emailData.html || null,
+          read: true,
+          createdAt: emailData.createdAt,
+          attachments: (emailData.attachments || []).map((att: any) => ({
+            filename: att.filename,
+            size: att.size,
+            contentType: att.contentType,
+            r2Key: att.r2Key,
+            url: att.url,
+          })),
+          inlineImages: [],
+        }
+        setState({ status: "ready", email })
+      } catch {
+        if (!cancelled) setState({ status: "error", error: "Failed to load email" })
+      }
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [emailId, slug, router])
+
+  if (state.status === "loading" || state.status === "redirect") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="border-b bg-background/95 backdrop-blur">
+          <div className="rounded-b-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 px-4 py-3">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/${slug}/emails`} className="flex items-center gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                Back to Inbox
+              </Link>
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <p className="text-muted-foreground">Loading…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (state.status === "error") {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <div className="border-b bg-background/95 backdrop-blur">
@@ -58,7 +140,7 @@ export default async function EmailDetailPage({ params }: EmailDetailPageProps) 
               <Mail className="h-8 w-8 text-muted-foreground" />
             </div>
             <p className="text-lg font-semibold text-foreground">
-              {result.error || "Email not found"}
+              {state.error}
             </p>
             <p className="text-sm text-muted-foreground">
               The email you're looking for doesn't exist or you don't have access to it.
@@ -72,48 +154,5 @@ export default async function EmailDetailPage({ params }: EmailDetailPageProps) 
     )
   }
 
-  const emailData = result.data as any
-
-  // Check if emails are enabled for the organization
-  const enabledResult = await checkEmailsEnabled(emailData.organization_id)
-  if (!enabledResult.enabled) {
-    redirect(`/${slug}/emails`)
-  }
-
-  // Get session to mark notifications
-  let session: any = null
-  try { session = await requireAuth() } catch {}
-
-  // Mark email as read if it's not already read
-  if (!emailData.read) {
-    await markEmailAsRead(emailId)
-  } else if (session?.user?.id) {
-    // Even if email is already read, mark related notifications as read when viewing
-    await markEmailNotificationsRead(emailId)
-  }
-
-  // Transform email data
-  const email = {
-    id: emailData.id,
-    from: emailData.from || "",
-    to: parseEmailAddresses(emailData.to),
-    cc: parseEmailAddresses(emailData.cc),
-    bcc: parseEmailAddresses(emailData.bcc),
-    subject: emailData.subject || "(No subject)",
-    date: emailData.receivedAt || emailData.createdAt,
-    textBody: emailData.text || null,
-    htmlBody: emailData.html || null,
-    read: true, // Marked as read above
-    createdAt: emailData.createdAt,
-    attachments: (emailData.attachments || []).map((att: any) => ({
-      filename: att.filename,
-      size: att.size,
-      contentType: att.contentType,
-      r2Key: att.r2Key,
-      url: att.url,
-    })),
-    inlineImages: [],
-  }
-
-  return <EmailDetailClient email={email} organizationSlug={slug} />
+  return <EmailDetailClient email={state.email} organizationSlug={slug} />
 }

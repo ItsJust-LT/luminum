@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Building2, Mail, User, Lock, AlertCircle, CheckCircle, Eye, EyeOff, Loader2 } from "lucide-react"
-import { acceptOwnerInvitation } from "@/lib/actions/admin-organization-actions"
+import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { signUpWithGoogle } from "@/lib/auth/sign-up"
 import { Separator } from "@/components/ui/separator"
@@ -88,7 +88,7 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
 
     setLoading(true)
     try {
-      const result = await acceptOwnerInvitation({
+      const result = await api.organizationActions.acceptInvitation({
         invitationId: invitation.id,
         name: formData.name,
         email: formData.email,

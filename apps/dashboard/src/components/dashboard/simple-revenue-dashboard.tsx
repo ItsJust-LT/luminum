@@ -15,8 +15,61 @@ import {
   CreditCard, 
   RefreshCw
 } from "lucide-react"
-import { getRevenueAnalytics, PaystackTransactionFilters } from "@/lib/actions/paystack-transactions"
+import { api } from "@/lib/api"
 import { formatCurrency } from "@/lib/utils"
+
+type PaystackTransactionFilters = {
+  from?: string
+  to?: string
+  status?: string
+  currency?: string
+  perPage?: number
+}
+
+function processRevenueResponse(res: { transactions?: any[] }, currencyFilter?: string) {
+  const transactions = res?.transactions || []
+  const successful = transactions.filter((t: any) => t.status === "success")
+  const failed = transactions.filter((t: any) => t.status !== "success")
+  const totalRevenue = successful.reduce((sum: number, t: any) => sum + (t.amount || 0) / 100, 0)
+  const revenueByCurrency: Record<string, number> = {}
+  const revenueByStatus: Record<string, number> = {}
+  const revenueByMonth: Record<string, number> = {}
+  successful.forEach((t: any) => {
+    const c = (t.currency || "ZAR").toUpperCase()
+    revenueByCurrency[c] = (revenueByCurrency[c] || 0) + (t.amount || 0) / 100
+    const s = t.status || "unknown"
+    revenueByStatus[s] = (revenueByStatus[s] || 0) + (t.amount || 0) / 100
+    if (t.created_at) {
+      const month = new Date(t.created_at).toISOString().slice(0, 7)
+      revenueByMonth[month] = (revenueByMonth[month] || 0) + (t.amount || 0) / 100
+    }
+  })
+  const byCustomer: Record<string, { email: string; totalAmount: number; transactionCount: number }> = {}
+  successful.forEach((t: any) => {
+    const email = t.customer?.email || "Unknown"
+    if (!byCustomer[email]) byCustomer[email] = { email, totalAmount: 0, transactionCount: 0 }
+    byCustomer[email].totalAmount += (t.amount || 0) / 100
+    byCustomer[email].transactionCount += 1
+  })
+  const topCustomers = Object.values(byCustomer)
+    .sort((a, b) => b.totalAmount - a.totalAmount)
+    .slice(0, 10)
+  const recentTransactions = [...successful].sort(
+    (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+  ).slice(0, 20)
+  return {
+    totalRevenue,
+    successfulTransactions: successful.length,
+    failedTransactions: failed.length,
+    totalTransactions: transactions.length,
+    averageTransactionValue: successful.length ? totalRevenue / successful.length : 0,
+    revenueByCurrency,
+    revenueByStatus,
+    revenueByMonth,
+    topCustomers,
+    recentTransactions,
+  }
+}
 
 interface SimpleRevenueDashboardProps {
   onRefresh?: () => void
@@ -38,11 +91,11 @@ export function SimpleRevenueDashboard({ onRefresh }: SimpleRevenueDashboardProp
     setLoading(true)
     setError(null)
     try {
-      const result = await getRevenueAnalytics(filters)
-      if (result.success && result.data) {
-        setAnalytics(result.data)
+      const result = await api.paystack.getRevenueAnalytics({ from: filters.from, to: filters.to }) as { success?: boolean; transactions?: any[]; error?: string }
+      if (result.success && result.transactions) {
+        setAnalytics(processRevenueResponse(result, filters.currency))
       } else {
-        setError(result.error || "Failed to fetch analytics")
+        setError((result as any).error || "Failed to fetch analytics")
       }
     } catch (err) {
       setError("Failed to fetch analytics")

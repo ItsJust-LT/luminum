@@ -49,10 +49,9 @@ import {
   SortAsc,
   SortDesc
 } from "lucide-react"
-import { getFormSubmissions, updateFormSubmissionStatus } from "@/lib/actions/forms"
+import { api } from "@/lib/api"
 import type { FormSubmission, FormSubmissionFilters } from "@/lib/types/forms"
 import { useOrganization } from "@/lib/contexts/organization-context"
-import { getWebsitesByOrganization } from "@/lib/supabase/websites"
 import { 
   detectFormFields, 
   getPrimaryFields, 
@@ -98,11 +97,11 @@ export function FormsPage() {
       setWebsitesLoading(true)
       setWebsitesError(null)
       try {
-        const { data, error } = await getWebsitesByOrganization(organizationId)
-        if (error) {
+        const res = await api.websites.list(organizationId) as { data?: any[]; error?: string }
+        if (res.error) {
           setWebsites(null)
         } else {
-          setWebsites(data || [])
+          setWebsites(res.data || [])
         }
       } catch (err: any) {
         setWebsitesError(err.message || "Failed to fetch websites")
@@ -139,15 +138,20 @@ export function FormsPage() {
       return
     }
     
-    const result = await getFormSubmissions(websiteId, filters)
-
-    if (result.success) {
-      setSubmissions(result.submissions || [])
-      setError(null)
-    } else {
-      setError(result.error || "Failed to fetch form submissions")
+    try {
+      const result = await api.forms.list(websiteId, filters) as { success?: boolean; submissions?: FormSubmission[]; error?: string }
+      if (result.success) {
+        setSubmissions(result.submissions || [])
+        setError(null)
+      } else {
+        setError(result.error || "Failed to fetch form submissions")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch form submissions")
+      setSubmissions([])
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   // Only fetch submissions when websites are loaded
@@ -247,10 +251,11 @@ export function FormsPage() {
   }, [submissions, searchQuery, filters, sortBy])
 
   const handleContactedToggle = async (submissionId: string, contacted: boolean) => {
-    const result = await updateFormSubmissionStatus(submissionId, { contacted })
-
-    if (result.success) {
+    try {
+      await api.forms.updateStatus(submissionId, { contacted })
       setSubmissions((prev) => prev.map((sub) => (sub.id === submissionId ? { ...sub, contacted } : sub)))
+    } catch {
+      // ignore - keep UI state
     }
   }
 
@@ -277,7 +282,7 @@ export function FormsPage() {
   const handleBulkAction = async (action: 'contacted' | 'uncontacted') => {
     const contacted = action === 'contacted'
     const promises = Array.from(selectedSubmissions).map(id => 
-      updateFormSubmissionStatus(id, { contacted })
+      api.forms.updateStatus(id, { contacted })
     )
     
     await Promise.all(promises)

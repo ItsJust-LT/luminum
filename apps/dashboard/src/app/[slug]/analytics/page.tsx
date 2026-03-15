@@ -31,23 +31,11 @@ import {
   Layers,
   ChevronRight,
 } from "lucide-react"
-import type { MetricCount, StatsOverview, PageFlowResponse, EntryExitResponse, SessionPathsResponse, PageStatsResponse } from "@/lib/actions/analytics"
-import {
-  getAnalyticsOverview,
-  getAnalyticsTimeSeries,
-  getAnalyticsTopPages,
-  getAnalyticsCountries,
-  getAnalyticsDevices,
-  getAnalyticsRealtime,
-  getAnalyticsPageFlow,
-  getAnalyticsEntryExit,
-  getAnalyticsSessionPaths,
-  getAnalyticsPageStats,
-} from "@/lib/actions/analytics"
+import type { MetricCount, StatsOverview, PageFlowResponse, EntryExitResponse, SessionPathsResponse, PageStatsResponse } from "@/lib/types/analytics"
+import { api } from "@/lib/api"
 import { formatDuration } from "@/lib/utils"
 import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
 import { useOrganization } from "@/lib/contexts/organization-context"
-import { getWebsitesByOrganization } from "@/lib/supabase/websites"
 import type { Website } from "@/lib/types/websites"
 import { useRouter } from "next/navigation"
 import { AnalyticsSkeleton } from "@/components/ui/skeleton-loader"
@@ -264,7 +252,8 @@ export default function AnalyticsPage() {
     
     try {
       setWebsiteLoading(true)
-      const { data: websites } = await getWebsitesByOrganization(organization.id)
+      const res = await api.websites.list(organization.id) as { data?: any[] }
+      const websites = res?.data
       if (websites && websites.length > 0) {
         setWebsite(websites[0])
       }
@@ -300,16 +289,16 @@ export default function AnalyticsPage() {
       const { start, end } = getDateRange(dateRange)
 
       const [overview, timeseries, pages, countries, devices, realtime, flow, entryExitData, paths, stats] = await Promise.all([
-        getAnalyticsOverview(website.id, start, end),
-        getAnalyticsTimeSeries(website.id, start, end, dateRange === "24h" ? "hour" : "day"),
-        getAnalyticsTopPages(website.id, start, end, 10),
-        getAnalyticsCountries(website.id, start, end, 10),
-        getAnalyticsDevices(website.id, start, end, 5),
-        getAnalyticsRealtime(website.id),
-        getAnalyticsPageFlow(website.id, start, end, 50),
-        getAnalyticsEntryExit(website.id, start, end, 10),
-        getAnalyticsSessionPaths(website.id, start, end, 20),
-        getAnalyticsPageStats(website.id, start, end, 20),
+        api.analytics.getOverview(website.id, start, end).catch(() => null),
+        api.analytics.getTimeSeries(website.id, start, end, dateRange === "24h" ? "hour" : "day").catch(() => null),
+        api.analytics.getTopPages(website.id, start, end, 10).catch(() => []),
+        api.analytics.getCountries(website.id, start, end, 10).catch(() => []),
+        api.analytics.getDevices(website.id, start, end, 5).catch(() => []),
+        api.analytics.getRealtime(website.id).catch(() => null),
+        api.analytics.getPageFlow(website.id, start, end, 50).catch(() => null),
+        api.analytics.getEntryExit(website.id, start, end, 10).catch(() => null),
+        api.analytics.getSessionPaths(website.id, start, end, 20).catch(() => null),
+        api.analytics.getPageStats(website.id, start, end, 20).catch(() => null),
       ])
 
       if (overview) setOverviewData(overview)
@@ -339,7 +328,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (!website) return
     const t = setInterval(() => {
-      getAnalyticsRealtime(website.id).then((r) => {
+      api.analytics.getRealtime(website.id).then((r) => {
         if (r) setLiveData((prev) => ({ ...prev, activeVisitors: r.activeVisitors, recentEvents: r.recentEvents ?? prev.recentEvents }))
       })
     }, 30000)

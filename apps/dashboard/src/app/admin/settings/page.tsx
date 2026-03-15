@@ -18,7 +18,7 @@ import {
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { getOrganizationsAsAdmin } from "@/lib/actions/admin-organization-actions"
+import { api } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
@@ -43,9 +43,9 @@ export default function AdminSettingsPage() {
     setLoading(true)
     setError(null)
     try {
-      const result = await getOrganizationsAsAdmin()
-      if (result.success && result.data) {
-        const orgs = result.data
+      const result = await api.admin.getOrganizations() as { success?: boolean; data?: any[]; organizations?: any[]; error?: string }
+      const orgs = result?.organizations ?? result?.data
+      if (result?.success && orgs) {
         
         // Calculate system statistics
         const totalOrgs = orgs.length

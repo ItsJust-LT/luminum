@@ -53,13 +53,8 @@ import {
   AlertTriangle
 } from "lucide-react"
 import { toast } from "sonner"
-import { 
-  getOrganizationSettings, 
-  updateOrganizationSettings,
-  uploadOrganizationLogo,
-  deleteOrganizationLogo,
-  type OrganizationSettings 
-} from "@/lib/actions/organization-settings"
+import { api } from "@/lib/api"
+import type { OrganizationSettings } from "@/lib/types/organization-settings"
 import { useOrganizationUpdates } from "@/hooks/use-organization-updates"
 import { countries } from "@/lib/countries"
 import { currencies } from "@/lib/currencies"
@@ -89,10 +84,10 @@ export default function OrganizationSettingsPage() {
 
     setIsLoadingSettings(true)
     try {
-      const result = await getOrganizationSettings(organization.id)
+      const result = await api.organizationSettings.get(organization.id) as { success?: boolean; data?: OrganizationSettings & { canEdit?: boolean }; error?: string }
       if (result.success && result.data) {
         setSettings(result.data)
-        setCanEdit(result.data.canEdit)
+        setCanEdit(result.data.canEdit ?? false)
         setFormData({
           name: result.data.name,
           slug: result.data.slug,
@@ -135,7 +130,7 @@ export default function OrganizationSettingsPage() {
 
     setIsSaving(true)
     try {
-      const result = await updateOrganizationSettings(organization.id, formData)
+      const result = await api.organizationSettings.update(organization.id, formData) as { success?: boolean; error?: string }
       if (result.success) {
         setIsEditing(false)
         await fetchSettings()
@@ -157,7 +152,13 @@ export default function OrganizationSettingsPage() {
 
     setIsUploading(true)
     try {
-      const result = await uploadOrganizationLogo(organization.id, file)
+      const bytes = await file.arrayBuffer()
+      const logoBase64 = btoa(String.fromCharCode(...new Uint8Array(bytes)))
+      const result = await api.organizationSettings.uploadLogo(organization.id, {
+        logoBase64,
+        fileName: file.name,
+        contentType: file.type,
+      }) as { success?: boolean; data?: { logoUrl?: string }; error?: string }
 
       if (result.success) {
         await fetchSettings()
@@ -182,7 +183,7 @@ export default function OrganizationSettingsPage() {
     if (!organization?.id || !canEdit) return
 
     try {
-      const result = await deleteOrganizationLogo(organization.id)
+      const result = await api.organizationSettings.deleteLogo(organization.id) as { success?: boolean; error?: string }
 
       if (result.success) {
         await fetchSettings()
