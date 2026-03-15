@@ -237,6 +237,7 @@ router.post("/send", async (req: Request, res: Response) => {
 router.get("/", async (req: Request, res: Response) => {
   try {
     const organizationId = queryParam(req, "organizationId");
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     const page = parseInt(queryParam(req, "page") ?? "", 10) || 1;
     const limit = parseInt(queryParam(req, "limit") ?? "", 10) || 20;
     const readParam = queryParam(req, "read");
