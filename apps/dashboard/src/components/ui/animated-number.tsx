@@ -32,7 +32,7 @@ export function AnimatedNumber({
   const [displayValue, setDisplayValue] = useState(value)
   /** Always holds the current numeric value on screen (so we can animate from here when target changes). */
   const currentRef = useRef(value)
-  const rafRef = useRef<number>()
+  const rafRef = useRef<number | undefined>(undefined)
   const startRef = useRef<number>(0)
   const fromRef = useRef(value)
   const targetRef = useRef(value)
@@ -49,9 +49,10 @@ export function AnimatedNumber({
       return
     }
 
-    const wasAnimating = rafRef.current != null
-    if (wasAnimating) {
-      cancelAnimationFrame(rafRef.current)
+    const prevRaf = rafRef.current
+    const wasAnimating = prevRaf != null
+    if (wasAnimating && prevRaf != null) {
+      cancelAnimationFrame(prevRaf)
       rafRef.current = undefined
     }
 
