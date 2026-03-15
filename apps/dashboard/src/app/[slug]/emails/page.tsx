@@ -385,9 +385,19 @@ export default function EmailsPage() {
                 <p className="text-muted-foreground">
                   Your domain <strong>{setupStatus.domain}</strong> is set. Point your MX record to our server, then click Verify DNS.
                 </p>
+                {!setupStatus?.expectedMxHost && (
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                    <p className="font-medium">MX target not configured</p>
+                    <p className="mt-1 text-muted-foreground">
+                      An administrator needs to set <code className="bg-muted px-1 rounded">MAIL_MX_HOST</code> (or <code className="bg-muted px-1 rounded">MAIL_MX_DOMAIN</code>) in the API server environment so we can show the correct MX host. Example: <code className="bg-muted px-1 rounded">MAIL_MX_HOST=mail.luminum.agency</code>
+                    </p>
+                  </div>
+                )}
                 {setupStatus?.lastError && (
                   <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-                    {setupStatus.lastError}
+                    {setupStatus.lastError.includes("not configured")
+                      ? "Cannot verify DNS until the server has MAIL_MX_HOST or MAIL_MX_DOMAIN set. See the note above."
+                      : setupStatus.lastError}
                   </div>
                 )}
                 {setupStatus?.expectedMxHost && (

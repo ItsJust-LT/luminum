@@ -32,7 +32,8 @@ export async function getExpectedMxHost(): Promise<string> {
   } catch {
     // ignore
   }
-  return "";
+  // No MX yet for domain (e.g. initial setup): suggest common convention so UI can show a target
+  return `mail.${domain}`;
 }
 
 export interface MxCheckResult {
