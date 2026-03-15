@@ -118,3 +118,8 @@ export async function getActivityUsers(period: string = "week", search?: string,
 export async function getActivityUser(userId: string, period: string = "month") {
   return serverGet(`/api/admin/activity/user/${userId}`, { period })
 }
+
+// Server monitoring
+export async function getServerMetrics() {
+  return serverGet("/api/admin/monitoring/metrics")
+}

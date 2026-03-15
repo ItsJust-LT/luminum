@@ -34,6 +34,7 @@ import { adminFormsRouter } from "./routes/admin-forms.js";
 import { adminEmailsRouter } from "./routes/admin-emails.js";
 import { adminWebsitesRouter } from "./routes/admin-websites.js";
 import { adminActivityRouter } from "./routes/admin-activity.js";
+import { adminMonitoringRouter } from "./routes/admin-monitoring.js";
 import { cronRouter } from "./routes/cron.js";
 
 const app = express();
@@ -103,6 +104,7 @@ app.use("/api/admin/forms", adminFormsRouter);
 app.use("/api/admin/emails", adminEmailsRouter);
 app.use("/api/admin/websites", adminWebsitesRouter);
 app.use("/api/admin/activity", adminActivityRouter);
+app.use("/api/admin/monitoring", adminMonitoringRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/paystack", paystackRouter);
 app.use("/api/support", supportRouter);

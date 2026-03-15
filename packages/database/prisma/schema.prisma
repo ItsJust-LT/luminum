@@ -473,6 +473,32 @@ model verification {
   updatedAt  DateTime? @db.Timestamp(6)
 }
 
+model server_metrics {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  hostname                String?   @db.VarChar(255)
+  platform                String?   @db.VarChar(64)
+  node_version            String?   @db.VarChar(32)
+  cpu_usage_percent       Float?
+  cpu_cores               Int?
+  memory_used_bytes       BigInt?
+  memory_total_bytes      BigInt?
+  memory_usage_percent    Float?
+  process_heap_used_bytes BigInt?
+  process_heap_total_bytes BigInt?
+  process_rss_bytes       BigInt?
+  system_uptime_seconds    Float?
+  process_uptime_seconds  Float?
+  load_avg_1m             Float?
+  load_avg_5m             Float?
+  load_avg_15m            Float?
+  disk_used_bytes         BigInt?
+  disk_total_bytes        BigInt?
+  disk_usage_percent      Float?
+
+  @@index([created_at], map: "idx_server_metrics_created_at")
+}
+
 // Ably LiveSync tables
 model outbox {
   sequence_id  Int       @id @default(autoincrement())

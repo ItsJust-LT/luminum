@@ -37,6 +37,7 @@ import {
   Mail,
   Globe,
   ExternalLink,
+  Server,
 } from "lucide-react"
 
 interface AdminSidebarProps {
@@ -75,6 +76,7 @@ export function AdminSidebar({
     { title: "Emails", href: "/admin/emails", icon: Mail },
     { title: "Websites", href: "/admin/websites", icon: Globe },
     { title: "User Activity", href: "/admin/activity", icon: Activity },
+    { title: "Server Monitoring", href: "/admin/monitoring", icon: Server },
   ]
 
   const managementItems = [

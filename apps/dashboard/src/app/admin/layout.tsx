@@ -40,6 +40,7 @@ import {
   Mail,
   Globe,
   ExternalLink,
+  Server,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import NotificationBell from "@/components/NotificationBell"
@@ -116,6 +117,7 @@ export default function AdminLayout({
     { title: "Emails", icon: Mail, href: "/admin/emails" },
     { title: "Websites", icon: Globe, href: "/admin/websites" },
     { title: "Support", icon: HelpCircle, href: "/admin/support" },
+    { title: "Server Monitoring", icon: Server, href: "/admin/monitoring" },
     { title: "Settings", icon: Settings, href: "/admin/settings" },
   ]
 
