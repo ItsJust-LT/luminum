@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { canAccessOrganization } from "../lib/access.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
 
 const router = Router();
@@ -10,7 +11,14 @@ router.use(requireAuth);
 router.get("/", async (req: Request, res: Response) => {
   try {
     const websiteId = queryParam(req, "websiteId");
-    const where: any = { website_id: websiteId };
+    if (!websiteId) return res.status(400).json({ success: false, error: "websiteId required" });
+    const website = await prisma.websites.findFirst({
+      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
+      select: { id: true, organization_id: true },
+    });
+    if (!website || !(await canAccessOrganization(website.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+
+    const where: any = { website_id: website.id };
     if (req.query.seen !== undefined) where.seen = req.query.seen === "true";
     if (req.query.contacted !== undefined) where.contacted = req.query.contacted === "true";
 
@@ -29,6 +37,8 @@ router.get("/", async (req: Request, res: Response) => {
 router.get("/unseen-count", async (req: Request, res: Response) => {
   try {
     const organizationId = queryParam(req, "organizationId");
+    if (!organizationId) return res.json({ success: true, count: 0 });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied", count: 0 });
     const websites = await prisma.websites.findMany({ where: { organization_id: organizationId }, select: { id: true } });
     if (websites.length === 0) return res.json({ success: true, count: 0 });
     const count = await prisma.form_submissions.count({ where: { website_id: { in: websites.map(w => w.id) }, seen: false } });
@@ -44,6 +54,8 @@ router.get("/:id", async (req: Request, res: Response) => {
     const id = pathParam(req, "id");
     const submission = await prisma.form_submissions.findUnique({ where: { id }, include: { websites: { select: { organization_id: true } } } });
     if (!submission) return res.status(404).json({ success: false, error: "Not found" });
+    const orgId = submission.websites?.organization_id;
+    if (!orgId || !(await canAccessOrganization(orgId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     if (id) prisma.form_submissions.update({ where: { id }, data: { seen: true } }).catch(console.error);
 
@@ -60,6 +72,8 @@ router.patch("/:id/status", async (req: Request, res: Response) => {
     const id = pathParam(req, "id");
     const submission = await prisma.form_submissions.findUnique({ where: { id }, include: { websites: { select: { organization_id: true } } } });
     if (!submission) return res.status(404).json({ success: false, error: "Not found" });
+    const orgId = submission.websites?.organization_id;
+    if (!orgId || !(await canAccessOrganization(orgId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     const updates: any = {};
     if (seen !== undefined) updates.seen = seen;

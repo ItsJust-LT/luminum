@@ -35,17 +35,8 @@ import {
   getAdminAnalyticsCountries,
   getAdminAnalyticsDevices,
 } from "@/lib/actions/admin-actions"
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-} from "recharts"
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 
 type DateRange = "7d" | "30d" | "90d"
 
@@ -109,6 +100,12 @@ export default function AdminAnalyticsPage() {
   }, [timeseries])
 
   const deviceIcons: Record<string, any> = { desktop: Monitor, mobile: Smartphone, tablet: Tablet }
+
+  const trafficChartConfig: ChartConfig = {
+    pageViews: { label: "Page Views", color: "#3b82f6" },
+    uniqueSessions: { label: "Sessions", color: "#10b981" },
+    formSubmissions: { label: "Forms", color: "#f59e0b" },
+  }
 
   const overviewCards = [
     { title: "Page Views", value: overview?.pageViews ?? 0, icon: Eye, color: "from-blue-500 to-blue-600" },
@@ -180,35 +177,96 @@ export default function AdminAnalyticsPage() {
         ))}
       </div>
 
-      {/* Timeseries Chart */}
-      <Card>
+      {/* Timeseries Chart — same style as org analytics */}
+      <Card className="overflow-hidden border-border/60">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
             Traffic Over Time
           </CardTitle>
+          <p className="text-xs text-muted-foreground">Platform-wide page views, sessions, and form submissions</p>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <Skeleton className="h-64 w-full rounded-lg" />
+            <Skeleton className="h-[320px] w-full rounded-lg" />
           ) : chartData.length > 0 ? (
-            <div className="h-64">
+            <ChartContainer config={trafficChartConfig} className="h-[320px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} className="text-muted-foreground" />
-                  <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
-                  <Tooltip
-                    contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", background: "hsl(var(--card))", color: "hsl(var(--foreground))" }}
+                <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                    dy={10}
                   />
-                  <Area type="monotone" dataKey="pageViews" name="Page Views" stroke="hsl(220, 90%, 56%)" fill="hsl(220, 90%, 56%)" fillOpacity={0.1} strokeWidth={2} />
-                  <Area type="monotone" dataKey="uniqueSessions" name="Sessions" stroke="hsl(142, 71%, 45%)" fill="hsl(142, 71%, 45%)" fillOpacity={0.1} strokeWidth={2} />
-                  <Area type="monotone" dataKey="formSubmissions" name="Forms" stroke="hsl(24, 94%, 50%)" fill="hsl(24, 94%, 50%)" fillOpacity={0.1} strokeWidth={2} />
+                  <YAxis
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                    dx={-10}
+                    domain={[0, "dataMax"]}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <defs>
+                    <linearGradient id="adminFillPageViews" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.9} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                    </linearGradient>
+                    <linearGradient id="adminFillSessions" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.9} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
+                    </linearGradient>
+                    <linearGradient id="adminFillForms" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.9} />
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.1} />
+                    </linearGradient>
+                  </defs>
+                  <Area
+                    type="monotone"
+                    dataKey="pageViews"
+                    fill="url(#adminFillPageViews)"
+                    fillOpacity={0.6}
+                    stroke="#3b82f6"
+                    strokeWidth={3}
+                    dot={false}
+                    activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
+                    isAnimationActive
+                    animationDuration={800}
+                    animationEasing="ease-out"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="uniqueSessions"
+                    fill="url(#adminFillSessions)"
+                    fillOpacity={0.6}
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    dot={false}
+                    activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
+                    isAnimationActive
+                    animationDuration={800}
+                    animationEasing="ease-out"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="formSubmissions"
+                    fill="url(#adminFillForms)"
+                    fillOpacity={0.6}
+                    stroke="#f59e0b"
+                    strokeWidth={3}
+                    dot={false}
+                    activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
+                    isAnimationActive
+                    animationDuration={800}
+                    animationEasing="ease-out"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
-            </div>
+            </ChartContainer>
           ) : (
-            <div className="h-64 flex items-center justify-center">
+            <div className="h-[320px] flex items-center justify-center rounded-lg border border-dashed border-border">
               <p className="text-sm text-muted-foreground">No data for this period</p>
             </div>
           )}

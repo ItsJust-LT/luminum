@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { persistLog } from "../lib/log-store.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
 
@@ -60,8 +61,10 @@ router.get("/", requireAuth, adminOnly, async (req: Request, res: Response) => {
         totalPages: Math.ceil(total / limit),
       },
     });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message ?? "Failed to fetch logs" });
+  } catch (error: unknown) {
+    const reqWithId = req as Request & { requestId?: string };
+    logger.logError(error, "Admin logs list failed", { path: "/api/admin/logs" }, reqWithId.requestId);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : "Failed to fetch logs" });
   }
 });
 
@@ -94,8 +97,10 @@ router.post("/ingest", optionalAuth, async (req: Request, res: Response) => {
       meta,
     });
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message ?? "Failed to ingest log" });
+  } catch (error: unknown) {
+    const reqWithId = req as Request & { requestId?: string };
+    logger.logError(error, "Admin logs ingest failed", { path: "/api/admin/logs/ingest" }, reqWithId.requestId);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : "Failed to ingest log" });
   }
 });
 

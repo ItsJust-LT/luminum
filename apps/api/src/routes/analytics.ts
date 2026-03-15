@@ -9,15 +9,19 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 router.use(requireAuth);
 
-/** Resolves a website by id or website_id and verifies the user has access. */
-async function resolveWebsiteWithAccess(websiteId: string, userId: string) {
+/** Resolves a website by id or website_id and verifies the user has access (member or platform admin). */
+async function resolveWebsiteWithAccess(
+  websiteId: string,
+  user: { id: string; role?: string }
+) {
   const website = await prisma.websites.findFirst({
     where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
     select: { id: true, website_id: true, organization_id: true },
   });
   if (!website) return null;
+  if (user.role === "admin") return website;
   const member = await prisma.member.findFirst({
-    where: { organizationId: website.organization_id, userId },
+    where: { organizationId: website.organization_id, userId: user.id },
   });
   if (!member) return null;
   return website;
@@ -38,7 +42,7 @@ router.get("/live-ws-token", async (req: Request, res: Response) => {
     const { websiteId } = req.query as Record<string, string>;
     if (!websiteId) return res.status(400).json({ error: "Missing websiteId" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const { token, exp } = createLiveToken(websiteId, req.user.id);
@@ -61,7 +65,7 @@ router.get("/overview", async (req: Request, res: Response) => {
     const { websiteId, start, end } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:overview:${website.id}:${start}:${end}`;
@@ -112,7 +116,7 @@ router.get("/timeseries", async (req: Request, res: Response) => {
     const { websiteId, start, end, granularity = "hour" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:timeseries:${website.id}:${start}:${end}:${granularity}`;
@@ -190,7 +194,7 @@ router.get("/top-pages", async (req: Request, res: Response) => {
     const { websiteId, start, end, limit = "10" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const events = await prisma.events.findMany({
@@ -226,7 +230,7 @@ router.get("/countries", async (req: Request, res: Response) => {
     const { websiteId, start, end, limit = "10" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const events = await prisma.events.findMany({
@@ -258,7 +262,7 @@ router.get("/devices", async (req: Request, res: Response) => {
     const { websiteId, start, end, limit = "5" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const events = await prisma.events.findMany({
@@ -290,7 +294,7 @@ router.get("/realtime", async (req: Request, res: Response) => {
     const { websiteId } = req.query as Record<string, string>;
     if (!websiteId) return res.status(400).json({ error: "Missing websiteId" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const ids = websiteIdFilter(website);
@@ -371,7 +375,7 @@ router.get("/live-pages", async (req: Request, res: Response) => {
     const { websiteId } = req.query as Record<string, string>;
     if (!websiteId) return res.status(400).json({ error: "Missing websiteId" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const pages = getLivePages(websiteId);
@@ -395,7 +399,7 @@ router.get("/page-flow", async (req: Request, res: Response) => {
     const { websiteId, start, end, limit = "50" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:page-flow:${website.id}:${start}:${end}`;
@@ -482,7 +486,7 @@ router.get("/top-entry-exit", async (req: Request, res: Response) => {
     const { websiteId, start, end, limit = "10" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:entry-exit:${website.id}:${start}:${end}`;
@@ -553,7 +557,7 @@ router.get("/session-paths", async (req: Request, res: Response) => {
     const { websiteId, start, end, limit = "20" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:session-paths:${website.id}:${start}:${end}`;
@@ -627,7 +631,7 @@ router.get("/page-stats", async (req: Request, res: Response) => {
     const { websiteId, start, end, limit = "20" } = req.query as Record<string, string>;
     if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
 
-    const website = await resolveWebsiteWithAccess(websiteId, req.user.id);
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const cacheKey = `analytics:page-stats:${website.id}:${start}:${end}`;

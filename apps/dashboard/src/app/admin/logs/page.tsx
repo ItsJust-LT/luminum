@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -11,8 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Info, Bug, AlertTriangle } from "lucide-react"
+import { RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Info, Bug, AlertTriangle, Wifi } from "lucide-react"
 import { getSystemLogs } from "@/lib/actions/admin-actions"
+import { useRealtime } from "@/components/realtime/realtime-provider"
 
 const LEVEL_OPTIONS = ["", "info", "warn", "error", "debug"]
 const SERVICE_OPTIONS = ["", "api", "dashboard", "analytics"]
@@ -27,6 +28,12 @@ interface LogItem {
   request_id?: string | null
 }
 
+function matchesFilters(log: LogItem, service: string, level: string): boolean {
+  if (service && log.service !== service) return false
+  if (level && log.level !== level) return false
+  return true
+}
+
 export default function AdminLogsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -35,6 +42,10 @@ export default function AdminLogsPage() {
   const [service, setService] = useState("")
   const [level, setLevel] = useState("")
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const filtersRef = useRef({ service, level })
+  filtersRef.current = { service, level }
+
+  const { connected, onMessage } = useRealtime()
 
   const fetchLogs = useCallback(async (page: number = 1) => {
     setLoading(true)
@@ -64,13 +75,18 @@ export default function AdminLogsPage() {
   }, [fetchLogs])
 
   useEffect(() => {
-    const t = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        fetchLogs(pagination.page)
-      }
-    }, 5000)
-    return () => clearInterval(t)
-  }, [pagination.page, fetchLogs])
+    const unsub = onMessage("log:new", (data: LogItem) => {
+      if (!data?.id) return
+      const { service: s, level: l } = filtersRef.current
+      if (!matchesFilters(data as LogItem, s, l)) return
+      setItems((prev) => {
+        if (prev.some((log) => log.id === data.id)) return prev
+        return [data as LogItem, ...prev]
+      })
+      setPagination((prev) => ({ ...prev, total: prev.total + 1 }))
+    })
+    return unsub
+  }, [onMessage])
 
   const levelIcon = (l: string) => {
     switch (l) {
@@ -95,8 +111,15 @@ export default function AdminLogsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">System Logs</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Request, error, and application logs from API, dashboard, and analytics. Updates every 5s.
+          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+            Request, error, and application logs from API, dashboard, and analytics.
+            {connected ? (
+              <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                <Wifi className="h-3.5 w-3.5" /> Live
+              </span>
+            ) : (
+              <span className="text-muted-foreground/80">Reconnect for live stream</span>
+            )}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => fetchLogs(pagination.page)} disabled={loading} className="gap-2">

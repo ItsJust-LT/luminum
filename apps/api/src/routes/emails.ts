@@ -8,6 +8,7 @@ import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
 import { getExpectedMxHost } from "../lib/email-dns.js";
 import { getOrgReplyAddress, sendViaMailApp } from "../lib/email-send.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -96,7 +97,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const access = !!org.emails_enabled;
     const hasDomain = !!org.email_domain_id && !!org.email_domain;
     const setupComplete = access && hasDomain && !!org.email_dns_verified_at && !org.email_dns_last_error;
-    const expectedMxHost = getExpectedMxHost();
+    const expectedMxHost = await getExpectedMxHost();
     const steps = !setupComplete && access && hasDomain
       ? [
           { title: "Add MX record", description: `Add an MX record for your domain (${org.email_domain?.domain || ""}).` },
@@ -179,8 +180,10 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
       expectedHost: mx.expectedHost,
       actualHosts: mx.actualHosts,
     });
-  } catch (error: any) {
-    res.json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    const reqWithId = req as Request & { requestId?: string };
+    logger.logError(error, "Emails verify-dns failed", { organizationId: (req.body as any)?.organizationId }, reqWithId.requestId);
+    res.json({ success: false, error: error instanceof Error ? error.message : "Verify failed" });
   }
 });
 
@@ -228,8 +231,10 @@ router.post("/send", async (req: Request, res: Response) => {
       },
     });
     res.json({ success: true, data: { id: emailRecord.id, messageId: sentMessageId } });
-  } catch (error: any) {
-    res.status(400).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    const reqWithId = req as Request & { requestId?: string };
+    logger.logError(error, "Emails send failed", { organizationId: (req.body as any)?.organizationId }, reqWithId.requestId);
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : "Send failed" });
   }
 });
 

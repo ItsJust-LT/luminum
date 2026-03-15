@@ -7,7 +7,9 @@ import { config } from "./config.js";
 import { logger } from "./lib/logger.js";
 import { requestLogMiddleware } from "./middleware/request-log.js";
 import { auth } from "./auth/config.js";
-import { attachRealtimeWS } from "./lib/realtime-ws.js";
+import { attachRealtimeWS, broadcastToAdmins } from "./lib/realtime-ws.js";
+import { setLogBroadcaster } from "./lib/log-broadcast.js";
+import { collectServerMetrics } from "./lib/server-metrics.js";
 import { emailsRouter } from "./routes/emails.js";
 import { formsRouter } from "./routes/forms.js";
 import { organizationSettingsRouter } from "./routes/organization-settings.js";
@@ -37,6 +39,7 @@ import { adminWebsitesRouter } from "./routes/admin-websites.js";
 import { adminActivityRouter } from "./routes/admin-activity.js";
 import { adminMonitoringRouter } from "./routes/admin-monitoring.js";
 import { adminLogsRouter } from "./routes/admin-logs.js";
+import { adminDatabaseRouter } from "./routes/admin-database.js";
 import { cronRouter } from "./routes/cron.js";
 
 const app = express();
@@ -111,6 +114,7 @@ app.use("/api/admin/websites", adminWebsitesRouter);
 app.use("/api/admin/activity", adminActivityRouter);
 app.use("/api/admin/monitoring", adminMonitoringRouter);
 app.use("/api/admin/logs", adminLogsRouter);
+app.use("/api/admin/database", adminDatabaseRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/paystack", paystackRouter);
 app.use("/api/support", supportRouter);
@@ -127,14 +131,32 @@ app.use("/api/analytics", analyticsRouter);
 
 // ─── Global error handler (must be last) ───────────────────────────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: () => void) => {
-  const req = _req as express.Request & { requestId?: string };
-  logger.error(err.message, { stack: err?.stack, name: err?.name }, req?.requestId);
+  const req = _req as express.Request & { requestId?: string; method?: string; path?: string };
+  logger.logError(err, "Unhandled request error", {
+    path: req?.path ?? req?.url,
+    method: req?.method,
+  }, req?.requestId);
   res.status(500).json({ error: "Internal server error" });
 });
 
 // ─── HTTP server & WebSocket ──────────────────────────────────────────────
 const httpServer = createServer(app);
 attachRealtimeWS(httpServer);
+setLogBroadcaster((log) => broadcastToAdmins({ type: "log:new", data: log }));
+
+// Broadcast server metrics to admins every 5s for realtime monitoring
+const MONITORING_INTERVAL_MS = 5000;
+setInterval(() => {
+  collectServerMetrics()
+    .then((snapshot) => {
+      broadcastToAdmins({ type: "monitoring:metrics", data: snapshot });
+    })
+    .catch((err) => {
+      try {
+        logger.warn("Monitoring broadcast failed", { error: String(err) });
+      } catch {}
+    });
+}, MONITORING_INTERVAL_MS);
 
 httpServer.listen(config.port, () => {
   logger.info("API server started", {

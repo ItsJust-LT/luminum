@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import { AnimatedNumber } from "@/components/ui/animated-number"
 import { Wifi, WifiOff, Activity } from "lucide-react"
 
 export interface LiveVisitorsCounterProps {
@@ -29,10 +30,10 @@ export function LiveVisitorsBadges({ liveCount, connected }: LiveVisitorsCounter
       </Badge>
       <Badge
         variant="outline"
-        className="flex items-center gap-2 px-4 py-2 bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800"
+        className="flex items-center gap-2 px-4 py-2 bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800 tabular-nums"
       >
         <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-muted-foreground/50"}`} />
-        {liveCount} live viewers
+        <AnimatedNumber value={liveCount} duration={600} /> live viewers
       </Badge>
     </>
   )
@@ -49,8 +50,8 @@ export function LiveViewersMetricCard({ liveCount, connected }: LiveVisitorsCoun
         <div className="p-3 bg-green-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
           <Activity className="h-8 w-8 text-green-600 dark:text-green-400" />
         </div>
-        <div className="text-3xl font-bold mb-2 text-green-900 dark:text-green-100">
-          {liveCount}
+        <div className="text-3xl font-bold mb-2 text-green-900 dark:text-green-100 tabular-nums">
+          <AnimatedNumber value={liveCount} duration={600} />
         </div>
         <div className="text-sm text-green-700 dark:text-green-300 font-medium flex items-center justify-center gap-2">
           <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-muted-foreground/50"}`} />

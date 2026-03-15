@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { parse as parseUrl } from "node:url";
 import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "../auth/config.js";
+import { ensureUserRole } from "../middleware/require-auth.js";
 import { prisma } from "./prisma.js";
 import {
   consumeLiveToken,
@@ -137,6 +138,7 @@ export function attachRealtimeWS(httpServer: HttpServer): void {
       }
 
       const user = session.user;
+      await ensureUserRole(user);
       const memberships = await prisma.member.findMany({
         where: { userId: user.id },
         select: { organizationId: true },

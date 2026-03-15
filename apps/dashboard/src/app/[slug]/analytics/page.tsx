@@ -55,6 +55,7 @@ import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { LiveVisitorsBadges, LiveViewersMetricCard } from "@/components/analytics/live-visitors-counter"
+import { AnimatedNumber } from "@/components/ui/animated-number"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 
 type OverviewData = StatsOverview
@@ -588,8 +589,8 @@ export default function AnalyticsPage() {
               <div className="p-3 bg-blue-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
                 <Eye className="h-8 w-8 text-blue-600 dark:text-blue-400" />
               </div>
-              <div className="text-3xl font-bold mb-2 text-blue-900 dark:text-blue-100">
-                {(overviewData.pageViews || 0).toLocaleString()}
+              <div className="text-3xl font-bold mb-2 text-blue-900 dark:text-blue-100 tabular-nums">
+                <AnimatedNumber value={overviewData.pageViews || 0} duration={700} />
               </div>
               <div className="text-sm text-blue-700 dark:text-blue-300 font-medium">Page Views</div>
             </CardContent>
@@ -600,8 +601,8 @@ export default function AnalyticsPage() {
               <div className="p-3 bg-emerald-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
                 <Users className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <div className="text-3xl font-bold mb-2 text-emerald-900 dark:text-emerald-100">
-                {(overviewData.uniqueSessions || 0).toLocaleString()}
+              <div className="text-3xl font-bold mb-2 text-emerald-900 dark:text-emerald-100 tabular-nums">
+                <AnimatedNumber value={overviewData.uniqueSessions || 0} duration={700} />
               </div>
               <div className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">Unique Sessions</div>
             </CardContent>
@@ -612,8 +613,12 @@ export default function AnalyticsPage() {
               <div className="p-3 bg-amber-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
                 <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
               </div>
-              <div className="text-3xl font-bold mb-2 text-amber-900 dark:text-amber-100">
-                {formatDuration(overviewData.avgDuration || 0)}
+              <div className="text-3xl font-bold mb-2 text-amber-900 dark:text-amber-100 tabular-nums">
+                <AnimatedNumber
+                  value={overviewData.avgDuration || 0}
+                  duration={700}
+                  format={(n) => formatDuration(Math.round(n))}
+                />
               </div>
               <div className="text-sm text-amber-700 dark:text-amber-300 font-medium">Avg. Session</div>
             </CardContent>
@@ -626,8 +631,8 @@ export default function AnalyticsPage() {
               <div className="p-3 bg-purple-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
                 <FileText className="h-8 w-8 text-purple-600 dark:text-purple-400" />
               </div>
-              <div className="text-3xl font-bold mb-2 text-purple-900 dark:text-purple-100">
-                {(overviewData?.formSubmissions || 0).toLocaleString()}
+              <div className="text-3xl font-bold mb-2 text-purple-900 dark:text-purple-100 tabular-nums">
+                <AnimatedNumber value={overviewData?.formSubmissions || 0} duration={700} />
               </div>
               <div className="text-sm text-purple-700 dark:text-purple-300 font-medium">Form Submissions</div>
             </CardContent>

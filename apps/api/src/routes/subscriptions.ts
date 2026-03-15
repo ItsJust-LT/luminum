@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { canAccessOrganization } from "../lib/access.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -9,7 +10,9 @@ router.use(requireAuth);
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = req.body;
-    const subscription = await prisma.subscriptions.create({ data: { organization_id: data.organization_id, provider: data.provider || "paystack", type: data.type || "free", status: data.status || "active", provider_subscription_id: data.provider_subscription_id || null, provider_customer_id: data.provider_customer_id || null, plan_name: data.plan_name || null, plan_id: data.plan_id || null, amount: data.amount || null, currency: data.currency || "ZAR", billing_cycle: data.billing_cycle || null, trial_start_date: data.trial_start_date ? new Date(data.trial_start_date) : null, trial_end_date: data.trial_end_date ? new Date(data.trial_end_date) : null } });
+    const organizationId = data.organization_id;
+    if (!organizationId || !(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const subscription = await prisma.subscriptions.create({ data: { organization_id: organizationId, provider: data.provider || "paystack", type: data.type || "free", status: data.status || "active", provider_subscription_id: data.provider_subscription_id || null, provider_customer_id: data.provider_customer_id || null, plan_name: data.plan_name || null, plan_id: data.plan_id || null, amount: data.amount || null, currency: data.currency || "ZAR", billing_cycle: data.billing_cycle || null, trial_start_date: data.trial_start_date ? new Date(data.trial_start_date) : null, trial_end_date: data.trial_end_date ? new Date(data.trial_end_date) : null } });
     res.json({ success: true, subscription });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
@@ -18,6 +21,7 @@ router.post("/", async (req: Request, res: Response) => {
 router.post("/set-primary", async (req: Request, res: Response) => {
   try {
     const { organizationId, subscriptionId } = req.body;
+    if (!organizationId || !(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     await prisma.organization.update({ where: { id: organizationId }, data: { primary_subscription_id: subscriptionId } });
     res.json({ success: true });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
@@ -27,6 +31,7 @@ router.post("/set-primary", async (req: Request, res: Response) => {
 router.get("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
+    if (!organizationId || !(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const subscriptions = await prisma.subscriptions.findMany({ where: { organization_id: organizationId }, include: { payments: { orderBy: { created_at: "desc" }, take: 10 } }, orderBy: { created_at: "desc" } });
     res.json({ success: true, subscriptions });
   } catch (error: any) { res.json({ success: false, error: error.message }); }

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { getMemberOrAdmin } from "../lib/access.js";
 import * as s3 from "../lib/storage/s3.js";
 import { logoKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
@@ -23,7 +24,7 @@ router.get("/", async (req: Request, res: Response) => {
     const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) return res.status(404).json({ success: false, error: "Organization not found" });
 
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id }, select: { role: true } });
+    const member = await getMemberOrAdmin(organizationId, req.user);
     if (!member) return res.status(403).json({ success: false, error: "Access denied" });
 
     const canEdit = member.role === "owner" || member.role === "admin";
@@ -60,7 +61,7 @@ router.get("/", async (req: Request, res: Response) => {
 router.patch("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id }, select: { role: true } });
+    const member = await getMemberOrAdmin(organizationId, req.user);
     if (!member || (member.role !== "owner" && member.role !== "admin")) {
       return res.status(403).json({ success: false, error: "Insufficient permissions" });
     }
@@ -94,7 +95,7 @@ router.patch("/", async (req: Request, res: Response) => {
 router.post("/upload-logo", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id }, select: { role: true } });
+    const member = await getMemberOrAdmin(organizationId, req.user);
     if (!member || (member.role !== "owner" && member.role !== "admin")) {
       return res.status(403).json({ success: false, error: "Insufficient permissions" });
     }
@@ -132,7 +133,7 @@ router.post("/upload-logo", async (req: Request, res: Response) => {
 router.delete("/logo", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id }, select: { role: true } });
+    const member = await getMemberOrAdmin(organizationId, req.user);
     if (!member || (member.role !== "owner" && member.role !== "admin")) {
       return res.status(403).json({ success: false, error: "Insufficient permissions" });
     }

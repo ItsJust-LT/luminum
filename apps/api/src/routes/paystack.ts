@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { canAccessOrganization } from "../lib/access.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -15,6 +16,7 @@ function getPaystackSecret() {
 router.get("/subscription-details", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
+    if (!organizationId || !(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const org = await prisma.organization.findUnique({ where: { id: organizationId }, include: { subscriptions_subscriptions_organization_idToorganization: { orderBy: { created_at: "desc" } } } });
     if (!org) return res.status(404).json({ success: false, error: "Not found" });
 
@@ -34,6 +36,7 @@ router.get("/subscription-details", async (req: Request, res: Response) => {
 router.get("/customer-transactions", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
+    if (!organizationId || !(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const payments = await prisma.payments.findMany({
       where: { subscriptions: { organization_id: organizationId } },
       orderBy: { created_at: "desc" }, take: 20,

@@ -27,6 +27,7 @@ import {
   Activity,
   Building2,
   ChevronDown,
+  Database,
   LayoutDashboard,
   Settings,
   Users,
@@ -79,6 +80,7 @@ export function AdminSidebar({
     { title: "User Activity", href: "/admin/activity", icon: Activity },
     { title: "Server Monitoring", href: "/admin/monitoring", icon: Server },
     { title: "System Logs", href: "/admin/logs", icon: LogsIcon },
+    { title: "Database", href: "/admin/database", icon: Database },
   ]
 
   const managementItems = [

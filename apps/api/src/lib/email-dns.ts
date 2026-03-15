@@ -1,11 +1,38 @@
 import dns from "dns/promises";
 
 const MAIL_MX_HOST = (process.env.MAIL_MX_HOST || "").toLowerCase().replace(/\.$/, "");
-const MAIL_SEND_HOST = (process.env.MAIL_SEND_HOST || MAIL_MX_HOST).toLowerCase().replace(/\.$/, "");
+const MAIL_MX_DOMAIN = (process.env.MAIL_MX_DOMAIN || "").toLowerCase().replace(/\.$/, "");
+const MAIL_SEND_HOST_RAW = (process.env.MAIL_SEND_HOST || "").toLowerCase().replace(/\.$/, "");
 const MAIL_SEND_IP = process.env.MAIL_SEND_IP || "";
 
-export function getExpectedMxHost(): string {
-  return MAIL_MX_HOST;
+const MX_CACHE_MS = 5 * 60 * 1000;
+let cachedMxHost: string | null = null;
+let cachedMxAt = 0;
+
+function domainFromMailFrom(defaultFrom: string): string {
+  const match = defaultFrom.match(/@([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})/);
+  return match ? match[1].toLowerCase() : "";
+}
+
+/** Resolve expected MX host: from MAIL_MX_HOST, or by looking up MX for MAIL_MX_DOMAIN (or domain from MAIL_FROM_DEFAULT). */
+export async function getExpectedMxHost(): Promise<string> {
+  if (MAIL_MX_HOST) return MAIL_MX_HOST;
+  const domain = MAIL_MX_DOMAIN || domainFromMailFrom(process.env.MAIL_FROM_DEFAULT || "noreply@luminum.agency");
+  if (!domain) return "";
+  if (cachedMxHost !== null && Date.now() - cachedMxAt < MX_CACHE_MS) return cachedMxHost;
+  try {
+    const records = await dns.resolveMx(domain);
+    const sorted = (records || []).slice().sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+    const first = sorted[0]?.exchange;
+    if (first) {
+      cachedMxHost = first.toLowerCase().replace(/\.$/, "");
+      cachedMxAt = Date.now();
+      return cachedMxHost;
+    }
+  } catch {
+    // ignore
+  }
+  return "";
 }
 
 export interface MxCheckResult {
@@ -16,9 +43,9 @@ export interface MxCheckResult {
 }
 
 export async function checkDomainMx(domain: string): Promise<MxCheckResult> {
-  const expected = MAIL_MX_HOST;
+  const expected = await getExpectedMxHost();
   if (!expected) {
-    return { ok: false, expectedHost: "", actualHosts: [], error: "MAIL_MX_HOST not configured" };
+    return { ok: false, expectedHost: "", actualHosts: [], error: "MAIL_MX_HOST or MAIL_MX_DOMAIN (or MAIL_FROM_DEFAULT domain) not configured" };
   }
   try {
     const records = await dns.resolveMx(domain);
@@ -48,7 +75,7 @@ export interface SpfCheckResult {
 }
 
 export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
-  const expectedHost = MAIL_SEND_HOST;
+  const expectedHost = MAIL_SEND_HOST_RAW || (await getExpectedMxHost()) || MAIL_MX_HOST;
   const expectedIp = MAIL_SEND_IP;
   if (!expectedHost && !expectedIp) {
     return { ok: true, record: undefined };

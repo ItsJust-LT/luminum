@@ -42,6 +42,7 @@ import {
   ExternalLink,
   Server,
   FileText as LogsIcon,
+  Database,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import NotificationBell from "@/components/NotificationBell"
@@ -120,6 +121,7 @@ export default function AdminLayout({
     { title: "Support", icon: HelpCircle, href: "/admin/support" },
     { title: "Server Monitoring", icon: Server, href: "/admin/monitoring" },
     { title: "System Logs", icon: LogsIcon, href: "/admin/logs" },
+    { title: "Database", icon: Database, href: "/admin/database" },
     { title: "Settings", icon: Settings, href: "/admin/settings" },
   ]
 

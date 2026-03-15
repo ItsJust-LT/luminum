@@ -134,3 +134,48 @@ export async function getSystemLogs(params?: {
 }) {
   return serverGet("/api/admin/logs", params)
 }
+
+// Database (admin browser)
+export async function getAdminDatabaseTables() {
+  return serverGet<{ success: boolean; tables: { name: string; rowCount: number }[] }>("/api/admin/database/tables")
+}
+
+export async function getAdminDatabaseSchema(tableName: string) {
+  return serverGet<{
+    success: boolean
+    tableName: string
+    columns: { name: string; type: string; nullable: boolean; default: string | null }[]
+    primaryKey: string[]
+  }>(`/api/admin/database/tables/${encodeURIComponent(tableName)}/schema`)
+}
+
+export async function getAdminDatabaseRows(tableName: string, page: number = 1, limit: number = 50) {
+  return serverGet<{
+    success: boolean
+    rows: Record<string, unknown>[]
+    pagination: { page: number; limit: number; total: number; totalPages: number }
+  }>(`/api/admin/database/tables/${encodeURIComponent(tableName)}/rows`, { page, limit })
+}
+
+export async function updateAdminDatabaseRow(
+  tableName: string,
+  primaryKey: Record<string, unknown>,
+  data: Record<string, unknown>
+) {
+  return serverPatch<{ success: boolean; updated: number }>(
+    `/api/admin/database/tables/${encodeURIComponent(tableName)}/rows`,
+    { primaryKey, data }
+  )
+}
+
+export async function runAdminDatabaseSql(query: string) {
+  return serverPost<{
+    success: boolean
+    type?: "select" | "write"
+    rows?: Record<string, unknown>[]
+    rowCount?: number
+    affectedRows?: number
+    executionTimeMs?: number
+    error?: string
+  }>("/api/admin/database/sql", { query })
+}

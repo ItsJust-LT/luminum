@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { getMemberOrAdmin } from "../lib/access.js";
 import { sendOrganizationInvitationEmail, sendMemberRemovalEmail } from "../lib/email.js";
 import { notifyMemberJoined, notifyMemberLeft, notifyMemberInvited, notifyInvitationAccepted } from "../lib/notifications/helpers.js";
 import { auth } from "../auth/config.js";
@@ -46,6 +47,9 @@ router.use(requireAuth);
 router.post("/send-invitation", async (req: Request, res: Response) => {
   try {
     const { email, role, organizationId, organizationName } = req.body;
+    const membership = await getMemberOrAdmin(organizationId, req.user);
+    if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
+
     const userCheck = await prisma.user.findUnique({ where: { email }, select: { id: true } });
 
     const invitation = await prisma.invitation.create({
@@ -98,7 +102,7 @@ router.post("/accept-invitation", async (req: Request, res: Response) => {
 router.post("/remove-member", async (req: Request, res: Response) => {
   try {
     const { memberId, memberEmail, memberName, organizationName, organizationId } = req.body;
-    const membership = await prisma.member.findFirst({ where: { userId: req.user.id, organizationId }, select: { role: true } });
+    const membership = await getMemberOrAdmin(organizationId, req.user);
     if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
 
     await prisma.member.deleteMany({ where: { userId: memberId, organizationId } });
@@ -116,7 +120,7 @@ router.post("/remove-member", async (req: Request, res: Response) => {
 router.get("/invitations", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const membership = await prisma.member.findFirst({ where: { userId: req.user.id, organizationId }, select: { role: true } });
+    const membership = await getMemberOrAdmin(organizationId, req.user);
     if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
 
     const invitations = await prisma.invitation.findMany({
@@ -137,7 +141,7 @@ router.post("/cancel-invitation", async (req: Request, res: Response) => {
     const invitation = await prisma.invitation.findUnique({ where: { id: invitationId, status: "pending" }, select: { id: true, organizationId: true } });
     if (!invitation) return res.status(404).json({ success: false, error: "Invitation not found" });
 
-    const membership = await prisma.member.findFirst({ where: { userId: req.user.id, organizationId: invitation.organizationId }, select: { role: true } });
+    const membership = await getMemberOrAdmin(invitation.organizationId, req.user);
     if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
 
     await prisma.invitation.update({ where: { id: invitationId }, data: { status: "cancelled" } });
@@ -151,7 +155,7 @@ router.post("/cancel-invitation", async (req: Request, res: Response) => {
 router.post("/add-member", async (req: Request, res: Response) => {
   try {
     const { email, role, organizationId } = req.body;
-    const membership = await prisma.member.findFirst({ where: { userId: req.user.id, organizationId }, select: { role: true } });
+    const membership = await getMemberOrAdmin(organizationId, req.user);
     if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
 
     const user = await prisma.user.findUnique({ where: { email }, select: { id: true, name: true } });
@@ -173,7 +177,7 @@ router.post("/add-member", async (req: Request, res: Response) => {
 router.patch("/update-role", async (req: Request, res: Response) => {
   try {
     const { memberId, newRole, organizationId } = req.body;
-    const membership = await prisma.member.findFirst({ where: { userId: req.user.id, organizationId }, select: { role: true } });
+    const membership = await getMemberOrAdmin(organizationId, req.user);
     if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
 
     await prisma.member.update({ where: { id: memberId }, data: { role: newRole } });
