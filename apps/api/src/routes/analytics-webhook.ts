@@ -53,7 +53,8 @@ router.post("/live-update", async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("[analytics/live-update] Error:", error);
+    const { logger } = await import("../lib/logger.js");
+    logger.error("[analytics/live-update] Error", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     res.status(500).json({ error: error.message });
   }
 });

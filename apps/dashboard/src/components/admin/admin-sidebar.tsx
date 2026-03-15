@@ -38,6 +38,7 @@ import {
   Globe,
   ExternalLink,
   Server,
+  FileText as LogsIcon,
 } from "lucide-react"
 
 interface AdminSidebarProps {
@@ -77,6 +78,7 @@ export function AdminSidebar({
     { title: "Websites", href: "/admin/websites", icon: Globe },
     { title: "User Activity", href: "/admin/activity", icon: Activity },
     { title: "Server Monitoring", href: "/admin/monitoring", icon: Server },
+    { title: "System Logs", href: "/admin/logs", icon: LogsIcon },
   ]
 
   const managementItems = [

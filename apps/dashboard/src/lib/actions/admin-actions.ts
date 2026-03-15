@@ -123,3 +123,14 @@ export async function getActivityUser(userId: string, period: string = "month") 
 export async function getServerMetrics() {
   return serverGet("/api/admin/monitoring/metrics")
 }
+
+// System logs
+export async function getSystemLogs(params?: {
+  page?: number
+  limit?: number
+  service?: string
+  level?: string
+  since?: string
+}) {
+  return serverGet("/api/admin/logs", params)
+}

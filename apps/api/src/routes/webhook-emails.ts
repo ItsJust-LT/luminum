@@ -162,7 +162,8 @@ router.post("/", async (req: Request, res: Response) => {
 
     res.json({ ok: true, emailId: email.id, attachmentsProcessed: payload.attachments?.length || 0, requestId, duration: `${Date.now() - startTime}ms` });
   } catch (error: any) {
-    console.error(`[${requestId}] Webhook error:`, error);
+    const { logger } = await import("../lib/logger.js");
+    logger.error(`Webhook error: ${error instanceof Error ? error.message : String(error)}`, { requestId, stack: error instanceof Error ? error.stack : undefined });
     res.status(500).json({ error: "server error", message: error.message, requestId });
   }
 });

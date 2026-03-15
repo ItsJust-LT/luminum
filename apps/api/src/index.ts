@@ -5,6 +5,7 @@ import cors from "cors";
 import { toNodeHandler } from "better-auth/node";
 import { config } from "./config.js";
 import { logger } from "./lib/logger.js";
+import { requestLogMiddleware } from "./middleware/request-log.js";
 import { auth } from "./auth/config.js";
 import { attachRealtimeWS } from "./lib/realtime-ws.js";
 import { emailsRouter } from "./routes/emails.js";
@@ -35,6 +36,7 @@ import { adminEmailsRouter } from "./routes/admin-emails.js";
 import { adminWebsitesRouter } from "./routes/admin-websites.js";
 import { adminActivityRouter } from "./routes/admin-activity.js";
 import { adminMonitoringRouter } from "./routes/admin-monitoring.js";
+import { adminLogsRouter } from "./routes/admin-logs.js";
 import { cronRouter } from "./routes/cron.js";
 
 const app = express();
@@ -58,6 +60,9 @@ app.all("/api/auth/*", toNodeHandler(auth));
 // ─── Body parsing ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: config.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.bodyLimit }));
+
+// ─── Request logging (after body, before routes) ───────────────────────────
+app.use(requestLogMiddleware);
 
 // ─── Health & session ─────────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
@@ -105,6 +110,7 @@ app.use("/api/admin/emails", adminEmailsRouter);
 app.use("/api/admin/websites", adminWebsitesRouter);
 app.use("/api/admin/activity", adminActivityRouter);
 app.use("/api/admin/monitoring", adminMonitoringRouter);
+app.use("/api/admin/logs", adminLogsRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/paystack", paystackRouter);
 app.use("/api/support", supportRouter);
@@ -118,6 +124,13 @@ app.use("/api/members", membersRouter);
 app.use("/api/subscriptions", subscriptionsRouter);
 app.use("/api/user-management", userManagementRouter);
 app.use("/api/analytics", analyticsRouter);
+
+// ─── Global error handler (must be last) ───────────────────────────────────
+app.use((err: Error, _req: express.Request, res: express.Response, _next: () => void) => {
+  const req = _req as express.Request & { requestId?: string };
+  logger.error(err.message, { stack: err?.stack, name: err?.name }, req?.requestId);
+  res.status(500).json({ error: "Internal server error" });
+});
 
 // ─── HTTP server & WebSocket ──────────────────────────────────────────────
 const httpServer = createServer(app);

@@ -499,6 +499,20 @@ model server_metrics {
   @@index([created_at], map: "idx_server_metrics_created_at")
 }
 
+model system_logs {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  service    String   @db.VarChar(64)
+  level      String   @db.VarChar(16)
+  message    String   @db.Text
+  meta       Json?
+  request_id String?  @db.VarChar(64)
+
+  @@index([created_at], map: "idx_system_logs_created_at")
+  @@index([service], map: "idx_system_logs_service")
+  @@index([level], map: "idx_system_logs_level")
+}
+
 // Ably LiveSync tables
 model outbox {
   sequence_id  Int       @id @default(autoincrement())

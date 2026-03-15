@@ -29,6 +29,17 @@ export async function serverFetch<T = any>(
     } catch {
       if (text) message = text.slice(0, 200);
     }
+    try {
+      const { ingestLog } = await import("@/lib/actions/log-actions");
+      await ingestLog({
+        service: "dashboard",
+        level: "error",
+        message: `API ${path} ${res.status}: ${message}`,
+        meta: { path, status: res.status },
+      });
+    } catch {
+      // ignore
+    }
     throw new Error(message || `API ${res.status}`);
   }
 
