@@ -302,13 +302,13 @@ export default function AnalyticsPage() {
       ])
 
       if (overview) setOverviewData(overview as OverviewData)
-      setTimeSeriesData(Array.isArray(timeseries?.data) ? timeseries.data : [])
+      setTimeSeriesData(Array.isArray((timeseries as { data?: unknown[] })?.data) ? (timeseries as { data: unknown[] }).data : [])
       setTopPages(pages ?? [])
       setTopCountries(countries ?? [])
       setDeviceData(devices ?? [])
       setLiveData({
-        activeVisitors: realtime?.activeVisitors ?? 0,
-        recentEvents: realtime?.recentEvents ?? [],
+        activeVisitors: (realtime as { activeVisitors?: number })?.activeVisitors ?? 0,
+        recentEvents: ((realtime as { recentEvents?: LiveData["recentEvents"] })?.recentEvents ?? []) as LiveData["recentEvents"],
       })
       setPageFlow(flow as PageFlowResponse | null)
       setEntryExit(entryExitData as EntryExitResponse | null)
