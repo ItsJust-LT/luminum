@@ -289,16 +289,16 @@ export default function AnalyticsPage() {
       const { start, end } = getDateRange(dateRange)
 
       const [overview, timeseries, pages, countries, devices, realtime, flow, entryExitData, paths, stats] = await Promise.all([
-        api.get("/api/analytics/overview", { websiteId: website.id, start, end }).catch(() => null),
-        api.get("/api/analytics/timeseries", { websiteId: website.id, start, end, granularity: dateRange === "24h" ? "hour" : "day" }).catch(() => null),
-        api.get("/api/analytics/top-pages", { websiteId: website.id, start, end, limit: 10 }).catch(() => []),
-        api.get("/api/analytics/countries", { websiteId: website.id, start, end, limit: 10 }).catch(() => []),
-        api.get("/api/analytics/devices", { websiteId: website.id, start, end, limit: 5 }).catch(() => []),
-        api.get("/api/analytics/realtime", { websiteId: website.id }).catch(() => null),
-        api.get("/api/analytics/page-flow", { websiteId: website.id, start, end, limit: 50 }).catch(() => null),
-        api.get("/api/analytics/top-entry-exit", { websiteId: website.id, start, end, limit: 10 }).catch(() => null),
-        api.get("/api/analytics/session-paths", { websiteId: website.id, start, end, limit: 20 }).catch(() => null),
-        api.get("/api/analytics/page-stats", { websiteId: website.id, start, end, limit: 20 }).catch(() => null),
+        api.analytics.getOverview(website.id, start, end).catch(() => null),
+        api.analytics.getTimeSeries(website.id, start, end, dateRange === "24h" ? "hour" : "day").catch(() => null),
+        api.analytics.getTopPages(website.id, start, end, 10).catch(() => []),
+        api.analytics.getCountries(website.id, start, end, 10).catch(() => []),
+        api.analytics.getDevices(website.id, start, end, 5).catch(() => []),
+        api.analytics.getRealtime(website.id).catch(() => null),
+        api.analytics.getPageFlow(website.id, start, end, 50).catch(() => null),
+        api.analytics.getEntryExit(website.id, start, end, 10).catch(() => null),
+        api.analytics.getSessionPaths(website.id, start, end, 20).catch(() => null),
+        api.analytics.getPageStats(website.id, start, end, 20).catch(() => null),
       ])
 
       if (overview) setOverviewData(overview)
@@ -328,7 +328,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (!website) return
     const t = setInterval(() => {
-      api.get("/api/analytics/realtime", { websiteId: website.id }).then((r: any) => {
+      api.analytics.getRealtime(website.id).then((r) => {
         if (r) setLiveData((prev) => ({ ...prev, activeVisitors: r.activeVisitors, recentEvents: r.recentEvents ?? prev.recentEvents }))
       })
     }, 30000)
