@@ -1,10 +1,17 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { jsonStringifySafe } from "../lib/json-safe.js";
 import { notifyAdminsOrganizationDeleted } from "../lib/notifications/helpers.js";
 
 const router = Router();
 router.use(requireAuth);
+
+/** Send JSON with BigInt serialized as string */
+function jsonSafe(res: Response, data: unknown) {
+  res.setHeader("Content-Type", "application/json");
+  res.send(jsonStringifySafe(data));
+}
 
 // GET /api/organization-management?organizationId=...
 router.get("/", async (req: Request, res: Response) => {
@@ -13,7 +20,7 @@ router.get("/", async (req: Request, res: Response) => {
     if (req.user.role !== "admin") return res.status(403).json({ success: false, error: "Admin only" });
     const org = await prisma.organization.findUnique({ where: { id: organizationId }, include: { members: { include: { user: { select: { id: true, name: true, email: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true } });
     if (!org) return res.status(404).json({ success: false, error: "Not found" });
-    res.json({ success: true, data: org });
+    jsonSafe(res, { success: true, data: org });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 

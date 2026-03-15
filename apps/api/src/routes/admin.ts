@@ -3,6 +3,7 @@ import { pathParam } from "../lib/req-params.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { auth } from "../auth/config.js";
+import { jsonStringifySafe } from "../lib/json-safe.js";
 import { notifyAdminsOrganizationCreated } from "../lib/notifications/helpers.js";
 import { sendOwnerInvitationEmail, sendInvitationEmail } from "../lib/email.js";
 import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
@@ -13,6 +14,12 @@ router.use(requireAuth);
 function adminOnly(req: any, res: any, next: any) {
   if (req.user.role !== "admin") return res.status(403).json({ success: false, error: "Admin access required" });
   next();
+}
+
+/** Send JSON response with BigInt serialized as string (avoids "Do not know how to serialize a BigInt") */
+function jsonSafe(res: Response, data: unknown) {
+  res.setHeader("Content-Type", "application/json");
+  res.send(jsonStringifySafe(data));
 }
 
 // GET /api/admin/dashboard-stats
@@ -76,7 +83,7 @@ router.get("/organizations", adminOnly, async (req: Request, res: Response) => {
       }),
       prisma.organization.count({ where }),
     ]);
-    res.json({ success: true, organizations: orgs, total, limit: parseInt(limit), offset: parseInt(offset) });
+    jsonSafe(res, { success: true, organizations: orgs, total, limit: parseInt(limit), offset: parseInt(offset) });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 
@@ -88,7 +95,7 @@ router.get("/organizations/:id", adminOnly, async (req: Request, res: Response) 
       include: { members: { include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } } }, websites: true, subscriptions_subscriptions_organization_idToorganization: true, invitations: { where: { status: "pending" } } },
     });
     if (!org) return res.status(404).json({ success: false, error: "Not found" });
-    res.json({ success: true, organization: org });
+    jsonSafe(res, { success: true, organization: org });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 
@@ -137,7 +144,7 @@ router.post("/create-organization", adminOnly, async (req: Request, res: Respons
     }
 
     await notifyAdminsOrganizationCreated(org.name, org.id);
-    res.json({ success: true, organization: org });
+    jsonSafe(res, { success: true, organization: org });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
 
