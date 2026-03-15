@@ -31,6 +31,16 @@ export async function getEmailSetupStatus(organizationId: string): Promise<Email
   return res as EmailSetupStatus
 }
 
+/** Set the organization's email domain (website). Owner/admin only. */
+export async function setEmailSetupDomain(organizationId: string, websiteId: string) {
+  return serverPost("/api/emails/setup-domain", { organizationId, websiteId })
+}
+
+/** Run DNS (MX) check for the org's email domain; if valid, marks setup complete. */
+export async function verifyEmailDns(organizationId: string) {
+  return serverPost("/api/emails/verify-dns", { organizationId })
+}
+
 export async function getEmailAddresses(organizationId: string) {
   return serverGet("/api/emails/addresses", { organizationId })
 }

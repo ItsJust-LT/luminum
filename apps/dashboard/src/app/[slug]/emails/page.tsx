@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { useEmailsContext } from "@/lib/contexts/emails-context"
 import type { EmailListItem } from "@/lib/contexts/emails-context"
-import { getEmails, deleteEmail, getEmailAddresses, getEmailSetupStatus, type EmailSetupStatus } from "@/lib/actions/emails"
+import { getEmails, deleteEmail, getEmailAddresses, getEmailSetupStatus, setEmailSetupDomain, verifyEmailDns, type EmailSetupStatus } from "@/lib/actions/emails"
+import { getWebsitesByOrganization } from "@/lib/prisma/websites"
 import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,8 @@ import {
   Paperclip,
   RefreshCw,
   InboxIcon,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -54,7 +57,7 @@ function smartDate(date: Date | string): string {
 }
 
 export default function EmailsPage() {
-  const { organization } = useOrganization()
+  const { organization, userRole } = useOrganization()
   const ctx = useEmailsContext()
   const {
     emails,
@@ -90,6 +93,9 @@ export default function EmailsPage() {
   const [orgLoading, setOrgLoading] = useState(false)
   const [emailSelectorOpen, setEmailSelectorOpen] = useState(false)
   const [setupStatus, setSetupStatus] = useState<EmailSetupStatus | null>(null)
+  const [websites, setWebsites] = useState<{ id: string; domain: string; name?: string }[]>([])
+  const [settingDomain, setSettingDomain] = useState(false)
+  const [verifyingDns, setVerifyingDns] = useState(false)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
@@ -104,8 +110,18 @@ export default function EmailsPage() {
     getEmailSetupStatus(organization.id).then(setSetupStatus)
   }, [organization?.id])
 
+  // When setup required and no domain, fetch websites so owner/admin can select one
+  useEffect(() => {
+    if (!organization?.id || !setupStatus || setupStatus.setupComplete || setupStatus.domain) return
+    const canSetDomain = userRole === "owner" || userRole === "admin"
+    if (!canSetDomain) return
+    getWebsitesByOrganization(organization.id).then((res) => {
+      if (res?.data?.length) setWebsites(res.data)
+    })
+  }, [organization?.id, setupStatus, userRole])
+
   const router = useRouter()
-  const showSetupRequired = !!(setupStatus?.access && !setupStatus?.setupComplete)
+  const showSetupRequired = !!(setupStatus && !setupStatus.setupComplete)
 
   const fetchEmails = useCallback(
     async (pageNum: number, refresh: boolean) => {
@@ -278,42 +294,129 @@ export default function EmailsPage() {
 
   if (showSetupRequired) {
     const hasDomain = !!setupStatus?.domain
+    const canSetDomain = userRole === "owner" || userRole === "admin"
+
+    const handleSelectDomain = async (websiteId: string) => {
+      if (!organization?.id) return
+      setSettingDomain(true)
+      try {
+        const res = await setEmailSetupDomain(organization.id, websiteId)
+        if (res?.success) {
+          toast.success("Domain set. Add the MX record below, then click Verify DNS.")
+          const next = await getEmailSetupStatus(organization.id)
+          setSetupStatus(next)
+        } else {
+          toast.error((res as { error?: string })?.error || "Failed to set domain")
+        }
+      } catch {
+        toast.error("Failed to set domain")
+      } finally {
+        setSettingDomain(false)
+      }
+    }
+
+    const handleVerifyDns = async () => {
+      if (!organization?.id) return
+      setVerifyingDns(true)
+      try {
+        const res = await verifyEmailDns(organization.id) as { success?: boolean; error?: string; message?: string }
+        if (res?.success) {
+          toast.success(res?.message || "DNS verified. You can send and receive email.")
+          const next = await getEmailSetupStatus(organization.id)
+          setSetupStatus(next)
+        } else {
+          toast.error(res?.error || "DNS check failed. Fix the MX record and try again.")
+          const next = await getEmailSetupStatus(organization.id)
+          setSetupStatus(next)
+        }
+      } catch {
+        toast.error("Verification failed")
+        const next = await getEmailSetupStatus(organization.id)
+        setSetupStatus(next)
+      } finally {
+        setVerifyingDns(false)
+      }
+    }
+
     return (
       <AppPageContainer fullWidth>
         <div className="relative overflow-hidden app-hero bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/10 p-4 sm:p-6 md:p-8">
           <div className="relative space-y-4 max-w-2xl">
             <h1 className="text-2xl font-bold text-foreground">Email setup required</h1>
             {!hasDomain ? (
-              <p className="text-muted-foreground">
-                Email is enabled for this organization but setup isn’t complete. Your admin needs to select a domain and verify DNS so you can receive and send email here.
-              </p>
+              <>
+                <p className="text-muted-foreground">
+                  Complete setup so this organization can receive and send email. Select the domain you’ll use for email, then add the MX record and verify.
+                </p>
+                {canSetDomain ? (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">Select email domain</label>
+                    <div className="flex flex-wrap gap-2">
+                      {websites.length === 0 && !settingDomain && (
+                        <p className="text-sm text-muted-foreground">Loading websites…</p>
+                      )}
+                      {websites.length === 0 && settingDomain && (
+                        <p className="text-sm text-muted-foreground">Setting domain…</p>
+                      )}
+                      {websites.map((w) => (
+                        <Button
+                          key={w.id}
+                          variant="outline"
+                          size="sm"
+                          disabled={settingDomain}
+                          onClick={() => handleSelectDomain(w.id)}
+                          className="rounded-lg"
+                        >
+                          {settingDomain ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                          {w.domain}
+                        </Button>
+                      ))}
+                    </div>
+                    {websites.length === 0 && !settingDomain && (
+                      <p className="text-sm text-muted-foreground">Add a website in Analytics first to use its domain for email.</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Ask an owner or admin to select the email domain for this organization so you can complete setup.</p>
+                )}
+              </>
             ) : (
-              <p className="text-muted-foreground">
-                Your domain’s mail (MX) isn’t pointing to our server yet, so we can’t receive or send email for this organization.
-              </p>
+              <>
+                <p className="text-muted-foreground">
+                  Your domain <strong>{setupStatus.domain}</strong> is set. Point your MX record to our server, then click Verify DNS.
+                </p>
+                {setupStatus?.lastError && (
+                  <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+                    {setupStatus.lastError}
+                  </div>
+                )}
+                {setupStatus?.expectedMxHost && (
+                  <p className="text-sm text-muted-foreground">
+                    Set your MX record to: <code className="bg-muted px-1.5 py-0.5 rounded">{setupStatus.expectedMxHost}</code>
+                  </p>
+                )}
+                {setupStatus?.steps && setupStatus.steps.length > 0 && (
+                  <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+                    {setupStatus.steps.map((step, i) => (
+                      <li key={i}>
+                        <span className="font-medium text-foreground">{step.title}</span> — {step.description}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                <Button
+                  onClick={handleVerifyDns}
+                  disabled={verifyingDns}
+                  className="rounded-xl"
+                >
+                  {verifyingDns ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                  {verifyingDns ? "Checking DNS…" : "Verify DNS"}
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  After you’ve added the MX record at your DNS provider, click Verify DNS. If it’s correct, the inbox will appear.
+                </p>
+              </>
             )}
-            {setupStatus?.lastError && (
-              <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-                {setupStatus.lastError}
-              </div>
-            )}
-            {hasDomain && setupStatus?.expectedMxHost && (
-              <p className="text-sm text-muted-foreground">
-                Set your MX record to: <code className="bg-muted px-1.5 py-0.5 rounded">{setupStatus.expectedMxHost}</code>
-              </p>
-            )}
-            {setupStatus?.steps && setupStatus.steps.length > 0 && (
-              <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-                {setupStatus.steps.map((step, i) => (
-                  <li key={i}>
-                    <span className="font-medium text-foreground">{step.title}</span> — {step.description}
-                  </li>
-                ))}
-              </ol>
-            )}
-            <p className="text-sm text-muted-foreground">
-              Need help? Contact your admin — they can complete setup from the admin panel.
-            </p>
           </div>
         </div>
       </AppPageContainer>

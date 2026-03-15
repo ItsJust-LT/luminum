@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { canAccessOrganization, getMemberOrAdmin } from "../lib/access.js";
+import { checkDomainMx } from "../lib/email-dns.js";
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
@@ -35,8 +37,7 @@ router.get("/enabled", async (req: Request, res: Response) => {
 router.get("/addresses", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     const websites = await prisma.websites.findMany({ where: { organization_id: organizationId }, select: { domain: true } });
     const orgDomains = new Set(websites.map(w => w.domain.toLowerCase().trim()));
@@ -65,8 +66,7 @@ router.get("/addresses", async (req: Request, res: Response) => {
 router.get("/unread-count", async (req: Request, res: Response) => {
   try {
     const organizationId = queryParam(req, "organizationId");
-    const member = await prisma.member.findFirst({ where: { organizationId: organizationId!, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(organizationId!, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const count = await prisma.email.count({ where: { organization_id: organizationId!, read: false } });
     res.json({ success: true, count });
   } catch (error: any) {
@@ -79,8 +79,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
   try {
     const organizationId = queryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: {
@@ -121,6 +120,70 @@ router.get("/setup-status", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/emails/setup-domain — set email domain (website) for org. Owner/admin or platform admin only.
+router.post("/setup-domain", async (req: Request, res: Response) => {
+  try {
+    const { organizationId, websiteId } = req.body as { organizationId?: string; websiteId?: string };
+    if (!organizationId || !websiteId) return res.status(400).json({ success: false, error: "organizationId and websiteId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const member = await getMemberOrAdmin(organizationId, req.user);
+    if (!member || (member.role !== "owner" && member.role !== "admin")) return res.status(403).json({ success: false, error: "Only owners and admins can set the email domain" });
+    const website = await prisma.websites.findUnique({ where: { id: websiteId }, select: { id: true, domain: true, organization_id: true } });
+    if (!website || website.organization_id !== organizationId) return res.status(400).json({ success: false, error: "Website not found or does not belong to this organization" });
+    const now = new Date();
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        emails_enabled: true,
+        email_domain_id: websiteId,
+        email_from_address: `replies@${website.domain}`,
+        email_dns_verified_at: null,
+        email_dns_last_check_at: null,
+        email_dns_last_error: null,
+      },
+    });
+    res.json({ success: true, message: "Domain set. Add the MX record and then click Verify DNS." });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/emails/verify-dns — check MX for org's email domain and update verified flag if ok.
+router.post("/verify-dns", async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId?: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { email_domain_id: true, email_domain: { select: { domain: true } } },
+    });
+    if (!org?.email_domain_id || !org.email_domain) return res.status(400).json({ success: false, error: "No email domain set. Select a domain first." });
+    const domain = org.email_domain.domain;
+    const mx = await checkDomainMx(domain);
+    const now = new Date();
+    if (mx.ok) {
+      await prisma.organization.update({
+        where: { id: organizationId },
+        data: { email_dns_verified_at: now, email_dns_last_check_at: now, email_dns_last_error: null },
+      });
+      return res.json({ success: true, message: "DNS verified. You can send and receive email.", expectedHost: mx.expectedHost, actualHosts: mx.actualHosts });
+    }
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { email_dns_last_check_at: now, email_dns_last_error: mx.error || "MX check failed" },
+    });
+    res.json({
+      success: false,
+      error: mx.error,
+      expectedHost: mx.expectedHost,
+      actualHosts: mx.actualHosts,
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
 // POST /api/emails/send
 router.post("/send", async (req: Request, res: Response) => {
   try {
@@ -131,8 +194,7 @@ router.post("/send", async (req: Request, res: Response) => {
     if (!organizationId || !subject || (!text && !html)) {
       return res.status(400).json({ success: false, error: "organizationId, subject, and text or html required" });
     }
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const { from, replyTo } = await getOrgReplyAddress(organizationId);
     const toList = Array.isArray(toInput) ? toInput : toInput ? [toInput] : [];
     if (toList.length === 0) return res.status(400).json({ success: false, error: "At least one recipient required" });
@@ -184,8 +246,7 @@ router.get("/", async (req: Request, res: Response) => {
     const emailAddressesRaw = queryParam(req, "emailAddresses");
     const emailAddresses = emailAddressesRaw ? emailAddressesRaw.split(",") : undefined;
 
-    const member = await prisma.member.findFirst({ where: { organizationId, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { emails_enabled: true } });
     if (!org?.emails_enabled) return res.status(400).json({ success: false, error: "Emails not enabled" });
@@ -257,8 +318,7 @@ router.get("/:id", async (req: Request, res: Response) => {
     if (!email) return res.status(404).json({ success: false, error: "Email not found" });
     if (!email.organization_id) return res.status(400).json({ success: false, error: "Email has no organization" });
 
-    const member = await prisma.member.findFirst({ where: { organizationId: email.organization_id, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     res.json({ success: true, data: email });
   } catch (error: any) {
@@ -274,8 +334,7 @@ router.post("/:id/read", async (req: Request, res: Response) => {
     if (!email) return res.status(404).json({ success: false, error: "Email not found" });
     if (!email.organization_id) return res.status(400).json({ success: false, error: "No organization" });
 
-    const member = await prisma.member.findFirst({ where: { organizationId: email.organization_id, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     await prisma.email.update({ where: { id: id! }, data: { read: true } });
 
@@ -296,8 +355,7 @@ router.post("/:id/unread", async (req: Request, res: Response) => {
     const email = await prisma.email.findUnique({ where: { id }, select: { organization_id: true } });
     if (!email?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
 
-    const member = await prisma.member.findFirst({ where: { organizationId: email.organization_id, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     await prisma.email.update({ where: { id: id! }, data: { read: false } });
 
@@ -318,8 +376,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
       select: { id: true, organization_id: true, from: true, subject: true, messageId: true, references: true },
     });
     if (!original?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
-    const member = await prisma.member.findFirst({ where: { organizationId: original.organization_id, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(original.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const { from, replyTo } = await getOrgReplyAddress(original.organization_id);
     const toAddr = original.from || "";
     const reSubject = (original.subject || "").toLowerCase().startsWith("re:") ? (original.subject || "") : `Re: ${original.subject || ""}`;
@@ -359,8 +416,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
     const email = await prisma.email.findUnique({ where: { id }, include: { attachments: true } });
     if (!email?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
 
-    const member = await prisma.member.findFirst({ where: { organizationId: email.organization_id, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     let emailSize = 0;
     if (email.text) emailSize += Buffer.byteLength(email.text, "utf8");
@@ -395,8 +451,7 @@ router.get("/:id/attachment/:index", async (req: Request, res: Response) => {
     const email = await prisma.email.findUnique({ where: { id }, include: { attachments: true } });
     if (!email?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
 
-    const member = await prisma.member.findFirst({ where: { organizationId: email.organization_id, userId: req.user.id } });
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     const attachments = (email as typeof email & { attachments: { r2Key?: string; filename?: string; contentType?: string }[] }).attachments ?? [];
     const idx = parseInt(pathParam(req, "index") ?? "", 10);
