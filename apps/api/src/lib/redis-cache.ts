@@ -39,17 +39,11 @@ const ANALYTICS_DIRTY_TTL_SEC = 15;
 
 /** Mark analytics cache as dirty for a website so next overview/timeseries request skips cache. */
 export async function setAnalyticsDirty(websiteId: string): Promise<void> {
-  const redis = await getRedisClient();
-  if (!redis) return;
-  try {
-    await redis.setEx(PREFIX + ANALYTICS_DIRTY_PREFIX + websiteId, ANALYTICS_DIRTY_TTL_SEC, "1");
-  } catch {
-    // ignore
-  }
+  await cacheSet(ANALYTICS_DIRTY_PREFIX + websiteId, "1", ANALYTICS_DIRTY_TTL_SEC);
 }
 
 /** Returns true if analytics cache was recently invalidated for this website. */
 export async function isAnalyticsDirty(websiteId: string): Promise<boolean> {
   const val = await cacheGet<string>(ANALYTICS_DIRTY_PREFIX + websiteId);
-  return val === "1" || val === 1;
+  return val === "1";
 }
