@@ -328,8 +328,10 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (!website) return
     const t = setInterval(() => {
-      api.analytics.getRealtime(website.id).then((r) => {
-        if (r) setLiveData((prev) => ({ ...prev, activeVisitors: r.activeVisitors, recentEvents: r.recentEvents ?? prev.recentEvents }))
+      api.analytics.getRealtime(website.id).then((r: unknown) => {
+        if (!r) return
+        const data = r as { activeVisitors?: number; recentEvents?: LiveData["recentEvents"] }
+        setLiveData((prev) => ({ ...prev, activeVisitors: data.activeVisitors ?? 0, recentEvents: (data.recentEvents ?? prev.recentEvents) as LiveData["recentEvents"] }))
       })
     }, 30000)
     return () => clearInterval(t)
