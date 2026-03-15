@@ -405,7 +405,7 @@ export default function AdminMonitoringPage() {
                                 payload?.[0]?.payload?.created_at &&
                                 new Date(payload[0].payload.created_at).toLocaleString()
                               }
-                              formatter={(value: number) => [`${value?.toFixed(1) ?? ""}%`, ""]}
+                              formatter={(value: unknown) => [typeof value === "number" ? `${value.toFixed(1)}%` : String(value ?? ""), ""]}
                             />
                           }
                         />
@@ -550,7 +550,7 @@ export default function AdminMonitoringPage() {
                           <ChartTooltip
                             content={
                               <ChartTooltipContent
-                                formatter={(value: number) => [`${value?.toFixed(1) ?? ""}%`, ""]}
+                                formatter={(value: unknown) => [typeof value === "number" ? `${value.toFixed(1)}%` : String(value ?? ""), ""]}
                                 labelFormatter={(_, payload) =>
                                   payload?.[0]?.payload?.created_at &&
                                   new Date(payload[0].payload.created_at).toLocaleString()
