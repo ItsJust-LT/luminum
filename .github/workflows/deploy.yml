@@ -102,6 +102,7 @@ jobs:
 
       - name: Extract metadata (Mail)
         id: meta-mail
+        if: hashFiles('apps/mail/Dockerfile') != ''
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/luminum-mail
@@ -110,6 +111,7 @@ jobs:
             type=sha,prefix=
 
       - name: Build and push Mail
+        if: hashFiles('apps/mail/Dockerfile') != ''
         uses: docker/build-push-action@v6
         with:
           context: ./apps/mail
