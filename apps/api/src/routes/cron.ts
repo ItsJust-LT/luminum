@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { runEmailDnsVerification } from "../lib/cron-verify-email-dns.js";
+import { runAnalyticsScriptVerification } from "../lib/cron-verify-analytics-script.js";
 
 const router = Router();
 
@@ -23,6 +24,21 @@ router.post("/verify-email-dns", cronSecretAuth, async (_req: Request, res: Resp
       success: true,
       checked: result.checked,
       disabled: result.disabled,
+      errors: result.errors,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+router.post("/verify-analytics-script", cronSecretAuth, async (_req: Request, res: Response) => {
+  try {
+    const result = await runAnalyticsScriptVerification();
+    res.json({
+      success: true,
+      checked: result.checked,
+      failed: result.failed,
       errors: result.errors,
     });
   } catch (error: unknown) {

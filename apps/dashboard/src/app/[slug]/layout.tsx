@@ -58,6 +58,7 @@ interface Organization {
   role?: string
   emails_enabled?: boolean
   whatsapp_enabled?: boolean
+  analytics_enabled?: boolean
 }
 
 interface LayoutState {
@@ -71,6 +72,7 @@ interface LayoutState {
     unreadWhatsappCount: number
     emailsEnabled: boolean
     whatsappEnabled: boolean
+    analyticsEnabled: boolean
   } | null
 }
 
@@ -193,13 +195,16 @@ export default function SlugLayout({
       // Fetch feature flags from API
       let emailsEnabled = false
       let whatsappEnabled = false
+      let analyticsEnabled = false
       try {
-        const [emailRes, waRes] = await Promise.all([
+        const [emailRes, waRes, analyticsRes] = await Promise.all([
           api.organizationSettings.getEmailsEnabled(organization.id),
           api.whatsapp.checkEnabled(organization.id).catch(() => ({ enabled: false })),
+          api.organizationSettings.getAnalyticsEnabled(organization.id).catch(() => ({ enabled: false })),
         ])
         emailsEnabled = emailRes?.enabled ?? false
         whatsappEnabled = (waRes as any)?.enabled ?? false
+        analyticsEnabled = (analyticsRes as any)?.enabled ?? false
       } catch (error) {
         console.error("Failed to fetch feature flags:", error)
       }
@@ -242,6 +247,7 @@ export default function SlugLayout({
           role: resolvedRole,
           emails_enabled: emailsEnabled,
           whatsapp_enabled: whatsappEnabled,
+          analytics_enabled: analyticsEnabled,
         },
         loading: false,
         error: null,
@@ -252,6 +258,7 @@ export default function SlugLayout({
           unreadWhatsappCount: (unreadWhatsappResult as any).success ? (unreadWhatsappResult as any).count : 0,
           emailsEnabled,
           whatsappEnabled,
+          analyticsEnabled,
         },
       })
     } catch (error: any) {
@@ -331,7 +338,7 @@ export default function SlugLayout({
                       icon: LayoutDashboard,
                       href: `/${slug}/dashboard`,
                     },
-                    { title: "Analytics", icon: Globe, href: `/${slug}/analytics` },
+                    ...((state.organization as any)?.analytics_enabled ? [{ title: "Analytics", icon: Globe, href: `/${slug}/analytics` }] : []),
                     { title: "Forms", icon: FileText, href: `/${slug}/forms` },
                     ...((state.organization as any)?.emails_enabled ? [{ title: "Emails", icon: Mail, href: `/${slug}/emails` }] : []),
                     ...((state.organization as any)?.whatsapp_enabled ? [{ title: "WhatsApp", icon: MessageCircle, href: `/${slug}/whatsapp` }] : []),
@@ -487,6 +494,7 @@ export default function SlugLayout({
                 logo: state.organization.logo || null,
                 emails_enabled: state.organization.emails_enabled ?? false,
                 whatsapp_enabled: state.organization.whatsapp_enabled ?? false,
+                analytics_enabled: state.organization.analytics_enabled ?? false,
               }}
               sessionUser={{ name: session?.user?.name, image: session?.user?.image }}
               onSignOut={handleSignOut}
@@ -495,6 +503,7 @@ export default function SlugLayout({
               initialUnreadWhatsappCount={state.sidebarData?.unreadWhatsappCount ?? 0}
               initialEmailsEnabled={state.sidebarData?.emailsEnabled ?? false}
               initialWhatsappEnabled={state.sidebarData?.whatsappEnabled ?? false}
+              initialAnalyticsEnabled={state.sidebarData?.analyticsEnabled ?? false}
             />
           </div>
 

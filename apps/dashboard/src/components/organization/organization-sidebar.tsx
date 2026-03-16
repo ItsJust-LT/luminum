@@ -34,6 +34,7 @@ interface Organization {
   logo?: string | null
   emails_enabled?: boolean
   whatsapp_enabled?: boolean
+  analytics_enabled?: boolean
 }
 
 interface Website {
@@ -53,6 +54,7 @@ export function OrganizationSidebar({
   initialUnreadWhatsappCount = 0,
   initialEmailsEnabled = false,
   initialWhatsappEnabled = false,
+  initialAnalyticsEnabled = false,
   isLoading: externalIsLoading = false,
 }: {
   organization: Organization
@@ -63,6 +65,7 @@ export function OrganizationSidebar({
   initialUnreadWhatsappCount?: number
   initialEmailsEnabled?: boolean
   initialWhatsappEnabled?: boolean
+  initialAnalyticsEnabled?: boolean
   isLoading?: boolean
 }) {
   const router = useRouter()
@@ -72,6 +75,7 @@ export function OrganizationSidebar({
   const [unreadWhatsappCount, setUnreadWhatsappCount] = useState(initialUnreadWhatsappCount)
   const [emailsEnabled, setEmailsEnabled] = useState(initialEmailsEnabled)
   const [whatsappEnabled, setWhatsappEnabled] = useState(initialWhatsappEnabled)
+  const [analyticsEnabled, setAnalyticsEnabled] = useState(initialAnalyticsEnabled)
   const [isLoading, setIsLoading] = useState(externalIsLoading)
   
   // Update state when props change
@@ -81,8 +85,9 @@ export function OrganizationSidebar({
     setUnreadWhatsappCount(initialUnreadWhatsappCount)
     setEmailsEnabled(initialEmailsEnabled)
     setWhatsappEnabled(initialWhatsappEnabled)
+    setAnalyticsEnabled(initialAnalyticsEnabled)
     setIsLoading(externalIsLoading)
-  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, externalIsLoading])
+  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, initialAnalyticsEnabled, externalIsLoading])
 
   // Extract slug from current path or use organization id as fallback
   const pathSegments = pathname?.split('/').filter(Boolean) || []
@@ -90,7 +95,7 @@ export function OrganizationSidebar({
 
   const sidebarItems = [
     { title: "Dashboard", icon: LayoutDashboard, href: `/${slug}/dashboard` },
-    { title: "Analytics", icon: Globe, href: `/${slug}/analytics` },
+    ...(analyticsEnabled ? [{ title: "Analytics", icon: Globe, href: `/${slug}/analytics` }] : []),
     { 
       title: "Forms", 
       icon: FileText, 

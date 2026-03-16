@@ -199,6 +199,10 @@ export default function AnalyticsPage() {
   const [sessionPaths, setSessionPaths] = useState<SessionPathsResponse | null>(null)
   const [pageStats, setPageStats] = useState<PageStatsResponse | null>(null)
   const [activeTab, setActiveTab] = useState("overview")
+  const [analyticsSetupStatus, setAnalyticsSetupStatus] = useState<{
+    access: boolean
+    websites: Array<{ id: string; domain: string; name?: string; analytics: boolean; scriptVerified: boolean; scriptLastVerifiedAt?: string; scriptError?: string }>
+  } | null>(null)
 
   // Realtime: refetch when form created/updated (Ably organization channel)
   const fetchAnalyticsDataRef = useRef<() => void>(() => {})
@@ -240,12 +244,19 @@ export default function AnalyticsPage() {
     }
   }, [onMessage, website])
 
-  // Fetch website data when organization is available
+  // Fetch website data and analytics setup status when organization is available
   useEffect(() => {
     if (organization) {
       fetchWebsite()
     }
   }, [organization?.id])
+
+  useEffect(() => {
+    if (!organization?.id || !(organization as { analytics_enabled?: boolean }).analytics_enabled) return
+    api.analytics.getSetupStatus(organization.id).then((r: any) => {
+      if (r?.success) setAnalyticsSetupStatus({ access: r.access, websites: r.websites || [] })
+    }).catch(() => {})
+  }, [organization?.id, (organization as { analytics_enabled?: boolean })?.analytics_enabled])
 
   const fetchWebsite = async () => {
     if (!organization) return
@@ -452,6 +463,28 @@ export default function AnalyticsPage() {
     )
   }
 
+  // Analytics feature not enabled for this organization (admin toggle)
+  if (!(organization as { analytics_enabled?: boolean }).analytics_enabled) {
+    return (
+      <AppPageContainer>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Card className="app-card w-full max-w-md">
+            <CardContent className="pt-4 sm:pt-6 px-4 sm:px-6 text-center">
+              <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">Analytics not enabled</h3>
+              <p className="text-muted-foreground mb-4">
+                Analytics is not enabled for this organization. Contact an administrator to enable analytics tracking.
+              </p>
+              <Button onClick={() => router.push(`/${organization.slug}/dashboard`)} variant="outline" className="w-full app-touch">
+                Back to Dashboard
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppPageContainer>
+    )
+  }
+
   if (!website) {
     return (
       <AppPageContainer fullWidth>
@@ -533,6 +566,33 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* Script setup status: show when tracking script not detected on current or any website */}
+      {analyticsSetupStatus?.websites?.length ? (
+        (() => {
+          const withAnalytics = analyticsSetupStatus.websites.filter((w) => w.analytics)
+          const notVerified = withAnalytics.filter((w) => !w.scriptVerified)
+          if (notVerified.length === 0) return null
+          return (
+            <Card className="app-card border-amber-500/30 bg-amber-500/5">
+              <CardContent className="p-4 flex flex-wrap items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">Tracking script not detected</p>
+                  <p className="text-sm text-muted-foreground">
+                    {notVerified.length === 1
+                      ? `Add the tracking script to ${notVerified[0].domain}. We check periodically; data will appear once the script is live.`
+                      : `${notVerified.length} websites need the tracking script. We check periodically.`}
+                  </p>
+                  {notVerified[0]?.scriptError && (
+                    <p className="text-xs text-muted-foreground mt-1">{notVerified[0].scriptError}</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })()
+      ) : null}
 
       {/* Controls Section */}
       <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-lg">

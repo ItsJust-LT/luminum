@@ -236,6 +236,7 @@ model organization {
   email_dns_last_error                                              String?                   @db.Text
   email_from_address                                                String?                   @db.VarChar(255)
   whatsapp_enabled                                                  Boolean                   @default(false)
+  analytics_enabled                                                 Boolean                   @default(false)
   emails                                                            email[]
   images                                                            images[]
   invitations                                                       invitation[]
@@ -549,6 +550,8 @@ model websites {
   created_at         DateTime?            @default(now()) @db.Timestamptz(6)
   updated_at         DateTime?            @default(now()) @db.Timestamptz(6)
   analytics          Boolean?             @default(false)
+  script_last_verified_at           DateTime?            @db.Timestamptz(6)
+  script_last_error                String?              @db.Text
   metadata           Json?
   website_id         String?              @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   settings           Json?                @default("{}")

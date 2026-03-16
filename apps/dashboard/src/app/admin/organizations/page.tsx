@@ -40,6 +40,8 @@ import {
   ExternalLink,
   Mail,
   FileText,
+  MessageCircle,
+  BarChart3,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-organization-creator-dialog"
@@ -53,6 +55,7 @@ export default function AdminOrganizationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [togglingFeature, setTogglingFeature] = useState<string | null>(null)
 
   const fetchOrganizations = async () => {
     setLoading(true)
@@ -84,6 +87,26 @@ export default function AdminOrganizationsPage() {
     if (sub.status === "active") return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-xs">Active</Badge>
     if (sub.status === "trialing") return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 text-xs">Trial</Badge>
     return <Badge variant="secondary" className="text-xs">{sub.status}</Badge>
+  }
+
+  const toggleFeature = async (org: any, feature: "analytics" | "email" | "whatsapp", enable: boolean) => {
+    const key = `${org.id}-${feature}`
+    setTogglingFeature(key)
+    try {
+      if (feature === "analytics") {
+        await (enable ? api.admin.enableAnalytics(org.id) : api.admin.disableAnalytics(org.id))
+      } else if (feature === "email") {
+        await (enable ? api.admin.enableEmailAccess(org.id) : api.admin.disableEmail(org.id))
+      } else {
+        await (enable ? api.admin.enableWhatsapp(org.id) : api.admin.disableWhatsapp(org.id))
+      }
+      toast.success(enable ? `${feature === "analytics" ? "Analytics" : feature === "email" ? "Email" : "WhatsApp"} enabled` : `${feature === "analytics" ? "Analytics" : feature === "email" ? "Email" : "WhatsApp"} disabled`)
+      fetchOrganizations()
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update")
+    } finally {
+      setTogglingFeature(null)
+    }
   }
 
   const filtered = organizations.filter((org) => {
@@ -232,6 +255,7 @@ export default function AdminOrganizationsPage() {
                   <TableHead>Members</TableHead>
                   <TableHead>Websites</TableHead>
                   <TableHead>Subscription</TableHead>
+                  <TableHead>Features</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="w-[50px]" />
                 </TableRow>
@@ -266,6 +290,19 @@ export default function AdminOrganizationsPage() {
                       </div>
                     </TableCell>
                     <TableCell>{getSubscriptionBadge(org)}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant={org.analytics_enabled ? "default" : "secondary"} className="text-xs gap-0.5">
+                          <BarChart3 className="h-3 w-3" /> {org.analytics_enabled ? "On" : "Off"}
+                        </Badge>
+                        <Badge variant={org.emails_enabled ? "default" : "secondary"} className="text-xs gap-0.5">
+                          <Mail className="h-3 w-3" /> {org.emails_enabled ? (org.email_dns_verified_at ? "OK" : "Setup") : "Off"}
+                        </Badge>
+                        <Badge variant={org.whatsapp_enabled ? "default" : "secondary"} className="text-xs gap-0.5">
+                          <MessageCircle className="h-3 w-3" /> {org.whatsapp_enabled ? "On" : "Off"}
+                        </Badge>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {formatDate(org.createdAt, { relative: true })}
                     </TableCell>
@@ -277,6 +314,34 @@ export default function AdminOrganizationsPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {!org.analytics_enabled ? (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "analytics", true)} disabled={!!togglingFeature}>
+                              <BarChart3 className="h-4 w-4 mr-2" /> Enable Analytics
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "analytics", false)} disabled={!!togglingFeature}>
+                              <BarChart3 className="h-4 w-4 mr-2" /> Disable Analytics
+                            </DropdownMenuItem>
+                          )}
+                          {!org.emails_enabled ? (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "email", true)} disabled={!!togglingFeature}>
+                              <Mail className="h-4 w-4 mr-2" /> Enable Email
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "email", false)} disabled={!!togglingFeature}>
+                              <Mail className="h-4 w-4 mr-2" /> Disable Email
+                            </DropdownMenuItem>
+                          )}
+                          {!org.whatsapp_enabled ? (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "whatsapp", true)} disabled={!!togglingFeature}>
+                              <MessageCircle className="h-4 w-4 mr-2" /> Enable WhatsApp
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "whatsapp", false)} disabled={!!togglingFeature}>
+                              <MessageCircle className="h-4 w-4 mr-2" /> Disable WhatsApp
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem asChild>
                             <Link href={`/${org.slug}/dashboard`}>
                               <ExternalLink className="h-4 w-4 mr-2" /> View Dashboard

@@ -8,7 +8,18 @@ const router = Router();
 router.use(requireAuth);
 
 function formatWebsite(w: any) {
-  return { ...w, name: w.name ?? undefined, created_at: w.created_at?.toISOString() || new Date().toISOString(), updated_at: w.updated_at?.toISOString() || new Date().toISOString(), website_id: w.website_id ?? undefined, analytics: w.analytics ?? false, metadata: w.metadata && typeof w.metadata === "object" ? w.metadata : {}, settings: w.settings && typeof w.settings === "object" ? w.settings : {} };
+  return {
+    ...w,
+    name: w.name ?? undefined,
+    created_at: w.created_at?.toISOString() || new Date().toISOString(),
+    updated_at: w.updated_at?.toISOString() || new Date().toISOString(),
+    website_id: w.website_id ?? undefined,
+    analytics: w.analytics ?? false,
+    script_last_verified_at: w.script_last_verified_at?.toISOString?.() ?? undefined,
+    script_last_error: w.script_last_error ?? undefined,
+    metadata: w.metadata && typeof w.metadata === "object" ? w.metadata : {},
+    settings: w.settings && typeof w.settings === "object" ? w.settings : {},
+  };
 }
 
 // POST /api/websites

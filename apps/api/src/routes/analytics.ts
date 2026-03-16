@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { canAccessOrganization } from "../lib/access.js";
 import { createLiveToken, getLivePages } from "../lib/analytics-live.js";
 import { cacheGet, cacheSet, isAnalyticsDirty } from "../lib/redis-cache.js";
 import { config } from "../config.js";
@@ -9,22 +10,23 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 router.use(requireAuth);
 
-/** Resolves a website by id or website_id and verifies the user has access (member or platform admin). */
+/** Resolves a website by id or website_id and verifies the user has access (member or platform admin). Also enforces org-level analytics_enabled. */
 async function resolveWebsiteWithAccess(
   websiteId: string,
   user: { id: string; role?: string }
 ) {
   const website = await prisma.websites.findFirst({
     where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
-    select: { id: true, website_id: true, organization_id: true },
+    select: { id: true, website_id: true, organization_id: true, organization: { select: { analytics_enabled: true } } },
   });
   if (!website) return null;
-  if (user.role === "admin") return website;
+  if (!website.organization?.analytics_enabled) return null;
+  if (user.role === "admin") return { id: website.id, website_id: website.website_id, organization_id: website.organization_id };
   const member = await prisma.member.findFirst({
     where: { organizationId: website.organization_id, userId: user.id },
   });
   if (!member) return null;
-  return website;
+  return { id: website.id, website_id: website.website_id, organization_id: website.organization_id };
 }
 
 /** Website IDs to use when querying events/form_submissions (script may send id or website_id). */
@@ -33,6 +35,47 @@ function websiteIdFilter(website: { id: string; website_id: string | null }) {
   if (website.website_id && website.website_id !== website.id) ids.push(website.website_id);
   return { in: ids };
 }
+
+// GET /api/analytics/setup-status?organizationId=...
+router.get("/setup-status", async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req.query as { organizationId?: string }).organizationId;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { analytics_enabled: true },
+    });
+    const access = !!org?.analytics_enabled;
+    const websites = await prisma.websites.findMany({
+      where: { organization_id: organizationId },
+      select: {
+        id: true,
+        domain: true,
+        name: true,
+        analytics: true,
+        script_last_verified_at: true,
+        script_last_error: true,
+      },
+    });
+    res.json({
+      success: true,
+      access,
+      websites: websites.map((w) => ({
+        id: w.id,
+        domain: w.domain,
+        name: w.name ?? undefined,
+        analytics: w.analytics ?? false,
+        scriptVerified: !!w.script_last_verified_at && !w.script_last_error,
+        scriptLastVerifiedAt: w.script_last_verified_at?.toISOString() ?? undefined,
+        scriptError: w.script_last_error ?? undefined,
+      })),
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal server error";
+    res.status(500).json({ success: false, error: message });
+  }
+});
 
 // GET /api/analytics/live-ws-token?websiteId=X
 // Returns a short-lived token and WebSocket URL for the dashboard to connect

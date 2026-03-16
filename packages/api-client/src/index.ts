@@ -123,6 +123,8 @@ function createApiClient(baseUrl: string = "") {
   const organizationSettings = {
     getEmailsEnabled: (organizationId: string) =>
       get("/api/organization-settings/emails-enabled", { organizationId }),
+    getAnalyticsEnabled: (organizationId: string) =>
+      get("/api/organization-settings/analytics-enabled", { organizationId }),
     get: (organizationId: string) =>
       get("/api/organization-settings", { organizationId }),
     update: (organizationId: string, updates: any) =>
@@ -235,10 +237,18 @@ function createApiClient(baseUrl: string = "") {
       get("/api/admin/analytics/countries", { start, end, limit }),
     getAdminAnalyticsDevices: (start: string, end: string, limit?: number) =>
       get("/api/admin/analytics/devices", { start, end, limit }),
+    enableEmailAccess: (organizationId: string) =>
+      post("/api/admin/enable-organization-email-access", { organizationId }),
+    disableEmail: (organizationId: string) =>
+      post("/api/admin/disable-organization-email", { organizationId }),
     enableWhatsapp: (organizationId: string) =>
       post("/api/admin/enable-organization-whatsapp", { organizationId }),
     disableWhatsapp: (organizationId: string) =>
       post("/api/admin/disable-organization-whatsapp", { organizationId }),
+    enableAnalytics: (organizationId: string) =>
+      post("/api/admin/enable-organization-analytics", { organizationId }),
+    disableAnalytics: (organizationId: string) =>
+      post("/api/admin/disable-organization-analytics", { organizationId }),
     getDatabaseTables: () => get("/api/admin/database/tables"),
     getDatabaseTableSchema: (tableName: string) =>
       get(`/api/admin/database/tables/${encodeURIComponent(tableName)}/schema`),
@@ -275,6 +285,8 @@ function createApiClient(baseUrl: string = "") {
 
   // ─── Analytics ────────────────────────────────────────────
   const analytics = {
+    getSetupStatus: (organizationId: string) =>
+      get("/api/analytics/setup-status", { organizationId }),
     getOverview: (websiteId: string, start: string, end: string) =>
       get("/api/analytics/overview", { websiteId, start, end }),
     getTimeSeries: (

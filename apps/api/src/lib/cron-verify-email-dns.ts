@@ -49,11 +49,10 @@ export async function runEmailDnsVerification(): Promise<EmailDnsVerificationRes
     const compositeError = issues.length ? issues.join("; ") : null;
 
     if (!mx.ok || !spf.ok || !dkim.ok || !dmarc.ok) {
-      // Any failure in MX/SPF/DKIM/DMARC disables email. This enforces a fully correct DNS setup.
+      // Mark setup as failed (do not change emails_enabled — that is admin access control).
       await prisma.organization.update({
         where: { id: org.id },
         data: {
-          emails_enabled: false,
           email_dns_verified_at: null,
           email_dns_last_check_at: now,
           email_dns_last_error: compositeError || mx.error || "MX no longer points to expected host",

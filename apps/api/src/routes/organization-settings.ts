@@ -25,6 +25,14 @@ router.get("/whatsapp-enabled", async (req: Request, res: Response) => {
   } catch { res.json({ enabled: false }); }
 });
 
+// GET /api/organization-settings/analytics-enabled?organizationId=...
+router.get("/analytics-enabled", async (req: Request, res: Response) => {
+  try {
+    const org = await prisma.organization.findUnique({ where: { id: req.query.organizationId as string }, select: { analytics_enabled: true } });
+    res.json({ enabled: org?.analytics_enabled || false });
+  } catch { res.json({ enabled: false }); }
+});
+
 // GET /api/organization-settings?organizationId=...
 router.get("/", async (req: Request, res: Response) => {
   try {
@@ -54,7 +62,7 @@ router.get("/", async (req: Request, res: Response) => {
         used_storage_bytes: organization.used_storage_bytes ? Number(organization.used_storage_bytes) : undefined,
         storage_usage_percent: storageUsagePercent,
         storage_warning: storageUsagePercent > 80,
-        analytics: false,
+        analytics: organization.analytics_enabled || false,
         emails: organization.emails_enabled || false,
         canEdit,
         userRole: member.role,

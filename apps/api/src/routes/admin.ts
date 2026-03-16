@@ -224,12 +224,29 @@ router.post("/check-email-dns", adminOnly, async (req: Request, res: Response) =
   }
 });
 
-// POST /api/admin/enable-organization-email
+// POST /api/admin/enable-organization-email-access — enable emails feature for org (access only; org does domain/DNS setup in dashboard).
+router.post("/enable-organization-email-access", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { emails_enabled: true },
+    });
+    res.json({ success: true, message: "Email access enabled. Organization can complete domain/DNS setup in dashboard." });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/enable-organization-email — full enable with domain and MX verification (optional; use enable-organization-email-access for access-only).
 router.post("/enable-organization-email", adminOnly, async (req: Request, res: Response) => {
   try {
-    const { organizationId, websiteId, email_from_address } = req.body as { organizationId: string; websiteId: string; email_from_address?: string };
-    if (!organizationId || !websiteId) {
-      return res.status(400).json({ success: false, error: "organizationId and websiteId required" });
+    const { organizationId, websiteId, email_from_address } = req.body as { organizationId: string; websiteId?: string; email_from_address?: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!websiteId) {
+      await prisma.organization.update({ where: { id: organizationId }, data: { emails_enabled: true } });
+      return res.json({ success: true, message: "Email access enabled" });
     }
     const website = await prisma.websites.findUnique({
       where: { id: websiteId },
@@ -313,6 +330,36 @@ router.post("/disable-organization-whatsapp", adminOnly, async (req: Request, re
       data: { whatsapp_enabled: false },
     });
     res.json({ success: true, message: "WhatsApp disabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/enable-organization-analytics
+router.post("/enable-organization-analytics", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { analytics_enabled: true },
+    });
+    res.json({ success: true, message: "Analytics enabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/disable-organization-analytics
+router.post("/disable-organization-analytics", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { analytics_enabled: false },
+    });
+    res.json({ success: true, message: "Analytics disabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
