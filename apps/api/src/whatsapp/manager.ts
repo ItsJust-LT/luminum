@@ -1,10 +1,13 @@
-import { Client, RemoteAuth } from "whatsapp-web.js";
+import whatsappWeb from "whatsapp-web.js";
 import type WAWebJS from "whatsapp-web.js";
 import type { PrismaClient } from "@luminum/database";
 import { WhatsappAccountStatus } from "@luminum/database/types";
 import { PgRemoteAuthStore } from "./remote-auth-store.js";
 import { mapWaMessageToDb, mapWaChatToDb } from "./mappers.js";
 import { logger } from "../lib/logger.js";
+
+// Extract CommonJS exports from whatsapp-web.js
+const { Client, RemoteAuth } = whatsappWeb;
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -40,7 +43,7 @@ interface BroadcastFn {
 }
 
 interface ManagedClient {
-  client: Client;
+  client: WAWebJS.Client;
   orgId: string;
   accountId: string;
   qrRetries: number;
