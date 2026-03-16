@@ -2,21 +2,34 @@ import { Command } from "commander";
 import { withDb } from "../lib/db.js";
 import dns from "node:dns/promises";
 
-async function checkMx(domain: string): Promise<{ ok: boolean; error?: string }> {
+async function checkAll(domain: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const records = await dns.resolveMx(domain);
-    if (!records || records.length === 0) {
+    const mxRecords = await dns.resolveMx(domain);
+    if (!mxRecords || mxRecords.length === 0) {
       return { ok: false, error: "No MX records found" };
     }
-    return { ok: true };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    return { ok: false, error: `MX error: ${(err as Error).message}` };
   }
+
+  try {
+    const txtRecords = await dns.resolveTxt(domain);
+    const flattened = (txtRecords || []).flat();
+    const spf = flattened.find((r) => String(r).trim().toLowerCase().startsWith("v=spf1 "));
+    if (!spf) {
+      return { ok: false, error: "No SPF record found" };
+    }
+  } catch (err) {
+    return { ok: false, error: `SPF error: ${(err as Error).message}` };
+  }
+
+  // DKIM and DMARC may use different hostnames; keep CLI lightweight by only requiring MX+SPF here.
+  return { ok: true };
 }
 
 export function cronVerifyEmailDnsCommand() {
   return new Command("verify-email-dns")
-    .description("Re-check MX records for all orgs with email enabled")
+    .description("Re-check MX/SPF records for all orgs with email enabled")
     .option("--json", "Output as JSON")
     .action(async (opts: { json?: boolean }) => {
       await withDb(async (prisma) => {
@@ -41,7 +54,7 @@ export function cronVerifyEmailDnsCommand() {
           }
 
           result.checked++;
-          const mx = await checkMx(website.domain);
+          const mx = await checkAll(website.domain);
           const now = new Date();
 
           if (!mx.ok) {

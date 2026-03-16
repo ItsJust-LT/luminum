@@ -168,7 +168,8 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
       checkDomainDmarc(domain),
     ]);
     const now = new Date();
-    if (mx.ok) {
+    const allOk = mx.ok && spf.ok && dkim.ok && dmarc.ok;
+    if (allOk) {
       await prisma.organization.update({
         where: { id: organizationId },
         data: { email_dns_verified_at: now, email_dns_last_check_at: now, email_dns_last_error: null },
@@ -188,11 +189,24 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
     }
     await prisma.organization.update({
       where: { id: organizationId },
-      data: { email_dns_last_check_at: now, email_dns_last_error: mx.error || "MX check failed" },
+      data: {
+        email_dns_last_check_at: now,
+        email_dns_last_error:
+          (!mx.ok && (mx.error || "MX check failed")) ||
+          (!spf.ok && (spf.error || "SPF check failed")) ||
+          (!dkim.ok && (dkim.error || "DKIM check failed")) ||
+          (!dmarc.ok && (dmarc.error || "DMARC check failed")) ||
+          "DNS check failed",
+      },
     });
     res.json({
       success: false,
-      error: mx.error,
+      error:
+        (!mx.ok && (mx.error || "MX check failed")) ||
+        (!spf.ok && (spf.error || "SPF check failed")) ||
+        (!dkim.ok && (dkim.error || "DKIM check failed")) ||
+        (!dmarc.ok && (dmarc.error || "DMARC check failed")) ||
+        "DNS check failed",
       expectedHost: mx.expectedHost,
       actualHosts: mx.actualHosts,
       checks: {

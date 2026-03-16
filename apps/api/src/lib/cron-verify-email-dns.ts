@@ -48,8 +48,8 @@ export async function runEmailDnsVerification(): Promise<EmailDnsVerificationRes
     if (!dmarc.ok) issues.push(`DMARC: ${dmarc.error || "missing"}`);
     const compositeError = issues.length ? issues.join("; ") : null;
 
-    if (!mx.ok) {
-      // MX is authoritative for enabling/disabling email. If MX is wrong, disable email.
+    if (!mx.ok || !spf.ok || !dkim.ok || !dmarc.ok) {
+      // Any failure in MX/SPF/DKIM/DMARC disables email. This enforces a fully correct DNS setup.
       await prisma.organization.update({
         where: { id: org.id },
         data: {
@@ -62,21 +62,12 @@ export async function runEmailDnsVerification(): Promise<EmailDnsVerificationRes
       result.disabled++;
       result.errors.push(`Org ${org.name} (${org.id}): ${compositeError || mx.error}`);
     } else {
-      // MX is good. For legacy orgs that were already verified and had no error,
-      // keep them "green" even if SPF/DKIM/DMARC are missing so existing email continues to work normally.
-      const hadCleanVerification = !!org.email_dns_verified_at && !org.email_dns_last_error;
-      const hasNonMxIssue = !spf.ok || !dkim.ok || !dmarc.ok;
-      const errorToStore =
-        hadCleanVerification && hasNonMxIssue
-          ? org.email_dns_last_error
-          : compositeError;
-
       await prisma.organization.update({
         where: { id: org.id },
         data: {
           email_dns_verified_at: org.email_dns_verified_at ?? now,
           email_dns_last_check_at: now,
-          email_dns_last_error: errorToStore,
+          email_dns_last_error: null,
         },
       });
     }
