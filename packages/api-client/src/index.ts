@@ -433,24 +433,25 @@ function createApiClient(baseUrl: string = "") {
       patch("/api/notification-preferences", data),
   };
 
-  // ─── Uploads ──────────────────────────────────────────────
+  // ─── Uploads (S3) ────────────────────────────────────────
   const uploads = {
-    logoToR2: (data: {
-      logoBase64: string;
-      fileName: string;
-      contentType: string;
-      organizationName?: string;
-      organizationId?: string;
-    }) => post("/api/uploads/logo-r2", data),
-    logoToCloudinary: (data: {
+    /** Upload organization logo to S3. */
+    uploadLogo: (data: {
       logoBase64: string;
       fileName?: string;
       contentType?: string;
       organizationName?: string;
       organizationId?: string;
-    }) => post("/api/uploads/logo-cloudinary", data),
-    fileToCloudinary: (data: { fileBase64: string; contentType?: string }) =>
-      post("/api/uploads/file-cloudinary", data),
+    }) => post<{ success: boolean; url?: string; key?: string; error?: string }>("/api/uploads/logo", data),
+    /** Upload support/generic file to S3. */
+    uploadFile: (data: {
+      fileBase64: string;
+      contentType?: string;
+      ticketId?: string;
+      messageId?: string;
+      originalFilename?: string;
+      filename?: string;
+    }) => post<{ success: boolean; data?: { url: string; storage_key: string; secure_url?: string; public_id?: string }; error?: string }>("/api/uploads/file", data),
   };
 
   // ─── Avatar ───────────────────────────────────────────────

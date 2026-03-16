@@ -151,9 +151,10 @@ export default function AdminSupportTicketDetailPage() {
           const uploads = await Promise.all(attachments.map(async file => {
             const bytes = await file.arrayBuffer()
             const fileBase64 = btoa(String.fromCharCode(...new Uint8Array(bytes)))
-            const r = await api.uploads.fileToCloudinary({ fileBase64, contentType: file.type }) as { success?: boolean; data?: { public_id: string; secure_url: string }; error?: string }
+            const r = await api.uploads.uploadFile({ fileBase64, contentType: file.type }) as { success?: boolean; data?: { storage_key: string; url: string; secure_url?: string }; error?: string }
             if (!r?.data) throw new Error(r?.error || "Upload failed")
-            return { filename: file.name, original_filename: file.name, file_size: file.size, mime_type: file.type, cloudinary_public_id: r.data.public_id, cloudinary_url: r.data.secure_url }
+            const d = r.data
+            return { filename: file.name, original_filename: file.name, file_size: file.size, mime_type: file.type, cloudinary_public_id: d.storage_key, cloudinary_url: d.url || d.secure_url }
           }))
           attachmentData = uploads
         } finally { setUploading(false) }

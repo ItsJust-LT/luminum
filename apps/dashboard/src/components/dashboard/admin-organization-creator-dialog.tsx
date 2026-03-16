@@ -194,7 +194,7 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
         const bytes = await file.arrayBuffer()
         const logoBase64 = btoa(String.fromCharCode(...new Uint8Array(bytes)))
 
-        const result = await api.uploads.logoToCloudinary({
+        const result = await api.uploads.uploadLogo({
           logoBase64,
           organizationName: formData.name,
           fileName: file.name,

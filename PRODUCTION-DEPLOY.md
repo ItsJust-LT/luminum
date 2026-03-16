@@ -44,6 +44,8 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 4. Save the records. After propagation, `app.luminum.agency`, `api.luminum.agency`, and `analytics.luminum.agency` should resolve to your server.
 
+**Org email (inbox):** To receive and send mail for your domain, configure MX, SPF, and optionally DKIM as described in [docs/EMAIL.md](docs/EMAIL.md). The mail service runs in-repo (apps/mail) and listens on port 25 on the host; ensure port 25 is open for inbound SMTP.
+
 ---
 
 ## Step 2: GitHub Secrets and Variables
@@ -68,8 +70,7 @@ Secrets are grouped by **environment** and **app**. Production only: use the **P
 | `PROD_API_VAPID_PRIVATE_KEY` | (Optional) For push notifications. |
 | `PROD_API_RESEND_API_KEY` | (Optional) Resend API key for email. |
 | `PROD_API_PAYSTACK_SECRET` | (Optional) Paystack secret key. |
-| `PROD_API_R2_ACCOUNT_ID`, `PROD_API_R2_ACCESS_KEY_ID`, `PROD_API_R2_SECRET_ACCESS_KEY`, `PROD_API_R2_PUBLIC_URL` | (Optional) Cloudflare R2. |
-| `PROD_API_CLOUDINARY_CLOUD_NAME`, `PROD_API_CLOUDINARY_API_KEY`, `PROD_API_CLOUDINARY_API_SECRET` | (Optional) Cloudinary. |
+| `PROD_API_S3_ENDPOINT`, `PROD_API_S3_ACCESS_KEY_ID`, `PROD_API_S3_SECRET_ACCESS_KEY` | (Optional) S3-compatible storage for logos and file uploads. |
 | `PROD_API_GOOGLE_CLIENT_ID`, `PROD_API_GOOGLE_CLIENT_SECRET` | (Optional) Google OAuth. |
 
 The workflow uses **PROD_SERVER_*** to connect, writes the server `.env` from PROD_* secrets and variables (then copies it via SCP), and runs `docker compose` on the server. You do **not** need to create `.env` on the server manually for app secrets; the workflow generates it each deploy. For the first run you can still create `.env` manually if you prefer (see Step 4).

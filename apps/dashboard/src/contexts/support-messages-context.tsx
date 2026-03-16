@@ -68,15 +68,16 @@ export function SupportMessagesProvider({
           const uploadPromises = attachments.map(async (file) => {
             const bytes = await file.arrayBuffer()
             const fileBase64 = btoa(String.fromCharCode(...new Uint8Array(bytes)))
-            const result = await api.uploads.fileToCloudinary({
+            const result = await api.uploads.uploadFile({
               fileBase64,
               contentType: file.type,
-            }) as { success?: boolean; data?: { public_id: string; secure_url: string }; error?: string }
+            }) as { success?: boolean; data?: { storage_key: string; url: string; secure_url?: string }; error?: string }
             if (!result?.data) throw new Error(result?.error || 'Upload failed')
+            const data = result.data
             return {
               filename: file.name, original_filename: file.name, file_size: file.size,
-              mime_type: file.type, cloudinary_public_id: result.data.public_id,
-              cloudinary_url: result.data.secure_url,
+              mime_type: file.type, storage_key: data.storage_key, cloudinary_public_id: data.storage_key,
+              cloudinary_url: data.url || data.secure_url,
             }
           })
           attachmentData = await Promise.all(uploadPromises)

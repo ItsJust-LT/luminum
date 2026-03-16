@@ -11,8 +11,8 @@ router.use(requireAuth);
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
-/** POST /api/uploads/logo (and legacy /logo-r2, /logo-cloudinary) — organization logo (S3) */
-router.post(["/logo", "/logo-r2", "/logo-cloudinary"], async (req: Request, res: Response) => {
+/** POST /api/uploads/logo — organization logo (S3) */
+router.post("/logo", async (req: Request, res: Response) => {
   try {
     const { logoBase64, fileName, contentType, organizationName, organizationId } = req.body;
     if (!logoBase64) return res.status(400).json({ success: false, error: "No file" });
@@ -42,8 +42,8 @@ router.post(["/logo", "/logo-r2", "/logo-cloudinary"], async (req: Request, res:
   }
 });
 
-/** POST /api/uploads/file (and legacy /file-cloudinary) — support/generic file (S3). */
-router.post(["/file", "/file-cloudinary"], async (req: Request, res: Response) => {
+/** POST /api/uploads/file — support/generic file (S3). */
+router.post("/file", async (req: Request, res: Response) => {
   try {
     const { fileBase64, contentType, ticketId, messageId, originalFilename, filename } = req.body;
     if (!fileBase64) return res.status(400).json({ success: false, error: "No file" });

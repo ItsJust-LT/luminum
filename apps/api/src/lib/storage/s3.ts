@@ -1,5 +1,5 @@
 /**
- * S3-compatible object storage (MinIO or Cloudflare R2).
+ * S3-compatible object storage (MinIO, AWS S3, or any S3-compatible API).
  * Single bucket; keys use namespaces: logos/, support/, emails/, files/.
  */
 
@@ -21,22 +21,9 @@ const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY;
 const S3_BUCKET = process.env.S3_BUCKET ?? "luminum-storage";
 const S3_REGION = process.env.S3_REGION ?? "us-east-1";
 
-/** R2 compatibility: if S3_ENDPOINT is not set but R2_* are, use R2 endpoint */
-function getEndpoint(): string | undefined {
-  if (S3_ENDPOINT) return S3_ENDPOINT;
-  const r2AccountId = process.env.R2_ACCOUNT_ID;
-  if (r2AccountId)
-    return `https://${r2AccountId}.r2.cloudflarestorage.com`;
-  return undefined;
-}
-
 function getCredentials(): { accessKeyId: string; secretAccessKey: string } | undefined {
   if (S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY)
     return { accessKeyId: S3_ACCESS_KEY_ID, secretAccessKey: S3_SECRET_ACCESS_KEY };
-  const r2Key = process.env.R2_ACCESS_KEY_ID;
-  const r2Secret = process.env.R2_SECRET_ACCESS_KEY;
-  if (r2Key && r2Secret)
-    return { accessKeyId: r2Key, secretAccessKey: r2Secret };
   return undefined;
 }
 
@@ -44,23 +31,21 @@ let client: S3Client | null = null;
 
 function getClient(): S3Client {
   if (!client) {
-    const endpoint = getEndpoint();
-    const credentials = getCredentials();
-    if (!endpoint || !credentials)
-      throw new Error("Storage not configured: set S3_ENDPOINT and S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY (or R2_* for R2)");
-    const isR2 = endpoint.includes("r2.cloudflarestorage.com");
+    if (!S3_ENDPOINT || !getCredentials())
+      throw new Error("Storage not configured: set S3_ENDPOINT and S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY");
+    const isPathStyle = S3_ENDPOINT.includes("localhost") || S3_ENDPOINT.includes("minio");
     client = new S3Client({
       region: S3_REGION,
-      endpoint,
-      credentials,
-      forcePathStyle: !isR2, // MinIO requires path-style
+      endpoint: S3_ENDPOINT,
+      credentials: getCredentials(),
+      forcePathStyle: isPathStyle,
     });
   }
   return client;
 }
 
 export function isStorageConfigured(): boolean {
-  return !!(getEndpoint() && getCredentials());
+  return !!(S3_ENDPOINT && getCredentials());
 }
 
 /** Ensure bucket exists (call on first use). */
