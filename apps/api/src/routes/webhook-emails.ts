@@ -1,6 +1,9 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
+import { logger } from "../lib/logger.js";
+import { upload } from "../lib/storage/s3.js";
+import { emailAttachmentKey } from "../lib/storage/keys.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -121,20 +124,37 @@ router.post("/", async (req: Request, res: Response) => {
 
     if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
       const base = config.apiUrl.replace(/\/$/, "");
-      const atts = payload.attachments.map((a: any, i: number) => {
-        const key = a.r2Key || a.storage_key || "";
-        const url = key ? `${base}/api/files/${encodeURIComponent(key)}` : null;
-        return {
+      const atts: { emailId: string; filename: string; contentType: string; size: number | null; r2Key: string; url: string }[] = [];
+      for (let i = 0; i < payload.attachments.length; i++) {
+        const a = payload.attachments[i] as { r2Key?: string; storage_key?: string; filename?: string; contentType?: string; size?: number; contentBase64?: string };
+        let key = a.r2Key || a.storage_key || "";
+        if (!key && a.contentBase64 && (a.filename || a.contentType)) {
+          try {
+            const buffer = Buffer.from(a.contentBase64, "base64");
+            const filename = a.filename || `attachment-${i + 1}`;
+            const storageKey = emailAttachmentKey(email.id, String(i), filename);
+            const result = await upload(buffer, storageKey, { contentType: a.contentType || "application/octet-stream" });
+            key = result.key;
+          } catch (err) {
+            logger.error("Webhook attachment upload failed", { emailId: email.id, index: i, requestId });
+          }
+        }
+        if (!key) continue;
+        const filename = a.filename || `attachment-${i + 1}`;
+        const contentType = a.contentType || "application/octet-stream";
+        atts.push({
           emailId: email.id,
-          filename: a.filename || `attachment-${i + 1}`,
-          contentType: a.contentType || "application/octet-stream",
+          filename,
+          contentType,
           size: a.size ?? null,
           r2Key: key,
-          url,
-        };
-      });
-      await prisma.attachment.createMany({ data: atts });
+          url: `${base}/api/files/${encodeURIComponent(key)}`,
+        });
+      }
+      if (atts.length > 0) await prisma.attachment.createMany({ data: atts });
     }
+
+    logger.info("Email received (inbound)", { from: fromString, to: toString, subject: payload.subject ?? null, emailId: email.id, organizationId, requestId }, requestId);
 
     if (organizationId) {
       try {
@@ -162,7 +182,6 @@ router.post("/", async (req: Request, res: Response) => {
 
     res.json({ ok: true, emailId: email.id, attachmentsProcessed: payload.attachments?.length || 0, requestId, duration: `${Date.now() - startTime}ms` });
   } catch (error: any) {
-    const { logger } = await import("../lib/logger.js");
     logger.error(`Webhook error: ${error instanceof Error ? error.message : String(error)}`, { requestId, stack: error instanceof Error ? error.stack : undefined });
     res.status(500).json({ error: "server error", message: error.message, requestId });
   }

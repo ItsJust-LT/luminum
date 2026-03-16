@@ -230,6 +230,8 @@ router.post("/send", async (req: Request, res: Response) => {
         receivedAt: null,
       },
     });
+    const reqWithId = req as Request & { requestId?: string };
+    logger.info("Email sent (outbound)", { to: toList, subject, messageId: sentMessageId, emailId: emailRecord.id, organizationId }, reqWithId.requestId);
     res.json({ success: true, data: { id: emailRecord.id, messageId: sentMessageId } });
   } catch (error: unknown) {
     const reqWithId = req as Request & { requestId?: string };
