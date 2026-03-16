@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { canAccessOrganization, getMemberOrAdmin } from "../lib/access.js";
-import { checkDomainMx } from "../lib/email-dns.js";
+import { checkDomainDkim, checkDomainDmarc, checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
@@ -161,14 +161,30 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
     });
     if (!org?.email_domain_id || !org.email_domain) return res.status(400).json({ success: false, error: "No email domain set. Select a domain first." });
     const domain = org.email_domain.domain;
-    const mx = await checkDomainMx(domain);
+    const [mx, spf, dkim, dmarc] = await Promise.all([
+      checkDomainMx(domain),
+      checkDomainSpf(domain),
+      checkDomainDkim(domain),
+      checkDomainDmarc(domain),
+    ]);
     const now = new Date();
     if (mx.ok) {
       await prisma.organization.update({
         where: { id: organizationId },
         data: { email_dns_verified_at: now, email_dns_last_check_at: now, email_dns_last_error: null },
       });
-      return res.json({ success: true, message: "DNS verified. You can send and receive email.", expectedHost: mx.expectedHost, actualHosts: mx.actualHosts });
+      return res.json({
+        success: true,
+        message: "DNS verified. You can send and receive email.",
+        expectedHost: mx.expectedHost,
+        actualHosts: mx.actualHosts,
+        checks: {
+          mx,
+          spf,
+          dkim,
+          dmarc,
+        },
+      });
     }
     await prisma.organization.update({
       where: { id: organizationId },
@@ -179,6 +195,12 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
       error: mx.error,
       expectedHost: mx.expectedHost,
       actualHosts: mx.actualHosts,
+      checks: {
+        mx,
+        spf,
+        dkim,
+        dmarc,
+      },
     });
   } catch (error: unknown) {
     const reqWithId = req as Request & { requestId?: string };

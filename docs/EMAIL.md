@@ -40,19 +40,27 @@ Example:
 | A    | mail | YOUR_SERVER_IP    | Auto |
 | MX   | @    | mail.luminum.agency | 10   |
 
-### SPF (sending)
+### SPF (sending, required)
 
 - Add a **TXT** record for the domain so recipients accept mail from your server. Example:  
   **Name:** `@` (or the subdomain you send from)  
   **Content:** `v=spf1 a mx ip4:YOUR_SERVER_IP ~all`  
   (Replace `YOUR_SERVER_IP` with your server’s public IP, or use `include:` if you use another SPF provider.)
 
-### DKIM (optional but recommended)
+### DKIM (required for best deliverability)
 
 - DKIM signs outgoing mail with a private key; the recipient checks the public key in DNS. To enable it:
   - Generate a DKIM key pair and store the private key where **apps/mail** can read it (e.g. env or file).
   - Add a **TXT** record for the chosen selector (e.g. **default._domainkey**) with the public key.  
   Implementation of DKIM signing in the Go app can be added in a follow-up; this section documents the DNS side.
+
+### DMARC (policy, strongly recommended)
+
+- DMARC tells recipients what to do if SPF/DKIM fail and gives you reports about spoofing attempts.
+- Add a **TXT** record for `_dmarc` on your domain. Example:  
+  **Name:** `_dmarc`  
+  **Content:** `v=DMARC1; p=none; rua=mailto:dmarc@YOUR_DOMAIN`  
+  You can tighten the policy to `p=quarantine` or `p=reject` once you are confident SPF/DKIM are correct.
 
 ## Why didn’t my email arrive?
 

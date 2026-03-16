@@ -4,6 +4,7 @@ const MAIL_MX_HOST = (process.env.MAIL_MX_HOST || "").toLowerCase().replace(/\.$
 const MAIL_MX_DOMAIN = (process.env.MAIL_MX_DOMAIN || "").toLowerCase().replace(/\.$/, "");
 const MAIL_SEND_HOST_RAW = (process.env.MAIL_SEND_HOST || "").toLowerCase().replace(/\.$/, "");
 const MAIL_SEND_IP = process.env.MAIL_SEND_IP || "";
+const MAIL_DKIM_SELECTOR = (process.env.MAIL_DKIM_SELECTOR || "default").toLowerCase().replace(/\.$/, "");
 
 const MX_CACHE_MS = 5 * 60 * 1000;
 let cachedMxHost: string | null = null;
@@ -94,6 +95,55 @@ export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
     const hasIp = expectedIp && lower.includes(expectedIp);
     const ok = hasInclude || hasIp || lower.includes("include:_spf.");
     return { ok, record, error: ok ? undefined : "SPF does not authorize this server" };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
+}
+
+export interface DkimCheckResult {
+  ok: boolean;
+  selector: string;
+  record?: string;
+  error?: string;
+}
+
+export async function checkDomainDkim(domain: string): Promise<DkimCheckResult> {
+  if (!MAIL_DKIM_SELECTOR) {
+    // DKIM selector not configured; treat as "not enforced"
+    return { ok: true, selector: "", record: undefined };
+  }
+  const name = `${MAIL_DKIM_SELECTOR}._domainkey.${domain}`;
+  try {
+    const records = await dns.resolveTxt(name);
+    const flattened = (records || []).flat();
+    const dkim = flattened.find((r) => String(r).toLowerCase().includes("v=dkim1"));
+    if (!dkim) {
+      return { ok: false, selector: MAIL_DKIM_SELECTOR, error: "No DKIM record found" };
+    }
+    return { ok: true, selector: MAIL_DKIM_SELECTOR, record: String(dkim) };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, selector: MAIL_DKIM_SELECTOR, error: message };
+  }
+}
+
+export interface DmarcCheckResult {
+  ok: boolean;
+  record?: string;
+  error?: string;
+}
+
+export async function checkDomainDmarc(domain: string): Promise<DmarcCheckResult> {
+  const name = `_dmarc.${domain}`;
+  try {
+    const records = await dns.resolveTxt(name);
+    const flattened = (records || []).flat();
+    const dmarc = flattened.find((r) => String(r).trim().toLowerCase().startsWith("v=dmarc1"));
+    if (!dmarc) {
+      return { ok: false, error: "No DMARC record found" };
+    }
+    return { ok: true, record: String(dmarc) };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: message };
