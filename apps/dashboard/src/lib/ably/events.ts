@@ -13,6 +13,8 @@ export const OrganizationEvents = {
   WEBSITE_CREATED: "website:created",
   WEBSITE_UPDATED: "website:updated",
   WEBSITE_DELETED: "website:deleted",
+  WHATSAPP_MESSAGE: "whatsapp:message",
+  WHATSAPP_STATUS: "whatsapp:status",
 } as const
 
 export const UserNotificationEvents = {

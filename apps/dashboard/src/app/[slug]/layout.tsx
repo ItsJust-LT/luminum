@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   Menu,
   Mail,
+  MessageCircle,
 } from "lucide-react"
 import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
@@ -56,6 +57,7 @@ interface Organization {
   members?: any[]
   role?: string
   emails_enabled?: boolean
+  whatsapp_enabled?: boolean
 }
 
 interface LayoutState {
@@ -66,7 +68,9 @@ interface LayoutState {
   sidebarData: {
     unseenFormsCount: number
     unreadEmailsCount: number
+    unreadWhatsappCount: number
     emailsEnabled: boolean
+    whatsappEnabled: boolean
   } | null
 }
 
@@ -186,13 +190,18 @@ export default function SlugLayout({
       const organization = orgData.organization || targetOrg
       const members = orgData.members || []
 
-      // Fetch emails_enabled from API
+      // Fetch feature flags from API
       let emailsEnabled = false
+      let whatsappEnabled = false
       try {
-        const res = await api.organizationSettings.getEmailsEnabled(organization.id)
-        emailsEnabled = res?.enabled ?? false
+        const [emailRes, waRes] = await Promise.all([
+          api.organizationSettings.getEmailsEnabled(organization.id),
+          api.whatsapp.checkEnabled(organization.id).catch(() => ({ enabled: false })),
+        ])
+        emailsEnabled = emailRes?.enabled ?? false
+        whatsappEnabled = (waRes as any)?.enabled ?? false
       } catch (error) {
-        console.error("Failed to fetch emails_enabled:", error)
+        console.error("Failed to fetch feature flags:", error)
       }
 
       // Find the current user's membership
@@ -218,11 +227,10 @@ export default function SlugLayout({
       const isAdmin = (session?.user as { role?: string })?.role === "admin" || (session?.user as { role?: string })?.role?.includes?.("admin")
       const resolvedRole = userMembership?.role || (isAdmin ? "admin" : undefined)
       
-      // Fetch sidebar data server-side in parallel for better performance
-      // These are cached at the request level, so multiple calls in the same request are deduplicated
-      const [unseenFormsResult, unreadEmailsResult] = await Promise.all([
+      const [unseenFormsResult, unreadEmailsResult, unreadWhatsappResult] = await Promise.all([
         api.forms.getUnseenCount(organization.id),
         emailsEnabled ? api.emails.getUnreadCount(organization.id) : Promise.resolve({ success: true, count: 0 }),
+        whatsappEnabled ? api.whatsapp.getUnreadCount(organization.id).catch(() => ({ success: true, count: 0 })) : Promise.resolve({ success: true, count: 0 }),
       ])
       
       setState({
@@ -233,6 +241,7 @@ export default function SlugLayout({
           members,
           role: resolvedRole,
           emails_enabled: emailsEnabled,
+          whatsapp_enabled: whatsappEnabled,
         },
         loading: false,
         error: null,
@@ -240,7 +249,9 @@ export default function SlugLayout({
         sidebarData: {
           unseenFormsCount: unseenFormsResult.success ? unseenFormsResult.count : 0,
           unreadEmailsCount: unreadEmailsResult.success ? unreadEmailsResult.count : 0,
+          unreadWhatsappCount: (unreadWhatsappResult as any).success ? (unreadWhatsappResult as any).count : 0,
           emailsEnabled,
+          whatsappEnabled,
         },
       })
     } catch (error: any) {
@@ -323,6 +334,7 @@ export default function SlugLayout({
                     { title: "Analytics", icon: Globe, href: `/${slug}/analytics` },
                     { title: "Forms", icon: FileText, href: `/${slug}/forms` },
                     ...((state.organization as any)?.emails_enabled ? [{ title: "Emails", icon: Mail, href: `/${slug}/emails` }] : []),
+                    ...((state.organization as any)?.whatsapp_enabled ? [{ title: "WhatsApp", icon: MessageCircle, href: `/${slug}/whatsapp` }] : []),
                     { title: "Team", icon: Users, href: `/${slug}/team` },
                     { title: "Settings", icon: Settings, href: `/${slug}/settings` },
                   ].map((item) => (
@@ -474,12 +486,15 @@ export default function SlugLayout({
                 name: state.organization.name,
                 logo: state.organization.logo || null,
                 emails_enabled: state.organization.emails_enabled ?? false,
+                whatsapp_enabled: state.organization.whatsapp_enabled ?? false,
               }}
               sessionUser={{ name: session?.user?.name, image: session?.user?.image }}
               onSignOut={handleSignOut}
               initialUnseenFormsCount={state.sidebarData?.unseenFormsCount ?? 0}
               initialUnreadEmailsCount={state.sidebarData?.unreadEmailsCount ?? 0}
+              initialUnreadWhatsappCount={state.sidebarData?.unreadWhatsappCount ?? 0}
               initialEmailsEnabled={state.sidebarData?.emailsEnabled ?? false}
+              initialWhatsappEnabled={state.sidebarData?.whatsappEnabled ?? false}
             />
           </div>
 

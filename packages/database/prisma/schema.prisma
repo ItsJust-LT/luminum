@@ -235,6 +235,7 @@ model organization {
   email_dns_last_check_at                                           DateTime?                 @db.Timestamptz(6)
   email_dns_last_error                                              String?                   @db.Text
   email_from_address                                                String?                   @db.VarChar(255)
+  whatsapp_enabled                                                  Boolean                   @default(false)
   emails                                                            email[]
   images                                                            images[]
   invitations                                                       invitation[]
@@ -244,6 +245,7 @@ model organization {
   support_tickets                                                   support_tickets[]
   websites                                                          websites[]
   email_domain                                                      websites?                 @relation("OrganizationEmailDomain", fields: [email_domain_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  whatsapp_accounts                                                 whatsapp_account[]
 
   @@index([payment_provider], map: "idx_organization_payment_provider")
   @@index([email_domain_id], map: "idx_organization_email_domain_id")
@@ -560,4 +562,88 @@ model websites {
   @@index([metadata], map: "idx_websites_metadata_gin", type: Gin)
   @@index([organization_id], map: "idx_websites_organization_id")
   @@index([website_id], map: "idx_websites_website_id")
+}
+
+// ── WhatsApp Integration ────────────────────────────────────────────────
+
+enum WhatsappAccountStatus {
+  DISCONNECTED
+  CONNECTING
+  QR_PENDING
+  CONNECTED
+  ERROR
+}
+
+model whatsapp_account {
+  id                String                @id @default(cuid())
+  organization_id   String                @db.VarChar(255)
+  phone_number      String                @db.VarChar(20)
+  status            WhatsappAccountStatus @default(DISCONNECTED)
+  session_data      Bytes?                @db.ByteA
+  qr_code           String?               @db.Text
+  qr_updated_at     DateTime?             @db.Timestamptz(6)
+  last_error        String?               @db.Text
+  connected_at      DateTime?             @db.Timestamptz(6)
+  last_seen_at      DateTime?             @db.Timestamptz(6)
+  session_saved_at  DateTime?             @db.Timestamptz(6)
+  retry_count       Int                   @default(0)
+  next_retry_at     DateTime?             @db.Timestamptz(6)
+  owner_instance_id String?               @db.VarChar(255)
+  owner_heartbeat_at DateTime?            @db.Timestamptz(6)
+  lease_expires_at  DateTime?             @db.Timestamptz(6)
+  created_at        DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime              @updatedAt @db.Timestamptz(6)
+  organization      organization          @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  chats             whatsapp_chat[]
+
+  @@unique([organization_id])
+  @@index([organization_id])
+  @@index([status])
+}
+
+model whatsapp_chat {
+  id              String           @id @default(cuid())
+  account_id      String
+  contact_id      String           @db.VarChar(50)
+  name            String?          @db.VarChar(255)
+  last_message_at DateTime?        @db.Timestamptz(6)
+  unread_count    Int              @default(0)
+  is_group        Boolean          @default(false)
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime         @updatedAt @db.Timestamptz(6)
+  account         whatsapp_account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  messages        whatsapp_message[]
+
+  @@unique([account_id, contact_id])
+  @@index([account_id])
+  @@index([last_message_at])
+}
+
+model whatsapp_message {
+  id                String        @id @default(cuid())
+  chat_id           String
+  wa_message_id     String?       @db.VarChar(100)
+  client_message_id String?       @db.VarChar(100)
+  from_me           Boolean       @default(false)
+  from_number       String?       @db.VarChar(20)
+  body              String?       @db.Text
+  type              String        @default("text") @db.VarChar(20)
+  media_url         String?       @db.Text
+  mime_type         String?       @db.VarChar(100)
+  media_size        Int?
+  raw_metadata      Json?
+  timestamp         DateTime      @db.Timestamptz(6)
+  ack               Int?          @default(0)
+  ack_updated_at    DateTime?     @db.Timestamptz(6)
+  sent_at           DateTime?     @db.Timestamptz(6)
+  delivered_at      DateTime?     @db.Timestamptz(6)
+  read_at           DateTime?     @db.Timestamptz(6)
+  revoked_at        DateTime?     @db.Timestamptz(6)
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  chat              whatsapp_chat @relation(fields: [chat_id], references: [id], onDelete: Cascade)
+
+  @@unique([chat_id, wa_message_id])
+  @@unique([chat_id, client_message_id])
+  @@index([chat_id])
+  @@index([timestamp])
 }

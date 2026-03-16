@@ -25,7 +25,12 @@ export type {
   outbox,
   nodes,
   websites,
+  whatsapp_account,
+  whatsapp_chat,
+  whatsapp_message,
 } from "@prisma/client";
+
+export { WhatsappAccountStatus } from "@prisma/client";
 
 // Re-export shared domain types
 
@@ -343,6 +348,8 @@ export const OrganizationEvents = {
   WEBSITE_CREATED: "website:created",
   WEBSITE_UPDATED: "website:updated",
   WEBSITE_DELETED: "website:deleted",
+  WHATSAPP_MESSAGE: "whatsapp:message",
+  WHATSAPP_STATUS: "whatsapp:status",
 } as const;
 
 export const UserNotificationEvents = {

@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail } from "lucide-react"
+import { Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -33,6 +33,7 @@ interface Organization {
   name: string
   logo?: string | null
   emails_enabled?: boolean
+  whatsapp_enabled?: boolean
 }
 
 interface Website {
@@ -49,7 +50,9 @@ export function OrganizationSidebar({
   organization,
   initialUnseenFormsCount = 0,
   initialUnreadEmailsCount = 0,
+  initialUnreadWhatsappCount = 0,
   initialEmailsEnabled = false,
+  initialWhatsappEnabled = false,
   isLoading: externalIsLoading = false,
 }: {
   organization: Organization
@@ -57,23 +60,29 @@ export function OrganizationSidebar({
   onSignOut?: () => Promise<void> | void
   initialUnseenFormsCount?: number
   initialUnreadEmailsCount?: number
+  initialUnreadWhatsappCount?: number
   initialEmailsEnabled?: boolean
+  initialWhatsappEnabled?: boolean
   isLoading?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const [unseenFormsCount, setUnseenFormsCount] = useState(initialUnseenFormsCount)
   const [unreadEmailsCount, setUnreadEmailsCount] = useState(initialUnreadEmailsCount)
+  const [unreadWhatsappCount, setUnreadWhatsappCount] = useState(initialUnreadWhatsappCount)
   const [emailsEnabled, setEmailsEnabled] = useState(initialEmailsEnabled)
+  const [whatsappEnabled, setWhatsappEnabled] = useState(initialWhatsappEnabled)
   const [isLoading, setIsLoading] = useState(externalIsLoading)
   
   // Update state when props change
   useEffect(() => {
     setUnseenFormsCount(initialUnseenFormsCount)
     setUnreadEmailsCount(initialUnreadEmailsCount)
+    setUnreadWhatsappCount(initialUnreadWhatsappCount)
     setEmailsEnabled(initialEmailsEnabled)
+    setWhatsappEnabled(initialWhatsappEnabled)
     setIsLoading(externalIsLoading)
-  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialEmailsEnabled, externalIsLoading])
+  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, externalIsLoading])
 
   // Extract slug from current path or use organization id as fallback
   const pathSegments = pathname?.split('/').filter(Boolean) || []
@@ -93,6 +102,12 @@ export function OrganizationSidebar({
       icon: Mail,
       href: `/${slug}/emails`,
       badge: unreadEmailsCount > 0 ? unreadEmailsCount : undefined
+    }] : []),
+    ...(whatsappEnabled ? [{
+      title: "WhatsApp",
+      icon: MessageCircle,
+      href: `/${slug}/whatsapp`,
+      badge: unreadWhatsappCount > 0 ? unreadWhatsappCount : undefined
     }] : []),
     { title: "Team", icon: Users, href: `/${slug}/team` },
     { title: "Settings", icon: Settings, href: `/${slug}/settings` },

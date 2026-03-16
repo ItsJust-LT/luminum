@@ -7,7 +7,8 @@ import { config } from "./config.js";
 import { logger } from "./lib/logger.js";
 import { requestLogMiddleware } from "./middleware/request-log.js";
 import { auth } from "./auth/config.js";
-import { attachRealtimeWS, broadcastToAdmins } from "./lib/realtime-ws.js";
+import { attachRealtimeWS, broadcastToAdmins, broadcastToOrg } from "./lib/realtime-ws.js";
+import { prisma } from "./lib/prisma.js";
 import { setLogBroadcaster } from "./lib/log-broadcast.js";
 import { collectServerMetrics } from "./lib/server-metrics.js";
 import { emailsRouter } from "./routes/emails.js";
@@ -41,6 +42,8 @@ import { adminMonitoringRouter } from "./routes/admin-monitoring.js";
 import { adminLogsRouter } from "./routes/admin-logs.js";
 import { adminDatabaseRouter } from "./routes/admin-database.js";
 import { cronRouter } from "./routes/cron.js";
+import { whatsappRouter } from "./routes/whatsapp.js";
+import { initWhatsAppManager } from "./whatsapp/manager.js";
 
 const app = express();
 
@@ -128,6 +131,7 @@ app.use("/api/members", membersRouter);
 app.use("/api/subscriptions", subscriptionsRouter);
 app.use("/api/user-management", userManagementRouter);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/whatsapp", whatsappRouter);
 
 // ─── Global error handler (must be last) ───────────────────────────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: () => void) => {
@@ -163,5 +167,10 @@ httpServer.listen(config.port, () => {
     port: config.port,
     env: config.nodeEnv,
     appUrl: config.appUrl,
+  });
+
+  // Initialize WhatsApp manager after server is listening
+  initWhatsAppManager({ prisma, broadcastToOrg }).catch((err) => {
+    logger.logError(err, "Failed to initialize WhatsApp Manager");
   });
 });

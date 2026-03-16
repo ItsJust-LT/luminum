@@ -17,6 +17,14 @@ router.get("/emails-enabled", async (req: Request, res: Response) => {
   } catch { res.json({ enabled: false }); }
 });
 
+// GET /api/organization-settings/whatsapp-enabled?organizationId=...
+router.get("/whatsapp-enabled", async (req: Request, res: Response) => {
+  try {
+    const org = await prisma.organization.findUnique({ where: { id: req.query.organizationId as string }, select: { whatsapp_enabled: true } });
+    res.json({ enabled: org?.whatsapp_enabled || false });
+  } catch { res.json({ enabled: false }); }
+});
+
 // GET /api/organization-settings?organizationId=...
 router.get("/", async (req: Request, res: Response) => {
   try {

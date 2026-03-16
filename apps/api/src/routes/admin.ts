@@ -288,4 +288,34 @@ router.post("/disable-organization-email", adminOnly, async (req: Request, res: 
   }
 });
 
+// POST /api/admin/enable-organization-whatsapp
+router.post("/enable-organization-whatsapp", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { whatsapp_enabled: true },
+    });
+    res.json({ success: true, message: "WhatsApp enabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/disable-organization-whatsapp
+router.post("/disable-organization-whatsapp", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { whatsapp_enabled: false },
+    });
+    res.json({ success: true, message: "WhatsApp disabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
 export { router as adminRouter };

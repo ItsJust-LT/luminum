@@ -235,6 +235,10 @@ function createApiClient(baseUrl: string = "") {
       get("/api/admin/analytics/countries", { start, end, limit }),
     getAdminAnalyticsDevices: (start: string, end: string, limit?: number) =>
       get("/api/admin/analytics/devices", { start, end, limit }),
+    enableWhatsapp: (organizationId: string) =>
+      post("/api/admin/enable-organization-whatsapp", { organizationId }),
+    disableWhatsapp: (organizationId: string) =>
+      post("/api/admin/disable-organization-whatsapp", { organizationId }),
     getDatabaseTables: () => get("/api/admin/database/tables"),
     getDatabaseTableSchema: (tableName: string) =>
       get(`/api/admin/database/tables/${encodeURIComponent(tableName)}/schema`),
@@ -499,6 +503,34 @@ function createApiClient(baseUrl: string = "") {
       post("/api/subscriptions/sync", { subscriptionId }),
   };
 
+  // ─── WhatsApp ────────────────────────────────────────────
+  const whatsapp = {
+    checkEnabled: (organizationId: string) =>
+      get("/api/whatsapp/enabled", { organizationId }),
+    getAccount: (organizationId: string) =>
+      get("/api/whatsapp/accounts", { organizationId }),
+    getAccountById: (id: string) =>
+      get(`/api/whatsapp/accounts/${id}`),
+    createAccount: (organizationId: string, phoneNumber?: string) =>
+      post("/api/whatsapp/accounts", { organizationId, phoneNumber }),
+    deleteAccount: (id: string) =>
+      del(`/api/whatsapp/accounts/${id}`),
+    disconnect: (organizationId: string) =>
+      post("/api/whatsapp/disconnect", { organizationId }),
+    reconnect: (organizationId: string) =>
+      post("/api/whatsapp/reconnect", { organizationId }),
+    getChats: (organizationId: string, params?: { page?: number; limit?: number; search?: string; unreadOnly?: boolean }) =>
+      get("/api/whatsapp/chats", { organizationId, ...params }),
+    getChat: (chatId: string, organizationId: string, params?: { cursor?: string; limit?: number }) =>
+      get(`/api/whatsapp/chats/${chatId}`, { organizationId, ...params }),
+    sendMessage: (chatId: string, body: string, organizationId: string, clientMessageId?: string) =>
+      post(`/api/whatsapp/chats/${chatId}/messages`, { body, organizationId, clientMessageId }),
+    markChatRead: (chatId: string, organizationId: string) =>
+      post(`/api/whatsapp/chats/${chatId}/read`, { organizationId }),
+    getUnreadCount: (organizationId: string) =>
+      get("/api/whatsapp/unread-count", { organizationId }),
+  };
+
   // ─── User Management ─────────────────────────────────────
   const userManagement = {
     getUsers: () => get("/api/user-management/users"),
@@ -533,6 +565,7 @@ function createApiClient(baseUrl: string = "") {
     members,
     subscriptions,
     userManagement,
+    whatsapp,
     /** Low-level API methods for endpoints not covered by the above. Use in client components. */
     get: <T = any>(path: string, params?: Record<string, any>) => get<T>(path, params),
     post: <T = any>(path: string, body?: any) => post<T>(path, body),

@@ -11,6 +11,7 @@ interface Organization {
   name: string
   logo?: string | null
   emails_enabled?: boolean
+  whatsapp_enabled?: boolean
 }
 
 interface SessionUser {
@@ -24,7 +25,9 @@ interface OrganizationSidebarWrapperProps {
   onSignOut: () => Promise<void> | void
   initialUnseenFormsCount?: number
   initialUnreadEmailsCount?: number
+  initialUnreadWhatsappCount?: number
   initialEmailsEnabled?: boolean
+  initialWhatsappEnabled?: boolean
 }
 
 export function OrganizationSidebarWrapper({
@@ -33,10 +36,13 @@ export function OrganizationSidebarWrapper({
   onSignOut,
   initialUnseenFormsCount = 0,
   initialUnreadEmailsCount = 0,
+  initialUnreadWhatsappCount = 0,
   initialEmailsEnabled = false,
+  initialWhatsappEnabled = false,
 }: OrganizationSidebarWrapperProps) {
   const [unseenFormsCount, setUnseenFormsCount] = useState(initialUnseenFormsCount)
   const [unreadEmailsCount, setUnreadEmailsCount] = useState(initialUnreadEmailsCount)
+  const [unreadWhatsappCount, setUnreadWhatsappCount] = useState(initialUnreadWhatsappCount)
 
   // Listen to real-time events and update counts
   const handleRealtimeEvent = useCallback(
@@ -75,6 +81,9 @@ export function OrganizationSidebarWrapper({
             setUnseenFormsCount(formsResult2.count || 0)
           }
           break
+        case OrganizationEvents.WHATSAPP_MESSAGE:
+          setUnreadWhatsappCount((prev) => prev + 1)
+          break
       }
     },
     [organization.id]
@@ -89,7 +98,9 @@ export function OrganizationSidebarWrapper({
       onSignOut={onSignOut}
       initialUnseenFormsCount={unseenFormsCount}
       initialUnreadEmailsCount={unreadEmailsCount}
+      initialUnreadWhatsappCount={unreadWhatsappCount}
       initialEmailsEnabled={initialEmailsEnabled}
+      initialWhatsappEnabled={initialWhatsappEnabled}
       isLoading={false}
     />
   )
