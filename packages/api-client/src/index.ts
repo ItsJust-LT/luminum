@@ -541,6 +541,8 @@ function createApiClient(baseUrl: string = "") {
       del(`/api/whatsapp/accounts/${id}`),
     disconnect: (organizationId: string) =>
       post("/api/whatsapp/disconnect", { organizationId }),
+    clearSession: (organizationId: string) =>
+      post("/api/whatsapp/clear-session", { organizationId }),
     reconnect: (organizationId: string) =>
       post("/api/whatsapp/reconnect", { organizationId }),
     getChats: (organizationId: string, params?: { page?: number; limit?: number; search?: string; unreadOnly?: boolean }) =>

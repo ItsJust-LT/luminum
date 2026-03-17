@@ -176,6 +176,20 @@ export default function WhatsAppSettingsPage() {
     }
   }
 
+  const handleClearSession = async () => {
+    if (!orgId) return
+    setActionLoading("clearSession")
+    try {
+      await api.whatsapp.clearSession(orgId)
+      toast.success("Session data cleared. Reconnect to show a new QR code.")
+      await loadAccount()
+    } catch (err: any) {
+      toast.error(err.message || "Failed to clear session")
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const handleRemove = async () => {
     if (!account) return
     setActionLoading("remove")
@@ -359,6 +373,38 @@ export default function WhatsAppSettingsPage() {
                 Reconnect
               </Button>
             )}
+
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/50"
+                  disabled={!!actionLoading}
+                >
+                  {actionLoading === "clearSession" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
+                  Clear session data
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear session data?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This removes the saved WhatsApp session so the next connection will show a new QR code.
+                    Use this if you see repeated &quot;socket hang up&quot; or connection errors. You will need to scan the QR again.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearSession} className="bg-amber-600 hover:bg-amber-700">
+                    Clear session
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
 
             <AlertDialog>
               <AlertDialogTrigger asChild>

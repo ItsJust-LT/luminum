@@ -12,6 +12,7 @@ import {
   sendMessage,
   fetchChatHistory,
   getContactDisplayNames,
+  clearSessionData,
 } from "../whatsapp/manager.js";
 
 const router = Router();
@@ -177,6 +178,19 @@ router.post("/disconnect", async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/disconnect");
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── POST /api/whatsapp/clear-session?organizationId=... ─────────────────────
+router.post("/clear-session", async (req: Request, res: Response) => {
+  try {
+    const organizationId = await requireWhatsappEnabled(req, res);
+    if (!organizationId) return;
+    await clearSessionData(organizationId);
+    res.json({ success: true, message: "Session data cleared. Reconnect to show a new QR code." });
+  } catch (error: any) {
+    logger.logError(error, "POST /api/whatsapp/clear-session");
     res.status(500).json({ success: false, error: error.message });
   }
 });

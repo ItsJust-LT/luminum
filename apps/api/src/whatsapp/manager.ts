@@ -37,6 +37,9 @@ const AUTH_TIMEOUT_MS = parseInt(
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const LEASE_TTL_MS = 90_000;
 
+const INIT_RETRY_MAX = Math.max(1, parseInt(process.env.WHATSAPP_INIT_RETRY_MAX || "6", 10));
+const INIT_RETRY_BASE_MS = Math.max(2000, parseInt(process.env.WHATSAPP_INIT_RETRY_BASE_MS || "6000", 10));
+
 function formatUnknownError(err: unknown): { message: string; details?: string } {
   if (err instanceof Error) {
     const details = [err.stack, err.cause != null ? String(err.cause) : null].filter(Boolean).join("\nCaused by: ");
@@ -236,6 +239,28 @@ export async function disconnectClient(organizationId: string) {
   });
 }
 
+/** Clear stored session data so the next connection requires a fresh QR scan. Use when session is corrupted or "socket hang up" persists. */
+export async function clearSessionData(organizationId: string): Promise<void> {
+  const managed = clients.get(organizationId);
+  if (managed) {
+    await destroyClient(organizationId);
+  }
+  await prisma.whatsapp_account.updateMany({
+    where: { organization_id: organizationId },
+    data: {
+      status: "DISCONNECTED",
+      qr_code: null,
+      session_data: null,
+      session_saved_at: null,
+      last_error: null,
+      retry_count: 0,
+      next_retry_at: null,
+      owner_instance_id: null,
+      lease_expires_at: null,
+    },
+  });
+}
+
 export async function removeAccount(organizationId: string) {
   await disconnectClient(organizationId);
   await prisma.whatsapp_account.deleteMany({
@@ -384,65 +409,104 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
       "--disable-dev-shm-usage",
       "--disable-gpu",
       "--single-process",
+      "--disable-features=IsolateOrigins,site-per-process",
+      "--no-first-run",
+      "--no-zygote",
+      "--disable-extensions",
     ],
   };
   if (puppeteerExecutablePath) {
     puppeteerOptions.executablePath = puppeteerExecutablePath;
   }
 
-  const client = new Client({
-    authStrategy: new RemoteAuth({
-      store,
-      clientId: account.id,
-      backupSyncIntervalMs: 60_000,
-    }),
-    authTimeoutMs: AUTH_TIMEOUT_MS,
-    takeoverOnConflict: TAKEOVER_ON_CONFLICT,
-    puppeteer: puppeteerOptions,
-  });
-
   const managed: ManagedClient = {
-    client,
+    client: null as unknown as WAWebJS.Client,
     orgId: organizationId,
     accountId: account.id,
     qrRetries: 0,
     ready: false,
     destroying: false,
   };
-
   clients.set(organizationId, managed);
-  attachEventHandlers(managed);
 
-  try {
-    await client.initialize();
-  } catch (err) {
-    const formatted = formatUnknownError(err);
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= INIT_RETRY_MAX; attempt++) {
+    const client = new Client({
+      authStrategy: new RemoteAuth({
+        store,
+        clientId: account.id,
+        backupSyncIntervalMs: 60_000,
+      }),
+      authTimeoutMs: AUTH_TIMEOUT_MS,
+      takeoverOnConflict: TAKEOVER_ON_CONFLICT,
+      puppeteer: puppeteerOptions,
+    });
+    managed.client = client;
+    attachEventHandlers(managed);
+
+    try {
+      await client.initialize();
+      return managed;
+    } catch (err) {
+      lastErr = err;
+      const formatted = formatUnknownError(err);
+      const displayMessage = formatted.message.trim() && formatted.message !== "{}"
+        ? formatted.message
+        : "Initialization failed. Try reconnecting or check server logs.";
+      logger.logError(err, "WhatsApp client initialization failed", {
+        orgId: organizationId,
+        accountId: account.id,
+        attempt,
+        maxAttempts: INIT_RETRY_MAX,
+        error_message: displayMessage,
+        error_details: formatted.details,
+      });
+      await prisma.whatsapp_account.update({
+        where: { id: account.id },
+        data: {
+          status: "ERROR",
+          last_error: displayMessage,
+          retry_count: attempt,
+          next_retry_at: attempt < INIT_RETRY_MAX ? new Date(Date.now() + INIT_RETRY_BASE_MS * attempt) : null,
+          owner_instance_id: null,
+          lease_expires_at: null,
+        },
+      }).catch(() => {});
+      try {
+        await client.destroy();
+      } catch {
+        // ignore
+      }
+      if (attempt < INIT_RETRY_MAX) {
+        const delayMs = Math.min(INIT_RETRY_BASE_MS * attempt, 60_000);
+        logger.info("WhatsApp init retry scheduled", {
+          orgId: organizationId,
+          accountId: account.id,
+          attempt,
+          nextAttemptInMs: delayMs,
+        });
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+
+  clients.delete(organizationId);
+  if (lastErr) {
+    const formatted = formatUnknownError(lastErr);
     const displayMessage = formatted.message.trim() && formatted.message !== "{}"
       ? formatted.message
-      : "Initialization failed. Try reconnecting or check server logs.";
-    logger.logError(err, "WhatsApp client initialization failed", {
-      orgId: organizationId,
-      accountId: account.id,
-      error_message: displayMessage,
-      error_details: formatted.details,
-    });
-    clients.delete(organizationId);
-    const lastErrorStored = formatted.details
-      ? `${displayMessage}\n${formatted.details}`
-      : displayMessage;
+      : "Initialization failed after retries. Wait a few minutes and try again.";
     await prisma.whatsapp_account.update({
       where: { id: account.id },
       data: {
         status: "ERROR",
-        last_error: lastErrorStored,
+        last_error: displayMessage,
         owner_instance_id: null,
         lease_expires_at: null,
       },
     });
-    return null;
   }
-
-  return managed;
+  return null;
 }
 
 function attachEventHandlers(managed: ManagedClient) {
