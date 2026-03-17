@@ -42,6 +42,22 @@ interface BroadcastFn {
   (orgId: string, message: { type: string; data?: unknown }, excludeUserId?: string): void;
 }
 
+interface BroadcastToAdminsFn {
+  (message: { type: string; data?: unknown }): void;
+}
+
+export interface LiveClientEntry {
+  organizationId: string;
+  accountId: string;
+  organizationName: string;
+  organizationSlug: string | null;
+  phoneNumber: string;
+  status: string;
+  connectedAt: string | null;
+  lastSeenAt: string | null;
+  runningSinceMs: number | null;
+}
+
 interface ManagedClient {
   client: WAWebJS.Client;
   orgId: string;
@@ -55,6 +71,7 @@ interface ManagedClient {
 
 let prisma: PrismaClient;
 let broadcastToOrg: BroadcastFn;
+let broadcastToAdmins: BroadcastToAdminsFn = () => {};
 const clients = new Map<string, ManagedClient>();
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -63,9 +80,11 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 export async function initWhatsAppManager(deps: {
   prisma: PrismaClient;
   broadcastToOrg: BroadcastFn;
+  broadcastToAdmins?: BroadcastToAdminsFn;
 }): Promise<void> {
   prisma = deps.prisma;
   broadcastToOrg = deps.broadcastToOrg;
+  if (deps.broadcastToAdmins) broadcastToAdmins = deps.broadcastToAdmins;
 
   // Mark stale CONNECTING accounts as DISCONNECTED
   await prisma.whatsapp_account.updateMany({
@@ -444,6 +463,11 @@ function attachEventHandlers(managed: ManagedClient) {
       data: { status: "connected", phoneNumber },
     });
 
+    broadcastToAdmins({
+      type: "whatsapp:client_connected",
+      data: { organizationId: orgId, accountId, phoneNumber, connectedAt: new Date().toISOString() },
+    });
+
     logger.info("WhatsApp client ready", { orgId, accountId, phoneNumber });
 
     // Sync all real chats into DB so the list shows all conversations (not only those that had a message since connect).
@@ -517,6 +541,7 @@ function attachEventHandlers(managed: ManagedClient) {
       data: { status: "disconnected", reason },
     });
 
+    broadcastToAdmins({ type: "whatsapp:client_disconnected", data: { organizationId: orgId } });
     clients.delete(orgId);
   });
 
@@ -541,6 +566,7 @@ function attachEventHandlers(managed: ManagedClient) {
       data: { status: "auth_failure", error: msg },
     });
 
+    broadcastToAdmins({ type: "whatsapp:client_disconnected", data: { organizationId: orgId } });
     clients.delete(orgId);
   });
 
@@ -737,7 +763,83 @@ async function handleAckUpdate(managed: ManagedClient, msg: WAWebJS.Message, ack
   }
 }
 
+/** Fetch recent message history from WhatsApp for a chat and upsert into DB. Returns saved messages (oldest first). */
+export async function fetchChatHistory(
+  organizationId: string,
+  contactId: string,
+  dbChatId: string,
+  limit = 50,
+): Promise<Awaited<ReturnType<typeof prisma.whatsapp_message.findMany>>[number][]> {
+  const managed = await ensureClient(organizationId);
+  if (!managed?.ready) return [];
+
+  try {
+    const waChat = await managed.client.getChatById(contactId);
+    const waMessages = await waChat.fetchMessages({ limit });
+    const saved: Awaited<ReturnType<typeof prisma.whatsapp_message.findMany>>[number][] = [];
+    for (const msg of waMessages) {
+      const from = (msg as any).from ?? (msg as any).author ?? "";
+      if (typeof from === "string" && from.toLowerCase().includes("@lid")) continue;
+      const mapped = mapWaMessageToDb(msg, dbChatId);
+      const created = await prisma.whatsapp_message.upsert({
+        where: {
+          chat_id_wa_message_id: { chat_id: dbChatId, wa_message_id: mapped.wa_message_id },
+        },
+        create: mapped,
+        update: {},
+      });
+      saved.push(created);
+    }
+    if (saved.length > 0) {
+      await prisma.whatsapp_chat.update({
+        where: { id: dbChatId },
+        data: { last_message_at: saved[saved.length - 1].timestamp },
+      });
+    }
+    return saved;
+  } catch (err) {
+    logger.logError(err, "WhatsApp fetch chat history failed", { organizationId, contactId });
+    return [];
+  }
+}
+
+/** Returns live WhatsApp clients for admin dashboard (organization, phone, uptime, etc.). */
+export async function getLiveClientsForAdmin(): Promise<LiveClientEntry[]> {
+  const accountIds = Array.from(clients.values()).map((m) => m.accountId);
+  if (accountIds.length === 0) return [];
+
+  const accounts = await prisma.whatsapp_account.findMany({
+    where: { id: { in: accountIds } },
+    select: {
+      id: true,
+      organization_id: true,
+      phone_number: true,
+      status: true,
+      connected_at: true,
+      last_seen_at: true,
+      organization: { select: { name: true, slug: true } },
+    },
+  });
+
+  const now = Date.now();
+  return accounts.map((a) => ({
+    organizationId: a.organization_id,
+    accountId: a.id,
+    organizationName: a.organization.name,
+    organizationSlug: a.organization.slug,
+    phoneNumber: a.phone_number || "",
+    status: a.status,
+    connectedAt: a.connected_at?.toISOString() ?? null,
+    lastSeenAt: a.last_seen_at?.toISOString() ?? null,
+    runningSinceMs:
+      a.connected_at != null ? Math.max(0, now - a.connected_at.getTime()) : null,
+  }));
+}
+
 // ── Client destruction ────────────────────────────────────────────────────────
+// We only call client.destroy() (which runs authStrategy.destroy(), not disconnect()).
+// So the RemoteAuth session stays in the DB and the next ensureClient() restores from it
+// without requiring QR again.
 
 async function destroyClient(organizationId: string) {
   const managed = clients.get(organizationId);
@@ -746,6 +848,7 @@ async function destroyClient(organizationId: string) {
   managed.destroying = true;
   managed.ready = false;
   clients.delete(organizationId);
+  broadcastToAdmins({ type: "whatsapp:client_disconnected", data: { organizationId } });
 
   try {
     await managed.client.destroy();

@@ -21,6 +21,9 @@ const (
 )
 
 func main() {
+	if runGenDkimKey() {
+		return
+	}
 	_ = godotenv.Load()
 
 	apiURL := os.Getenv("API_URL")
@@ -61,7 +64,12 @@ func main() {
 
 	mux := http.NewServeMux()
 	sendHandler := &SendHandler{
-		mailFromDefault: os.Getenv("MAIL_FROM_DEFAULT"),
+		mailFromDefault:   os.Getenv("MAIL_FROM_DEFAULT"),
+		dkimPrivateKeyPEM: []byte(os.Getenv("MAIL_DKIM_PRIVATE_KEY")),
+		dkimSelector:      os.Getenv("MAIL_DKIM_SELECTOR"),
+	}
+	if sendHandler.dkimSelector == "" {
+		sendHandler.dkimSelector = "default"
 	}
 	mux.HandleFunc("POST /send", sendHandler.ServeHTTP)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

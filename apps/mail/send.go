@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -9,9 +10,12 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
+
+	dkim "github.com/toorop/go-dkim"
 )
 
 // SendRequest matches SendViaMailAppPayload from the API.
@@ -34,7 +38,9 @@ type SendRequest struct {
 
 // SendHandler handles POST /send.
 type SendHandler struct {
-	mailFromDefault string
+	mailFromDefault   string
+	dkimPrivateKeyPEM []byte
+	dkimSelector      string
 }
 
 func (h *SendHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -131,12 +137,65 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 			return err
 		}
 	}
-	wc, err := client.Data()
+	msg, err := h.buildMessage(from, replyTo, to, subject, text, html, attachments, inReplyTo, references, messageId)
 	if err != nil {
 		return err
 	}
 
-	// Build minimal MIME message
+	// DKIM sign if private key is configured
+	if len(bytes.TrimSpace(h.dkimPrivateKeyPEM)) > 0 {
+		domain := domainFromAddress(from)
+		if domain != "" {
+			opts := dkim.NewSigOptions()
+			opts.PrivateKey = h.dkimPrivateKeyPEM
+			opts.Domain = domain
+			opts.Selector = h.dkimSelector
+			opts.SignatureExpireIn = 3600 * 24 * 7 // 7 days
+			opts.Headers = []string{"from", "to", "subject", "date", "message-id", "mime-version", "reply-to", "content-type"}
+			opts.AddSignatureTimestamp = true
+			opts.Canonicalization = "relaxed/relaxed"
+			if err := dkim.Sign(&msg, opts); err != nil {
+				log.Printf("[%s] DKIM sign failed: %v", serviceName, err)
+				// continue without DKIM rather than failing the send
+			}
+		}
+	}
+
+	wc, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := wc.Write(msg); err != nil {
+		_ = wc.Close()
+		return err
+	}
+	return wc.Close()
+}
+
+// domainFromAddress extracts the domain from a From address (e.g. "Name <user@domain.com>" or "user@domain.com").
+func domainFromAddress(from string) string {
+	addr, err := mail.ParseAddress(from)
+	if err != nil {
+		at := strings.LastIndex(from, "@")
+		if at > 0 && at < len(from)-1 {
+			return strings.TrimSpace(from[at+1:])
+		}
+		return ""
+	}
+	at := strings.LastIndex(addr.Address, "@")
+	if at > 0 && at < len(addr.Address)-1 {
+		return addr.Address[at+1:]
+	}
+	return ""
+}
+
+// buildMessage builds the full MIME message and returns it as bytes.
+func (h *SendHandler) buildMessage(from, replyTo string, to []string, subject, text, html string, attachments []struct {
+	Filename     string `json:"filename"`
+	ContentType  string `json:"contentType"`
+	ContentBase64 string `json:"contentBase64"`
+}, inReplyTo, references, messageId string) ([]byte, error) {
+	var buf bytes.Buffer
 	boundary := "boundary-" + fmt.Sprintf("%d", time.Now().UnixNano())
 	headers := []string{
 		"From: " + from,
@@ -165,45 +224,39 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 		headers = append(headers, "Content-Type: text/plain; charset=UTF-8")
 	}
 
-	for _, h := range headers {
-		if _, err := fmt.Fprintf(wc, "%s\r\n", h); err != nil {
-			return err
-		}
+	for _, hdr := range headers {
+		_, _ = fmt.Fprintf(&buf, "%s\r\n", hdr)
 	}
-	if _, err := wc.Write([]byte("\r\n")); err != nil {
-		return err
-	}
+	_, _ = buf.Write([]byte("\r\n"))
 
 	if !hasParts {
 		if html != "" {
-			_, _ = wc.Write([]byte(html))
+			_, _ = buf.Write([]byte(html))
 		} else {
-			_, _ = wc.Write([]byte(text))
+			_, _ = buf.Write([]byte(text))
 		}
 	} else {
-		// multipart/mixed: first part text or html, then attachments
 		if text != "" || html != "" {
-			_, _ = fmt.Fprintf(wc, "--%s\r\n", boundary)
+			_, _ = fmt.Fprintf(&buf, "--%s\r\n", boundary)
 			if html != "" {
-				_, _ = fmt.Fprintf(wc, "Content-Type: text/html; charset=UTF-8\r\n\r\n")
-				_, _ = wc.Write([]byte(html))
+				_, _ = fmt.Fprintf(&buf, "Content-Type: text/html; charset=UTF-8\r\n\r\n")
+				_, _ = buf.Write([]byte(html))
 			} else {
-				_, _ = fmt.Fprintf(wc, "Content-Type: text/plain; charset=UTF-8\r\n\r\n")
-				_, _ = wc.Write([]byte(text))
+				_, _ = fmt.Fprintf(&buf, "Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+				_, _ = buf.Write([]byte(text))
 			}
-			_, _ = wc.Write([]byte("\r\n"))
+			_, _ = buf.Write([]byte("\r\n"))
 		}
 		for _, a := range attachments {
 			dec, _ := base64.StdEncoding.DecodeString(a.ContentBase64)
-			_, _ = fmt.Fprintf(wc, "--%s\r\n", boundary)
-			_, _ = fmt.Fprintf(wc, "Content-Type: %s; name=%q\r\n", a.ContentType, a.Filename)
-			_, _ = fmt.Fprintf(wc, "Content-Disposition: attachment; filename=%q\r\n", a.Filename)
-			_, _ = fmt.Fprintf(wc, "Content-Transfer-Encoding: base64\r\n\r\n")
-			_, _ = wc.Write([]byte(base64.StdEncoding.EncodeToString(dec)))
-			_, _ = wc.Write([]byte("\r\n"))
+			_, _ = fmt.Fprintf(&buf, "--%s\r\n", boundary)
+			_, _ = fmt.Fprintf(&buf, "Content-Type: %s; name=%q\r\n", a.ContentType, a.Filename)
+			_, _ = fmt.Fprintf(&buf, "Content-Disposition: attachment; filename=%q\r\n", a.Filename)
+			_, _ = fmt.Fprintf(&buf, "Content-Transfer-Encoding: base64\r\n\r\n")
+			_, _ = buf.Write([]byte(base64.StdEncoding.EncodeToString(dec)))
+			_, _ = buf.Write([]byte("\r\n"))
 		}
-		_, _ = fmt.Fprintf(wc, "--%s--\r\n", boundary)
+		_, _ = fmt.Fprintf(&buf, "--%s--\r\n", boundary)
 	}
-
-	return wc.Close()
+	return buf.Bytes(), nil
 }

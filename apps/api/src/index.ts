@@ -41,6 +41,7 @@ import { adminActivityRouter } from "./routes/admin-activity.js";
 import { adminMonitoringRouter } from "./routes/admin-monitoring.js";
 import { adminLogsRouter } from "./routes/admin-logs.js";
 import { adminDatabaseRouter } from "./routes/admin-database.js";
+import { adminWhatsappRouter } from "./routes/admin-whatsapp.js";
 import { cronRouter } from "./routes/cron.js";
 import { whatsappRouter } from "./routes/whatsapp.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
@@ -118,6 +119,7 @@ app.use("/api/admin/activity", adminActivityRouter);
 app.use("/api/admin/monitoring", adminMonitoringRouter);
 app.use("/api/admin/logs", adminLogsRouter);
 app.use("/api/admin/database", adminDatabaseRouter);
+app.use("/api/admin/whatsapp", adminWhatsappRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/paystack", paystackRouter);
 app.use("/api/support", supportRouter);
@@ -170,7 +172,7 @@ httpServer.listen(config.port, () => {
   });
 
   // Initialize WhatsApp manager after server is listening
-  initWhatsAppManager({ prisma, broadcastToOrg }).catch((err) => {
+  initWhatsAppManager({ prisma, broadcastToOrg, broadcastToAdmins }).catch((err) => {
     logger.logError(err, "Failed to initialize WhatsApp Manager");
   });
 });

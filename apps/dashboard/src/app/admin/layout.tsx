@@ -26,6 +26,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import {
   Building2,
   LayoutDashboard,
+  MessageCircle,
   Users,
   Settings,
   LogOut,
@@ -119,6 +120,7 @@ export default function AdminLayout({
     { title: "Emails", icon: Mail, href: "/admin/emails" },
     { title: "Websites", icon: Globe, href: "/admin/websites" },
     { title: "Support", icon: HelpCircle, href: "/admin/support" },
+    { title: "WhatsApp", icon: MessageCircle, href: "/admin/whatsapp" },
     { title: "Server Monitoring", icon: Server, href: "/admin/monitoring" },
     { title: "System Logs", icon: LogsIcon, href: "/admin/logs" },
     { title: "Database", icon: Database, href: "/admin/database" },

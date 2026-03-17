@@ -10,6 +10,7 @@ import {
   disconnectClient,
   removeAccount,
   sendMessage,
+  fetchChatHistory,
 } from "../whatsapp/manager.js";
 
 const router = Router();
@@ -311,10 +312,19 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     if (hasMore) messages.pop();
 
     // Exclude status-update messages (author/lid) so only real chat messages are shown.
-    const filtered = messages.filter((m: any) => {
+    let filtered = messages.filter((m: any) => {
       const from = m.from_number ?? "";
       return !from.toLowerCase().includes("@lid");
     });
+
+    // If DB has no messages, try to backfill from WhatsApp so the user sees history.
+    if (filtered.length === 0) {
+      const organizationId = getQueryParam(req, "organizationId");
+      if (organizationId) {
+        const history = await fetchChatHistory(organizationId, chat.contact_id, chatId, 50);
+        filtered = history.filter((m: any) => !(m.from_number ?? "").toLowerCase().includes("@lid"));
+      }
+    }
 
     res.json({
       success: true,

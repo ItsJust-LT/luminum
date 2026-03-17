@@ -94,8 +94,10 @@ function smartDate(date: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
-function messageTime(date: string): string {
-  return new Date(date).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+function messageTime(date: string | Date): string {
+  const d = new Date(date)
+  if (Number.isNaN(d.getTime())) return ""
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
 }
 
 function AckIcon({ ack }: { ack: number | null }) {
@@ -126,8 +128,9 @@ function formatContactIdAsNumber(contactId: string): string {
 }
 
 /** Label for a message date (Today, Yesterday, or formatted with year when different). */
-function messageDateLabel(dateStr: string): string {
+function messageDateLabel(dateStr: string | Date): string {
   const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return ""
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const yesterday = new Date(today)
@@ -408,7 +411,7 @@ export default function WhatsAppPage() {
     try {
       const res = await api.whatsapp.getChat(chatId, orgId) as any
       if (res.success) {
-        setMessages(res.messages || [])
+        setMessages(Array.isArray(res.messages) ? res.messages : [])
         if (res.chat) {
           setSelectedChat(res.chat)
         }
@@ -711,8 +714,14 @@ export default function WhatsAppPage() {
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <p className="text-xs text-muted-foreground truncate flex-1">
-                          {lastMsg?.from_me && <span className="text-muted-foreground/70">You: </span>}
-                          {lastMsg?.body || (lastMsg?.type !== "text" ? `[${lastMsg?.type}]` : "No messages")}
+                          {lastMsg ? (
+                            <>
+                              {lastMsg.from_me && <span className="text-muted-foreground/70">You: </span>}
+                              {(lastMsg.body != null && lastMsg.body !== "" ? lastMsg.body : (lastMsg.type && lastMsg.type !== "text" ? `[${lastMsg.type}]` : "No messages"))}
+                            </>
+                          ) : (
+                            <span className="italic">No messages yet</span>
+                          )}
                         </p>
                         {chat.unread_count > 0 && (
                           <Badge className="bg-green-500 text-white text-[10px] h-5 min-w-[20px] px-1.5 rounded-full flex-shrink-0">
@@ -806,10 +815,10 @@ export default function WhatsAppPage() {
                                 {formatContactIdAsNumber(msg.from_number)}
                               </p>
                             )}
-                            {msg.type !== "text" && msg.type !== "chat" && !msg.body && (
-                              <p className="text-xs italic opacity-80">[{msg.type}]</p>
+                            {msg.type !== "text" && msg.type !== "chat" && (msg.body == null || msg.body === "") && (
+                              <p className="text-xs italic opacity-80">[{msg.type ?? "message"}]</p>
                             )}
-                            {msg.body && (
+                            {(msg.body != null && msg.body !== "") && (
                               <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
                             )}
                             <div className={cn(
