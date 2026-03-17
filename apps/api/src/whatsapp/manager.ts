@@ -5,6 +5,7 @@ import { WhatsappAccountStatus } from "@luminum/database/types";
 import { PgRemoteAuthStore } from "./remote-auth-store.js";
 import { mapWaMessageToDb, mapWaChatToDb } from "./mappers.js";
 import { logger } from "../lib/logger.js";
+import * as util from "node:util";
 
 // Extract CommonJS exports from whatsapp-web.js
 const { Client, RemoteAuth } = whatsappWeb;
@@ -35,6 +36,24 @@ const AUTH_TIMEOUT_MS = parseInt(
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const LEASE_TTL_MS = 90_000;
+
+function formatUnknownError(err: unknown): { message: string; details?: string } {
+  if (err instanceof Error) {
+    return {
+      message: err.message || "Unknown error",
+      details: err.stack || undefined,
+    };
+  }
+  if (typeof err === "string") return { message: err };
+  if (err && typeof err === "object") {
+    try {
+      return { message: JSON.stringify(err) };
+    } catch {
+      return { message: util.inspect(err, { depth: 5, maxArrayLength: 50 }) };
+    }
+  }
+  return { message: String(err) };
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -377,16 +396,19 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
   try {
     await client.initialize();
   } catch (err) {
+    const formatted = formatUnknownError(err);
     logger.logError(err, "WhatsApp client initialization failed", {
       orgId: organizationId,
       accountId: account.id,
+      error_message: formatted.message,
+      error_details: formatted.details,
     });
     clients.delete(organizationId);
     await prisma.whatsapp_account.update({
       where: { id: account.id },
       data: {
         status: "ERROR",
-        last_error: err instanceof Error ? err.message : String(err),
+        last_error: formatted.details ? `${formatted.message}\n${formatted.details}` : formatted.message,
         owner_instance_id: null,
         lease_expires_at: null,
       },
