@@ -711,8 +711,14 @@ export default function WhatsAppPage() {
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <p className="text-xs text-muted-foreground truncate flex-1">
-                          {lastMsg?.from_me && <span className="text-muted-foreground/70">You: </span>}
-                          {lastMsg?.body || (lastMsg?.type !== "text" ? `[${lastMsg?.type}]` : "No messages")}
+                          {lastMsg ? (
+                            <>
+                              {lastMsg.from_me && <span className="text-muted-foreground/70">You: </span>}
+                              {lastMsg.body ?? (lastMsg.type && lastMsg.type !== "text" ? `[${lastMsg.type}]` : "No messages")}
+                            </>
+                          ) : (
+                            <span className="italic">No messages yet</span>
+                          )}
                         </p>
                         {chat.unread_count > 0 && (
                           <Badge className="bg-green-500 text-white text-[10px] h-5 min-w-[20px] px-1.5 rounded-full flex-shrink-0">

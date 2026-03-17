@@ -28,10 +28,24 @@ async function validateTableName(tableName: string): Promise<string | null> {
 router.get("/tables", requireAuth, adminOnly, async (_req: Request, res: Response) => {
   try {
     const tables = await prisma.$queryRawUnsafe<
-      { table_name: string; table_type: string }[]
+      {
+        table_name: string;
+        total_bytes: bigint | null;
+        table_bytes: bigint | null;
+        index_bytes: bigint | null;
+      }[]
     >(
-      `SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name`
+      `SELECT
+         c.relname AS table_name,
+         pg_total_relation_size(c.oid) AS total_bytes,
+         pg_relation_size(c.oid) AS table_bytes,
+         pg_indexes_size(c.oid) AS index_bytes
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relkind = 'r'
+       ORDER BY c.relname`
     );
+
     const withCounts = await Promise.all(
       tables.map(async (t) => {
         let count = 0;
@@ -42,12 +56,51 @@ router.get("/tables", requireAuth, adminOnly, async (_req: Request, res: Respons
         } catch {
           // ignore
         }
-        return { name: t.table_name, rowCount: count };
+        return {
+          name: t.table_name,
+          rowCount: count,
+          totalBytes: t.total_bytes != null ? Number(t.total_bytes) : null,
+          tableBytes: t.table_bytes != null ? Number(t.table_bytes) : null,
+          indexBytes: t.index_bytes != null ? Number(t.index_bytes) : null,
+        };
       })
     );
+
     res.json({ success: true, tables: withCounts });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error?.message ?? "Failed to list tables" });
+  }
+});
+
+/** GET /api/admin/database/stats — database-level stats */
+router.get("/stats", requireAuth, adminOnly, async (_req: Request, res: Response) => {
+  try {
+    const sizeRows = await prisma.$queryRawUnsafe<[{ pg_database_size: bigint | null }]>(
+      "SELECT pg_database_size(current_database()) AS pg_database_size"
+    );
+    const dbBytes = sizeRows?.[0]?.pg_database_size != null ? Number(sizeRows[0].pg_database_size) : null;
+
+    const connRows = await prisma.$queryRawUnsafe<[{ current_connections: bigint | null }]>(
+      "SELECT COUNT(*)::bigint AS current_connections FROM pg_stat_activity"
+    );
+    const currentConnections =
+      connRows?.[0]?.current_connections != null ? Number(connRows[0].current_connections) : null;
+
+    const maxConnRows = await prisma.$queryRawUnsafe<[{ max_connections: string | null }]>(
+      "SELECT current_setting('max_connections') AS max_connections"
+    );
+    const maxConnections = maxConnRows?.[0]?.max_connections != null ? Number(maxConnRows[0].max_connections) : null;
+
+    res.json({
+      success: true,
+      database: {
+        bytes: dbBytes,
+        currentConnections,
+        maxConnections,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message ?? "Failed to get database stats" });
   }
 });
 
