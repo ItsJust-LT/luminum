@@ -59,6 +59,9 @@ export class PgRemoteAuthStore {
       select: { session_data: true },
     });
     if (!row?.session_data || !options.path) return;
+    // whatsapp-web.js passes a zip file path inside a session directory.
+    // Ensure the directory exists in ephemeral containers before writing.
+    await fs.mkdir(path.dirname(options.path), { recursive: true }).catch(() => {});
     await fs.writeFile(options.path, row.session_data);
   }
 

@@ -70,6 +70,8 @@ interface WhatsAppMessage {
   sender_display_name?: string | null
   body: string | null
   type: string
+  media_url?: string | null
+  mime_type?: string | null
   timestamp: string
   ack: number | null
   created_at: string
@@ -837,6 +839,14 @@ export default function WhatsAppPage() {
                             )}
                             {msg.type !== "text" && msg.type !== "chat" && (msg.body == null || msg.body === "") && (
                               <p className="text-xs italic opacity-80">[{msg.type ?? "message"}]</p>
+                            )}
+                            {((msg as WhatsAppMessage).media_url && (msg as WhatsAppMessage).mime_type?.startsWith("image/")) && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={(msg as WhatsAppMessage).media_url as string}
+                                alt="Image"
+                                className="mt-1 max-h-64 w-auto rounded-lg object-contain"
+                              />
                             )}
                             {(msg.body != null && msg.body !== "") && (
                               <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>

@@ -662,6 +662,26 @@ async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message
   });
 
   const mapped = mapWaMessageToDb(msg, chat.id);
+  let createData: any = mapped;
+  // Best-effort media capture (enables images on dashboard). Keep it bounded to avoid huge DB rows.
+  if ((msg as any).hasMedia) {
+    try {
+      const media = await (msg as any).downloadMedia?.();
+      if (media?.data && typeof media.data === "string" && typeof media.mimetype === "string") {
+        const approxBytes = Math.floor((media.data.length * 3) / 4);
+        if (approxBytes <= 1_500_000) {
+          createData = {
+            ...mapped,
+            media_url: `data:${media.mimetype};base64,${media.data}`,
+            mime_type: media.mimetype,
+            media_size: approxBytes,
+          };
+        }
+      }
+    } catch {
+      // ignore media download failures
+    }
+  }
 
   const message = await prisma.whatsapp_message.upsert({
     where: {
@@ -670,7 +690,7 @@ async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message
         wa_message_id: mapped.wa_message_id,
       },
     },
-    create: mapped,
+    create: createData,
     update: {},
   });
 
@@ -708,6 +728,25 @@ async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS
   });
 
   const mapped = mapWaMessageToDb(msg, chat.id);
+  let createData: any = { ...mapped, sent_at: new Date() };
+  if ((msg as any).hasMedia) {
+    try {
+      const media = await (msg as any).downloadMedia?.();
+      if (media?.data && typeof media.data === "string" && typeof media.mimetype === "string") {
+        const approxBytes = Math.floor((media.data.length * 3) / 4);
+        if (approxBytes <= 1_500_000) {
+          createData = {
+            ...createData,
+            media_url: `data:${media.mimetype};base64,${media.data}`,
+            mime_type: media.mimetype,
+            media_size: approxBytes,
+          };
+        }
+      }
+    } catch {
+      // ignore media download failures
+    }
+  }
 
   await prisma.whatsapp_message.upsert({
     where: {
@@ -716,7 +755,7 @@ async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS
         wa_message_id: mapped.wa_message_id,
       },
     },
-    create: { ...mapped, sent_at: new Date() },
+    create: createData,
     update: {},
   });
 }

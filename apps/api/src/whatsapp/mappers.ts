@@ -8,14 +8,18 @@ export function mapWaMessageToDb(
   msg: WAWebJS.Message,
   chatId: string,
 ) {
+  const fromNumber = (msg.author ?? (msg as any).from ?? null) as string | null;
   return {
     wa_message_id: msg.id._serialized,
     from_me: msg.fromMe,
-    from_number: msg.author ?? null,
+    from_number: fromNumber,
     body: msg.body || null,
     type: mapMessageType(msg.type),
     timestamp: new Date(msg.timestamp * 1000),
     ack: msg.ack ?? 0,
+    media_url: null,
+    mime_type: null,
+    media_size: null,
     raw_metadata: {
       hasMedia: msg.hasMedia,
       isForwarded: msg.isForwarded,
