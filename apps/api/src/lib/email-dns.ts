@@ -37,12 +37,12 @@ export async function getExpectedMxHost(): Promise<string> {
   return `mail.${domain}`;
 }
 
-/** Suggested SPF TXT value. If domain is provided, use that domain's actual MX host so the suggestion matches what you've set. */
+/** Suggested SPF TXT value. Prefer MAIL_SEND_HOST / MAIL_MX_HOST so the suggestion matches your mail server; only use domain's MX when env is not set. */
 export async function getExpectedSpfRecord(domain?: string): Promise<string> {
   const ip = MAIL_SEND_IP;
   if (ip) return `v=spf1 ip4:${ip} -all`;
   let host = MAIL_SEND_HOST_RAW || MAIL_MX_HOST;
-  if (domain) {
+  if (!host && domain) {
     try {
       const records = await dns.resolveMx(domain);
       const first = (records || []).slice().sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0]?.exchange;
