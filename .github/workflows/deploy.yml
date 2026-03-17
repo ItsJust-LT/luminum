@@ -255,6 +255,8 @@ jobs:
             [ "$(whoami)" = "root" ] && DOCKER="docker" || DOCKER="sudo docker"
             echo "${{ secrets.PROD_SERVER_GHCR_TOKEN }}" | $DOCKER login ${{ env.REGISTRY }} -u ${{ github.repository_owner }} --password-stdin
             $DOCKER compose -f docker-compose.prod.yml pull
+            # Prevent container-name conflicts if old project names / orphaned containers exist
+            $DOCKER compose -f docker-compose.prod.yml down --remove-orphans || true
             $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate
             $DOCKER image prune -f
             # Build CLI inside the API container so `luminum` wrapper works
