@@ -106,8 +106,24 @@ function AckIcon({ ack }: { ack: number | null }) {
   return <Check className="h-3.5 w-3.5 text-muted-foreground/50" />
 }
 
-function ContactAvatar({ name, isGroup }: { name: string | null; isGroup: boolean }) {
-  const initial = name ? name.charAt(0).toUpperCase() : "?"
+/** Format chat for display: use name if set, else friendly fallback from contact_id (e.g. +1234567890 or "Group"). */
+function formatChatDisplayName(chat: { name: string | null; contact_id: string; is_group: boolean }): string {
+  if (chat.name?.trim()) return chat.name.trim()
+  if (chat.is_group) return "Group"
+  return formatContactIdAsNumber(chat.contact_id)
+}
+
+/** Format contact_id (e.g. 1234567890@s.whatsapp.net) as +1234567890 for display. */
+function formatContactIdAsNumber(contactId: string): string {
+  const at = contactId.indexOf("@")
+  const local = at > 0 ? contactId.slice(0, at) : contactId
+  const digits = local.replace(/\D/g, "")
+  if (digits.length >= 6) return `+${digits}`
+  return local || "Unknown"
+}
+
+function ContactAvatar({ displayName, isGroup }: { displayName: string; isGroup: boolean }) {
+  const initial = isGroup ? "#" : (displayName.charAt(0).match(/\d/) ? displayName.replace(/\D/g, "").charAt(0) || "?" : displayName.charAt(0).toUpperCase())
   return (
     <Avatar className="h-10 w-10 flex-shrink-0">
       <AvatarFallback className={cn(
@@ -116,7 +132,7 @@ function ContactAvatar({ name, isGroup }: { name: string | null; isGroup: boolea
           ? "bg-gradient-to-br from-emerald-500 to-teal-600"
           : "bg-gradient-to-br from-blue-500 to-indigo-600"
       )}>
-        {isGroup ? "#" : initial}
+        {initial || "?"}
       </AvatarFallback>
     </Avatar>
   )
@@ -253,21 +269,28 @@ function QrSetup({ account, organizationId, onRefresh }: {
   if (account.status === "CONNECTING") {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-4">
+        <div className="text-center space-y-5 max-w-md px-4">
           <Loader2 className="h-12 w-12 animate-spin text-green-500 mx-auto" />
-          <h2 className="text-xl font-bold">Connecting...</h2>
-          <p className="text-muted-foreground text-sm">Please wait while we establish the connection.</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              onRefresh()
-              toast.info("Checking status…")
-            }}
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Check status
-          </Button>
+          <div>
+            <h2 className="text-xl font-bold">Connecting...</h2>
+            <p className="text-muted-foreground text-sm mt-1">Please wait while we establish the connection.</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            <Button variant="outline" size="sm" onClick={() => { onRefresh(); toast.info("Checking status…") }}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Check status
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleReconnect}
+              disabled={loading}
+              className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/40"
+            >
+              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Link removed? Get new QR code
+            </Button>
+          </div>
         </div>
       </div>
     )
@@ -651,11 +674,11 @@ export default function WhatsAppPage() {
                       isActive && "bg-muted/70"
                     )}
                   >
-                    <ContactAvatar name={chat.name} isGroup={chat.is_group} />
+                    <ContactAvatar displayName={formatChatDisplayName(chat)} isGroup={chat.is_group} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium text-sm truncate">
-                          {chat.name || chat.contact_id}
+                          {formatChatDisplayName(chat)}
                         </span>
                         {chat.last_message_at && (
                           <span className={cn(
@@ -702,13 +725,13 @@ export default function WhatsAppPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <ContactAvatar name={selectedChat.name} isGroup={selectedChat.is_group} />
+            <ContactAvatar displayName={formatChatDisplayName(selectedChat)} isGroup={selectedChat.is_group} />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm truncate">
-                {selectedChat.name || selectedChat.contact_id}
+                {formatChatDisplayName(selectedChat)}
               </p>
               <p className="text-xs text-muted-foreground truncate">
-                {selectedChat.is_group ? "Group" : selectedChat.contact_id}
+                {selectedChat.is_group ? "Group" : (selectedChat.name ? formatContactIdAsNumber(selectedChat.contact_id) : null)}
               </p>
             </div>
           </div>

@@ -105,6 +105,8 @@ export async function initWhatsAppManager(deps: {
   });
 }
 
+const CONNECTING_STALE_MS = 5 * 60 * 1000; // 5 min: treat CONNECTING as DISCONNECTED so user can reconnect
+
 export async function getAccountStatus(organizationId: string) {
   const account = await prisma.whatsapp_account.findUnique({
     where: { organization_id: organizationId },
@@ -121,8 +123,16 @@ export async function getAccountStatus(organizationId: string) {
     if (ageMs > 5 * 60 * 1000) qrCode = null;
   }
 
+  // If stuck in CONNECTING (e.g. user removed device, client died), report as DISCONNECTED so UI shows reconnect
+  let status = account.status;
+  if (status === "CONNECTING" && account.updated_at) {
+    const staleMs = Date.now() - account.updated_at.getTime();
+    if (staleMs > CONNECTING_STALE_MS) status = "DISCONNECTED";
+  }
+
   return {
     ...account,
+    status,
     qr_code: qrCode,
     clientReady: isClientReady,
   };
