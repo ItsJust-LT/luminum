@@ -217,23 +217,6 @@ jobs:
               echo "Docker Compose already available."
             fi
 
-            # Optional: configure Docker registry mirror (helps if your server is far from GHCR)
-            MIRROR="${{ vars.PROD_DOCKER_REGISTRY_MIRROR }}"
-            if [ -n "$MIRROR" ]; then
-              echo "Configuring Docker registry mirror: $MIRROR"
-              sudo mkdir -p /etc/docker
-              TMP=$(mktemp)
-              echo "{\"registry-mirrors\":[\"$MIRROR\"]}" | sudo tee "$TMP" >/dev/null
-              if [ ! -f /etc/docker/daemon.json ] || ! sudo diff -q /etc/docker/daemon.json "$TMP" >/dev/null 2>&1; then
-                sudo mv "$TMP" /etc/docker/daemon.json
-                sudo systemctl restart docker
-                echo "Docker restarted to apply mirror."
-              else
-                rm -f "$TMP"
-                echo "Mirror already configured."
-              fi
-            fi
-
             # 3. Caddy
             if ! command -v caddy &>/dev/null; then
               echo "Installing Caddy..."
@@ -271,33 +254,10 @@ jobs:
             cd ${{ vars.DEPLOY_PATH || '~/luminum' }}
             [ "$(whoami)" = "root" ] && DOCKER="docker" || DOCKER="sudo docker"
             echo "${{ secrets.PROD_SERVER_GHCR_TOKEN }}" | $DOCKER login ${{ env.REGISTRY }} -u ${{ github.repository_owner }} --password-stdin
-            # Pull only app images (not postgres/redis/minio) and do it in parallel.
-            $DOCKER compose -f docker-compose.prod.yml pull --parallel api dashboard analytics mail
-            # Keep a stable project name so container names don't drift across deploys.
-            export COMPOSE_PROJECT_NAME="luminum"
-
-            # Start/update containers. If a stale container name conflict exists (old project name),
-            # remove the conflicting container(s) and retry once.
-            set +e
-            $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
-            rc=$?
-            if [ $rc -ne 0 ]; then
-              echo "docker compose up failed (rc=$rc). Attempting to remove stale conflicting containers and retry..."
-              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-minio-1) 2>/dev/null || true
-              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-postgres-1) 2>/dev/null || true
-              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-redis-1) 2>/dev/null || true
-              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-mail-1) 2>/dev/null || true
-              $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
-              rc=$?
-            fi
-            set -e
-            if [ $rc -ne 0 ]; then
-              echo "docker compose up failed after retry. Diagnostics:"
-              $DOCKER compose -f docker-compose.prod.yml ps || true
-              $DOCKER logs --tail 200 luminum-postgres-1 || true
-              $DOCKER logs --tail 200 luminum-redis-1 || true
-              exit $rc
-            fi
+            $DOCKER compose -f docker-compose.prod.yml pull
+            # Prevent container-name conflicts if old project names / orphaned containers exist
+            $DOCKER compose -f docker-compose.prod.yml down --remove-orphans || true
+            $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate
             $DOCKER image prune -f
             # Build CLI inside the API container so `luminum` wrapper works
             $DOCKER exec luminum-api-1 sh -c 'cd /app/packages/cli && npx tsc' || echo "CLI build skipped (container may still be starting)"

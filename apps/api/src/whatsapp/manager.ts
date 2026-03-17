@@ -36,8 +36,6 @@ const AUTH_TIMEOUT_MS = parseInt(
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const LEASE_TTL_MS = 90_000;
-const INIT_RETRY_MAX = parseInt(process.env.WHATSAPP_INIT_RETRY_MAX || "5", 10);
-const INIT_RETRY_BASE_MS = parseInt(process.env.WHATSAPP_INIT_RETRY_BASE_MS || "5000", 10);
 
 function formatUnknownError(err: unknown): { message: string; details?: string } {
   if (err instanceof Error) {
@@ -386,10 +384,6 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
       "--disable-dev-shm-usage",
       "--disable-gpu",
       "--single-process",
-      "--disable-features=site-per-process,IsolateOrigins",
-      "--disable-background-networking",
-      "--disable-background-timer-throttling",
-      "--disable-renderer-backgrounding",
     ],
   };
   if (puppeteerExecutablePath) {
@@ -419,54 +413,34 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
   clients.set(organizationId, managed);
   attachEventHandlers(managed);
 
-  const initOnce = async () => {
-    try {
-      await client.initialize();
-      return true;
-    } catch (err) {
-      const formatted = formatUnknownError(err);
-      const displayMessage = formatted.message.trim() && formatted.message !== "{}"
-        ? formatted.message
-        : "Initialization failed. Try reconnecting or check server logs.";
-
-      // Record retry metadata so UI can show meaningful state.
-      const nextRetryAt = new Date(Date.now() + INIT_RETRY_BASE_MS);
-      await prisma.whatsapp_account.update({
-        where: { id: account.id },
-        data: {
-          status: "ERROR",
-          last_error: formatted.details ? `${displayMessage}\n${formatted.details}` : displayMessage,
-          retry_count: { increment: 1 },
-          next_retry_at: nextRetryAt,
-          owner_instance_id: null,
-          lease_expires_at: null,
-        },
-      }).catch(() => {});
-
-      logger.logError(err, "WhatsApp client initialization failed", {
-        orgId: organizationId,
-        accountId: account.id,
-        error_message: displayMessage,
-        error_details: formatted.details,
-      });
-      return false;
-    }
-  };
-
-  // Retry init a few times to smooth over transient "socket hang up" / Chromium cold-start issues.
-  for (let attempt = 1; attempt <= INIT_RETRY_MAX; attempt++) {
-    const ok = await initOnce();
-    if (ok) return managed;
-    // destroy any partially created browser instance before retrying
-    try { await client.destroy(); } catch {}
-    if (attempt < INIT_RETRY_MAX) {
-      const delay = Math.min(INIT_RETRY_BASE_MS * attempt, 60_000);
-      await new Promise((r) => setTimeout(r, delay));
-    }
+  try {
+    await client.initialize();
+  } catch (err) {
+    const formatted = formatUnknownError(err);
+    const displayMessage = formatted.message.trim() && formatted.message !== "{}"
+      ? formatted.message
+      : "Initialization failed. Try reconnecting or check server logs.";
+    logger.logError(err, "WhatsApp client initialization failed", {
+      orgId: organizationId,
+      accountId: account.id,
+      error_message: displayMessage,
+      error_details: formatted.details,
+    });
+    clients.delete(organizationId);
+    const lastErrorStored = formatted.details
+      ? `${displayMessage}\n${formatted.details}`
+      : displayMessage;
+    await prisma.whatsapp_account.update({
+      where: { id: account.id },
+      data: {
+        status: "ERROR",
+        last_error: lastErrorStored,
+        owner_instance_id: null,
+        lease_expires_at: null,
+      },
+    });
+    return null;
   }
-
-  clients.delete(organizationId);
-  return null;
 
   return managed;
 }

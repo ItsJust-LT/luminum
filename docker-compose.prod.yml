@@ -5,7 +5,6 @@
 services:
   postgres:
     image: postgres:16-alpine
-    pull_policy: if_not_present
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-luminum}
@@ -22,7 +21,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    pull_policy: if_not_present
     restart: unless-stopped
     command: redis-server ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
     volumes:
@@ -35,7 +33,6 @@ services:
 
   minio:
     image: minio/minio:latest
-    pull_policy: if_not_present
     restart: unless-stopped
     command: ["server", "/data"]
     environment:
@@ -49,7 +46,6 @@ services:
 
   api:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-api:latest
-    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
@@ -84,7 +80,6 @@ services:
 
   dashboard:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-dashboard:latest
-    pull_policy: always
     restart: unless-stopped
     depends_on:
       - api
@@ -102,7 +97,6 @@ services:
   # Mail (Go): SMTP receive on 25, HTTP send on 8025; POSTs inbound to API webhook
   mail:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-mail:latest
-    pull_policy: always
     restart: unless-stopped
     environment:
       API_URL: http://api:4000
@@ -118,7 +112,6 @@ services:
   # Analytics (Go): tracking, forms, live count; calls API for live-update & form-notify
   analytics:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-analytics:latest
-    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }

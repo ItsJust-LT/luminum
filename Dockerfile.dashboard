@@ -25,16 +25,14 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm run build --filter=app-luminum-agency
 
 FROM node:20-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Next.js standalone output includes the minimal node_modules needed to run.
-COPY --from=builder /app/apps/dashboard/.next/standalone ./
-COPY --from=builder /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
-COPY --from=builder /app/apps/dashboard/public ./apps/dashboard/public
-
+COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/dashboard ./apps/dashboard
+COPY --from=builder /app/packages ./packages
 EXPOSE 3000
 WORKDIR /app/apps/dashboard
-CMD ["node", "server.js"]
+CMD ["pnpm", "start"]
