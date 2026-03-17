@@ -250,6 +250,7 @@ function createApiClient(baseUrl: string = "") {
     disableAnalytics: (organizationId: string) =>
       post("/api/admin/disable-organization-analytics", { organizationId }),
     getDatabaseTables: () => get("/api/admin/database/tables"),
+    getDatabaseStats: () => get("/api/admin/database/stats"),
     getDatabaseTableSchema: (tableName: string) =>
       get(`/api/admin/database/tables/${encodeURIComponent(tableName)}/schema`),
     getDatabaseTableRows: (tableName: string, params?: { page?: number; limit?: number }) =>
