@@ -48,7 +48,7 @@ export class PgRemoteAuthStore {
     }
     await this.prisma.whatsapp_account.update({
       where: { id: accountId },
-      data: { session_data: buf, session_saved_at: new Date() },
+      data: { session_data: new Uint8Array(buf), session_saved_at: new Date() },
     });
   }
 
