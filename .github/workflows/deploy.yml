@@ -273,9 +273,31 @@ jobs:
             echo "${{ secrets.PROD_SERVER_GHCR_TOKEN }}" | $DOCKER login ${{ env.REGISTRY }} -u ${{ github.repository_owner }} --password-stdin
             # Pull only app images (not postgres/redis/minio) and do it in parallel.
             $DOCKER compose -f docker-compose.prod.yml pull --parallel api dashboard analytics mail
-            # Prevent container-name conflicts if old project names / orphaned containers exist
-            $DOCKER compose -f docker-compose.prod.yml down --remove-orphans || true
-            $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate
+            # Keep a stable project name so container names don't drift across deploys.
+            export COMPOSE_PROJECT_NAME="luminum"
+
+            # Start/update containers. If a stale container name conflict exists (old project name),
+            # remove the conflicting container(s) and retry once.
+            set +e
+            $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
+            rc=$?
+            if [ $rc -ne 0 ]; then
+              echo "docker compose up failed (rc=$rc). Attempting to remove stale conflicting containers and retry..."
+              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-minio-1) 2>/dev/null || true
+              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-postgres-1) 2>/dev/null || true
+              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-redis-1) 2>/dev/null || true
+              $DOCKER rm -f $($DOCKER ps -aq --filter name=_luminum-mail-1) 2>/dev/null || true
+              $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
+              rc=$?
+            fi
+            set -e
+            if [ $rc -ne 0 ]; then
+              echo "docker compose up failed after retry. Diagnostics:"
+              $DOCKER compose -f docker-compose.prod.yml ps || true
+              $DOCKER logs --tail 200 luminum-postgres-1 || true
+              $DOCKER logs --tail 200 luminum-redis-1 || true
+              exit $rc
+            fi
             $DOCKER image prune -f
             # Build CLI inside the API container so `luminum` wrapper works
             $DOCKER exec luminum-api-1 sh -c 'cd /app/packages/cli && npx tsc' || echo "CLI build skipped (container may still be starting)"
