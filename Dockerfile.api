@@ -1,5 +1,8 @@
 # Single-stage API build: install and run in same stage so node_modules is never copied (avoids pnpm symlink issues)
 FROM node:20-alpine
+# WhatsApp (whatsapp-web.js) needs Chromium for QR auth; Puppeteer's bundled Chrome is not in the image
+RUN apk add --no-cache chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 WORKDIR /app
 

@@ -205,6 +205,7 @@ export default function AnalyticsPage() {
   } | null>(null)
   const [analyticsAccessChecked, setAnalyticsAccessChecked] = useState(false)
   const [analyticsAccess, setAnalyticsAccess] = useState<boolean | null>(null)
+  const [verifyingScript, setVerifyingScript] = useState(false)
 
   // Realtime: refetch when form created/updated (Ably organization channel)
   const fetchAnalyticsDataRef = useRef<() => void>(() => {})
@@ -616,21 +617,42 @@ export default function AnalyticsPage() {
           const withAnalytics = analyticsSetupStatus.websites.filter((w) => w.analytics)
           const notVerified = withAnalytics.filter((w) => !w.scriptVerified)
           if (notVerified.length === 0) return null
+          const handleVerifyScriptNow = async () => {
+            if (!organization?.id || verifyingScript) return
+            setVerifyingScript(true)
+            try {
+              const res = await api.analytics.verifyScriptNow(organization.id) as { success?: boolean; checked?: number; failed?: number }
+              if (res?.success) {
+                const next = await api.analytics.getSetupStatus(organization.id) as { success?: boolean; access?: boolean; websites?: typeof analyticsSetupStatus.websites }
+                if (next?.success && next.websites) setAnalyticsSetupStatus({ access: next.access ?? false, websites: next.websites })
+              }
+            } catch {
+              // keep current status
+            } finally {
+              setVerifyingScript(false)
+            }
+          }
           return (
             <Card className="app-card border-amber-500/30 bg-amber-500/5">
-              <CardContent className="p-4 flex flex-wrap items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-medium text-foreground">Tracking script not detected</p>
-                  <p className="text-sm text-muted-foreground">
-                    {notVerified.length === 1
-                      ? `Add the tracking script to ${notVerified[0].domain}. We check periodically; data will appear once the script is live.`
-                      : `${notVerified.length} websites need the tracking script. We check periodically.`}
-                  </p>
-                  {notVerified[0]?.scriptError && (
-                    <p className="text-xs text-muted-foreground mt-1">{notVerified[0].scriptError}</p>
-                  )}
+              <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3 min-w-0">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground">Tracking script not detected</p>
+                    <p className="text-sm text-muted-foreground">
+                      {notVerified.length === 1
+                        ? `Add the tracking script to ${notVerified[0].domain}. We check periodically; data will appear once the script is live.`
+                        : `${notVerified.length} websites need the tracking script. We check periodically.`}
+                    </p>
+                    {notVerified[0]?.scriptError && (
+                      <p className="text-xs text-muted-foreground mt-1">{notVerified[0].scriptError}</p>
+                    )}
+                  </div>
                 </div>
+                <Button variant="outline" size="sm" onClick={handleVerifyScriptNow} disabled={verifyingScript} className="shrink-0">
+                  {verifyingScript ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  Re-check now
+                </Button>
               </CardContent>
             </Card>
           )

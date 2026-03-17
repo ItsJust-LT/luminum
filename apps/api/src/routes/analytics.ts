@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { canAccessOrganization } from "../lib/access.js";
+import { runAnalyticsScriptVerificationForOrg } from "../lib/cron-verify-analytics-script.js";
 import { createLiveToken, getLivePages } from "../lib/analytics-live.js";
 import { cacheGet, cacheSet, isAnalyticsDirty } from "../lib/redis-cache.js";
 import { config } from "../config.js";
@@ -71,6 +72,25 @@ router.get("/setup-status", async (req: Request, res: Response) => {
         scriptError: w.script_last_error ?? undefined,
       })),
     });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal server error";
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+// POST /api/analytics/verify-script-now — run script verification for this org's websites (manual re-check).
+router.post("/verify-script-now", async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req.body as { organizationId?: string }).organizationId;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { analytics_enabled: true },
+    });
+    if (!org?.analytics_enabled) return res.status(400).json({ success: false, error: "Analytics not enabled for this organization" });
+    const result = await runAnalyticsScriptVerificationForOrg(organizationId);
+    res.json({ success: true, checked: result.checked, failed: result.failed, errors: result.errors });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal server error";
     res.status(500).json({ success: false, error: message });

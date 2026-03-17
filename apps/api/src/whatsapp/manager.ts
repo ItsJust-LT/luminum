@@ -284,6 +284,26 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
 
   const store = new PgRemoteAuthStore(prisma);
 
+  // In Docker/server, Puppeteer's bundled Chrome often isn't present (ENOENT). Use system Chromium when set.
+  const puppeteerExecutablePath =
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    process.env.CHROMIUM_PATH ||
+    "";
+
+  const puppeteerOptions: Record<string, unknown> = {
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--single-process",
+    ],
+  };
+  if (puppeteerExecutablePath) {
+    puppeteerOptions.executablePath = puppeteerExecutablePath;
+  }
+
   const client = new Client({
     authStrategy: new RemoteAuth({
       store,
@@ -292,16 +312,7 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     }),
     authTimeoutMs: AUTH_TIMEOUT_MS,
     takeoverOnConflict: TAKEOVER_ON_CONFLICT,
-    puppeteer: {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--single-process",
-      ],
-    },
+    puppeteer: puppeteerOptions,
   });
 
   const managed: ManagedClient = {

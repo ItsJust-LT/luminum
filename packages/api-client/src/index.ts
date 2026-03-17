@@ -287,6 +287,8 @@ function createApiClient(baseUrl: string = "") {
   const analytics = {
     getSetupStatus: (organizationId: string) =>
       get("/api/analytics/setup-status", { organizationId }),
+    verifyScriptNow: (organizationId: string) =>
+      post("/api/analytics/verify-script-now", { organizationId }),
     getOverview: (websiteId: string, start: string, end: string) =>
       get("/api/analytics/overview", { websiteId, start, end }),
     getTimeSeries: (
