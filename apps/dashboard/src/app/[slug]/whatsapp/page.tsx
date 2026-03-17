@@ -67,6 +67,7 @@ interface WhatsAppMessage {
   client_message_id: string | null
   from_me: boolean
   from_number: string | null
+  sender_display_name?: string | null
   body: string | null
   type: string
   timestamp: string
@@ -405,16 +406,22 @@ export default function WhatsAppPage() {
     } catch {}
   }, [orgId, searchQuery])
 
-  const loadMessages = useCallback(async (chatId: string) => {
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+
+  const loadMessages = useCallback(async (chatId: string, cursor?: string) => {
     if (!orgId) return
     setMessagesLoading(true)
     try {
-      const res = await api.whatsapp.getChat(chatId, orgId) as any
+      const res = await api.whatsapp.getChat(chatId, orgId, { limit: 100, cursor }) as any
       if (res.success) {
-        setMessages(Array.isArray(res.messages) ? res.messages : [])
-        if (res.chat) {
-          setSelectedChat(res.chat)
+        const list = Array.isArray(res.messages) ? res.messages : []
+        if (cursor) {
+          setMessages((prev) => [...list, ...prev])
+        } else {
+          setMessages(list)
         }
+        setNextCursor(res.nextCursor ?? null)
+        if (res.chat) setSelectedChat(res.chat)
       }
     } catch {} finally {
       setMessagesLoading(false)
@@ -780,6 +787,19 @@ export default function WhatsAppPage() {
               </div>
             ) : (
               <div className="space-y-1.5 max-w-3xl mx-auto pb-4">
+                {nextCursor && selectedChat && (
+                  <div className="flex justify-center py-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={messagesLoading}
+                      onClick={() => loadMessages(selectedChat.id, nextCursor)}
+                      className="text-muted-foreground"
+                    >
+                      {messagesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load older messages"}
+                    </Button>
+                  </div>
+                )}
                 {(() => {
                   let lastDate = ""
                   return messages.map((msg) => {
@@ -812,7 +832,7 @@ export default function WhatsAppPage() {
                           >
                             {msg.from_number && !msg.from_me && formatContactIdAsNumber(msg.from_number) !== "Status" && (
                               <p className="text-xs font-semibold text-green-600 mb-0.5">
-                                {formatContactIdAsNumber(msg.from_number)}
+                                {(msg as WhatsAppMessage).sender_display_name ?? formatContactIdAsNumber(msg.from_number)}
                               </p>
                             )}
                             {msg.type !== "text" && msg.type !== "chat" && (msg.body == null || msg.body === "") && (

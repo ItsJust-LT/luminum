@@ -11,6 +11,7 @@ import {
   removeAccount,
   sendMessage,
   fetchChatHistory,
+  getContactDisplayNames,
 } from "../whatsapp/manager.js";
 
 const router = Router();
@@ -281,7 +282,7 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     }
 
     const cursor = getQueryParam(req, "cursor");
-    const limit = Math.min(parseInt(getQueryParam(req, "limit") || "50", 10), 100);
+    const limit = Math.min(parseInt(getQueryParam(req, "limit") || "100", 10), 100);
 
     const chat = await prisma.whatsapp_chat.findUnique({
       where: { id: chatId },
@@ -321,15 +322,23 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     if (filtered.length === 0) {
       const organizationId = getQueryParam(req, "organizationId");
       if (organizationId) {
-        const history = await fetchChatHistory(organizationId, chat.contact_id, chatId, 50);
+        const history = await fetchChatHistory(organizationId, chat.contact_id, chatId, 100);
         filtered = history.filter((m: any) => !(m.from_number ?? "").toLowerCase().includes("@lid"));
       }
     }
 
+    const ordered = filtered.reverse();
+    const uniqueJids = [...new Set(ordered.map((m: any) => m.from_number).filter(Boolean))];
+    const senderNames = await getContactDisplayNames(organizationId, uniqueJids);
+    const messagesWithNames = ordered.map((m: any) => ({
+      ...m,
+      sender_display_name: m.from_number ? senderNames[m.from_number] ?? null : null,
+    }));
+
     res.json({
       success: true,
       chat,
-      messages: filtered.reverse(),
+      messages: messagesWithNames,
       hasMore,
       nextCursor: hasMore ? messages[0]?.created_at?.toISOString() : null,
     });

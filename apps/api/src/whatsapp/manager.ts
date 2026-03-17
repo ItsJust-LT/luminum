@@ -236,15 +236,17 @@ export async function sendMessage(opts: {
     body,
   );
 
-  const message = await prisma.whatsapp_message.create({
-    data: {
-      chat_id: chatId,
-      wa_message_id: sentMsg.id._serialized,
+  const mapped = mapWaMessageToDb(sentMsg, chatId);
+  const message = await prisma.whatsapp_message.upsert({
+    where: {
+      chat_id_wa_message_id: { chat_id: chatId, wa_message_id: mapped.wa_message_id },
+    },
+    create: {
+      ...mapped,
       client_message_id: clientMessageId || null,
-      from_me: true,
-      body,
-      type: "text",
-      timestamp: new Date(),
+      sent_at: new Date(),
+    },
+    update: {
       ack: sentMsg.ack ?? 0,
       sent_at: new Date(),
     },
@@ -761,6 +763,27 @@ async function handleAckUpdate(managed: ManagedClient, msg: WAWebJS.Message, ack
       });
     }
   }
+}
+
+/** Resolve display names for JIDs (e.g. for group message senders). Returns map of jid -> display name. */
+export async function getContactDisplayNames(
+  organizationId: string,
+  jids: string[],
+): Promise<Record<string, string>> {
+  const managed = await ensureClient(organizationId);
+  if (!managed?.ready || jids.length === 0) return {};
+  const out: Record<string, string> = {};
+  const unique = [...new Set(jids)].filter((j) => j && !j.toLowerCase().includes("@lid"));
+  for (const jid of unique) {
+    try {
+      const contact = await managed.client.getContactById(jid);
+      const name = (contact as any).name ?? (contact as any).pushname ?? (contact as any).shortName;
+      if (typeof name === "string" && name.trim()) out[jid] = name.trim();
+    } catch {
+      // ignore per-contact failures
+    }
+  }
+  return out;
 }
 
 /** Fetch recent message history from WhatsApp for a chat and upsert into DB. Returns saved messages (oldest first). */
