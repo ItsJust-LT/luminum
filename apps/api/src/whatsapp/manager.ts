@@ -106,6 +106,7 @@ export async function initWhatsAppManager(deps: {
 }
 
 const CONNECTING_STALE_MS = 5 * 60 * 1000; // 5 min: treat CONNECTING as DISCONNECTED so user can reconnect
+const CONNECTED_RECENT_MS = 3 * 60 * 1000; // 3 min: if we saw recent activity, treat as effectively connected
 
 export async function getAccountStatus(organizationId: string) {
   const account = await prisma.whatsapp_account.findUnique({
@@ -123,11 +124,26 @@ export async function getAccountStatus(organizationId: string) {
     if (ageMs > 5 * 60 * 1000) qrCode = null;
   }
 
-  // If stuck in CONNECTING (e.g. user removed device, client died), report as DISCONNECTED so UI shows reconnect
+  // Derive an effective status for UI.
+  // - CONNECTING can be stale (client crashed / link removed) -> DISCONNECTED
+  // - CONNECTING can also happen even though we've already connected (race between status writes / multi-instance) -> CONNECTED
   let status = account.status;
-  if (status === "CONNECTING" && account.updated_at) {
-    const staleMs = Date.now() - account.updated_at.getTime();
-    if (staleMs > CONNECTING_STALE_MS) status = "DISCONNECTED";
+  const nowMs = Date.now();
+  const updatedAtMs = account.updated_at ? account.updated_at.getTime() : 0;
+  const leaseExpiresMs = account.lease_expires_at ? account.lease_expires_at.getTime() : 0;
+  const lastSeenMs = account.last_seen_at ? account.last_seen_at.getTime() : 0;
+  const connectedAtMs = account.connected_at ? account.connected_at.getTime() : 0;
+
+  if (status === "CONNECTING") {
+    // If our lease has expired and we never became ready, treat as disconnected.
+    if (leaseExpiresMs && leaseExpiresMs < nowMs) {
+      status = "DISCONNECTED";
+    } else if ((lastSeenMs && nowMs - lastSeenMs < CONNECTED_RECENT_MS) || (connectedAtMs && nowMs - connectedAtMs < CONNECTED_RECENT_MS)) {
+      // We were recently active/connected, so show as connected even if status hasn't flipped yet.
+      status = "CONNECTED";
+    } else if (updatedAtMs && nowMs - updatedAtMs > CONNECTING_STALE_MS) {
+      status = "DISCONNECTED";
+    }
   }
 
   return {
