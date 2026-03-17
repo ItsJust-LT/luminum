@@ -406,13 +406,13 @@ export default function EmailsPage() {
             ) : (
               <>
                 <p className="text-muted-foreground">
-                  Your domain <strong>{setupStatus.domain}</strong> is set. Point your MX record to our server, then click Verify DNS.
+                  Your domain <strong>{setupStatus.domain}</strong> is set. Add the DNS records below at your DNS provider, then click Verify DNS.
                 </p>
-                {!setupStatus?.expectedMxHost && (
+                {!setupStatus?.dnsRecords && !setupStatus?.expectedMxHost && (
                   <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-                    <p className="font-medium">MX target not configured</p>
+                    <p className="font-medium">DNS targets not configured</p>
                     <p className="mt-1 text-muted-foreground">
-                      An administrator needs to set <code className="bg-muted px-1 rounded">MAIL_MX_HOST</code> (or <code className="bg-muted px-1 rounded">MAIL_MX_DOMAIN</code>) in the API server environment so we can show the correct MX host. Example: <code className="bg-muted px-1 rounded">MAIL_MX_HOST=mail.luminum.agency</code>
+                      An administrator needs to set <code className="bg-muted px-1 rounded">MAIL_MX_HOST</code> (or <code className="bg-muted px-1 rounded">MAIL_MX_DOMAIN</code>) in the API server environment so we can show the correct records.
                     </p>
                   </div>
                 )}
@@ -423,30 +423,48 @@ export default function EmailsPage() {
                       : setupStatus.lastError}
                   </div>
                 )}
-                {setupStatus?.expectedMxHost && (
-                  <p className="text-sm text-muted-foreground">
+                {setupStatus?.dnsRecords && (
+                  <div className="space-y-4 mt-4">
+                    <p className="text-sm font-medium text-foreground">Add these DNS records for {setupStatus.domain}</p>
+                    <div className="grid gap-4 sm:grid-cols-1">
+                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">MX — Mail server</p>
+                        <p className="text-xs text-muted-foreground">Type: MX · Name: @ (or {setupStatus.dnsRecords.mx.name}) · Priority: {setupStatus.dnsRecords.mx.priority}</p>
+                        <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.mx.value}</code>
+                      </div>
+                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF — Sender policy</p>
+                        <p className="text-xs text-muted-foreground">Type: TXT · Name: @ (or {setupStatus.dnsRecords.spf.name})</p>
+                        <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.spf.value}</code>
+                      </div>
+                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Signing (selector: {setupStatus.dnsRecords.dkim.selector})</p>
+                        <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dkim.name}</p>
+                        <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.dkim.valueNote}</p>
+                      </div>
+                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DMARC — Reporting &amp; policy</p>
+                        <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dmarc.name}</p>
+                        <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dmarc.value}</code>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {!setupStatus?.dnsRecords && setupStatus?.expectedMxHost && (
+                  <p className="text-sm text-muted-foreground mt-2">
                     Set your MX record to: <code className="bg-muted px-1.5 py-0.5 rounded">{setupStatus.expectedMxHost}</code>
                   </p>
-                )}
-                {setupStatus?.steps && setupStatus.steps.length > 0 && (
-                  <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-                    {setupStatus.steps.map((step, i) => (
-                      <li key={i}>
-                        <span className="font-medium text-foreground">{step.title}</span> — {step.description}
-                      </li>
-                    ))}
-                  </ol>
                 )}
                 <Button
                   onClick={handleVerifyDns}
                   disabled={verifyingDns}
-                  className="rounded-xl"
+                  className="rounded-xl mt-4"
                 >
                   {verifyingDns ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
                   {verifyingDns ? "Checking DNS…" : "Verify DNS"}
                 </Button>
-                <p className="text-sm text-muted-foreground">
-                  After you’ve added the MX record at your DNS provider, click Verify DNS. If it’s correct, the inbox will appear.
+                <p className="text-sm text-muted-foreground mt-2">
+                  After you’ve added the records at your DNS provider, click Verify DNS. We check MX, SPF, DKIM, and DMARC. If all pass, the inbox will appear.
                 </p>
               </>
             )}

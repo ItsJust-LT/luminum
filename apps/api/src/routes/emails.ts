@@ -6,7 +6,12 @@ import { checkDomainDkim, checkDomainDmarc, checkDomainMx, checkDomainSpf } from
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
-import { getExpectedMxHost } from "../lib/email-dns.js";
+import {
+  getExpectedMxHost,
+  getExpectedSpfRecord,
+  getDkimRecordName,
+  getExpectedDmarcRecord,
+} from "../lib/email-dns.js";
 import { getOrgReplyAddress, sendViaMailApp } from "../lib/email-send.js";
 import { logger } from "../lib/logger.js";
 
@@ -97,24 +102,52 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const access = !!org.emails_enabled;
     const hasDomain = !!org.email_domain_id && !!org.email_domain;
     const setupComplete = access && hasDomain && !!org.email_dns_verified_at && !org.email_dns_last_error;
-    const expectedMxHost = await getExpectedMxHost();
-    const steps = !setupComplete && access && hasDomain
-      ? [
-          { title: "Add MX record", description: `Add an MX record for your domain (${org.email_domain?.domain || ""}).` },
-          { title: "Point MX to our server", description: `Set the MX target to ${expectedMxHost || "your mail host"}.` },
-          { title: "Save and wait", description: "We check automatically every few hours. Contact your admin if you need help." },
-        ]
-      : [];
+    const domain = org.email_domain?.domain ?? "";
+    const [expectedMxHost, expectedSpfRecord] = await Promise.all([
+      getExpectedMxHost(),
+      getExpectedSpfRecord(),
+    ]);
+    const dkimInfo = domain ? getDkimRecordName(domain) : null;
+    const expectedDmarcRecord = domain ? getExpectedDmarcRecord(domain) : "";
+    const dmarcRecordName = domain ? `_dmarc.${domain}` : "";
+
+    const dnsRecords = domain
+      ? {
+          mx: {
+            type: "MX" as const,
+            name: domain,
+            value: expectedMxHost || "mail.yourdomain.com",
+            priority: 10,
+          },
+          spf: {
+            type: "TXT" as const,
+            name: domain,
+            value: expectedSpfRecord,
+          },
+          dkim: {
+            type: "TXT" as const,
+            name: dkimInfo?.name ?? "",
+            selector: dkimInfo?.selector ?? "default",
+            valueNote: "TXT value (public key) is provided by your mail server. Contact your administrator or check the mail server documentation.",
+          },
+          dmarc: {
+            type: "TXT" as const,
+            name: dmarcRecordName,
+            value: expectedDmarcRecord,
+          },
+        }
+      : undefined;
+
     res.json({
       success: true,
       access,
       setupComplete,
-      domain: org.email_domain?.domain ?? undefined,
+      domain: domain || undefined,
       expectedMxHost: expectedMxHost || undefined,
       lastCheckAt: org.email_dns_last_check_at?.toISOString(),
       lastError: org.email_dns_last_error ?? undefined,
       emailFromAddress: org.email_from_address ?? undefined,
-      steps,
+      dnsRecords,
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });

@@ -119,10 +119,10 @@ export default function WhatsAppSettingsPage() {
     loadAccount()
   }, [loadAccount])
 
-  // Poll while connecting
+  // Poll while connecting (every 2s so we detect CONNECTED soon after scan)
   useEffect(() => {
     if (!account || (account.status !== "QR_PENDING" && account.status !== "CONNECTING")) return
-    const timer = setInterval(loadAccount, 3000)
+    const timer = setInterval(loadAccount, 2000)
     return () => clearInterval(timer)
   }, [account?.status, loadAccount])
 
@@ -273,6 +273,17 @@ export default function WhatsAppSettingsPage() {
                       className="w-48 h-48"
                     />
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      loadAccount()
+                      toast.info("Checking connection status…")
+                    }}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    I've scanned — check status
+                  </Button>
                 </div>
               )}
 

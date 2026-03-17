@@ -192,6 +192,18 @@ function QrSetup({ account, organizationId, onRefresh }: {
             />
           </div>
           <p className="text-xs text-muted-foreground">QR code refreshes automatically</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              onRefresh()
+              toast.info("Checking connection status…")
+            }}
+            className="mt-2"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            I've scanned — check status
+          </Button>
         </div>
       </div>
     )
@@ -204,6 +216,17 @@ function QrSetup({ account, organizationId, onRefresh }: {
           <Loader2 className="h-12 w-12 animate-spin text-green-500 mx-auto" />
           <h2 className="text-xl font-bold">Connecting...</h2>
           <p className="text-muted-foreground text-sm">Please wait while we establish the connection.</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onRefresh()
+              toast.info("Checking status…")
+            }}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Check status
+          </Button>
         </div>
       </div>
     )
@@ -316,7 +339,7 @@ export default function WhatsAppPage() {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current)
       return
     }
-    pollTimerRef.current = setInterval(loadAccount, 3000)
+    pollTimerRef.current = setInterval(loadAccount, 2000)
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current)
     }
@@ -377,13 +400,14 @@ export default function WhatsAppPage() {
     return unsub
   }, [onMessage, selectedChat?.id])
 
-  // Real-time status handling
+  // Real-time status handling (WebSocket may not reach this client in multi-instance setups; polling + "Check status" button are fallbacks)
   useEffect(() => {
     const unsub = onMessage("whatsapp:status", (data: any) => {
       if (data?.status === "connected") {
-        loadAccount()
-        loadChats()
-        toast.success("WhatsApp connected!")
+        loadAccount().then(() => {
+          loadChats()
+          toast.success("WhatsApp connected!")
+        })
       } else if (data?.status === "disconnected") {
         loadAccount()
         toast.error("WhatsApp disconnected")

@@ -37,6 +37,30 @@ export async function getExpectedMxHost(): Promise<string> {
   return `mail.${domain}`;
 }
 
+/** Suggested SPF TXT value for the mail server (for setup instructions). */
+export async function getExpectedSpfRecord(): Promise<string> {
+  const host = MAIL_SEND_HOST_RAW || (await getExpectedMxHost()) || MAIL_MX_HOST;
+  const ip = MAIL_SEND_IP;
+  if (ip) return `v=spf1 ip4:${ip} -all`;
+  if (host) return `v=spf1 include:${host} -all`;
+  return "v=spf1 -all";
+}
+
+/** DKIM TXT record name (selector._domainkey.domain) and selector for setup instructions. */
+export function getDkimRecordName(domain: string): { name: string; selector: string } {
+  const selector = MAIL_DKIM_SELECTOR || "default";
+  return {
+    name: `${selector}._domainkey.${domain}`,
+    selector,
+  };
+}
+
+/** Suggested DMARC TXT value for _dmarc.domain (for setup instructions). */
+export function getExpectedDmarcRecord(domain: string): string {
+  const rua = `mailto:dmarc@${domain}`;
+  return `v=DMARC1; p=none; rua=${rua}; pct=100`;
+}
+
 export interface MxCheckResult {
   ok: boolean;
   expectedHost: string;
