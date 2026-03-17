@@ -641,11 +641,20 @@ export default function WhatsAppPage() {
     )
   }
 
-  // Not connected — show setup
+  // Not connected — show setup (Settings always reachable)
   if (!account || account.status !== "CONNECTED") {
     return (
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
-        <QrSetup account={account} organizationId={orgId!} onRefresh={loadAccount} />
+      <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
+        <div className="flex items-center justify-end border-b px-3 py-2">
+          <Link href={`/${slug}/whatsapp/settings`}>
+            <Button variant="ghost" size="icon" className="h-9 w-9">
+              <Settings className="h-4 w-4" />
+            </Button>
+          </Link>
+        </div>
+        <div className="flex-1 min-h-0 flex">
+          <QrSetup account={account} organizationId={orgId!} onRefresh={loadAccount} />
+        </div>
       </div>
     )
   }

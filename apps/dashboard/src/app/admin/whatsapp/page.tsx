@@ -32,7 +32,19 @@ import {
   Wifi,
   Building2,
   Infinity as InfinityIcon,
+  Trash2,
 } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { api } from "@/lib/api"
@@ -103,6 +115,7 @@ export default function AdminWhatsAppPage() {
   const [days, setDays] = useState("30")
   const [shuttingDown, setShuttingDown] = useState<string | null>(null)
   const [togglingAlwaysOn, setTogglingAlwaysOn] = useState<string | null>(null)
+  const [removingAll, setRemovingAll] = useState(false)
   const { connected, onMessage } = useRealtime()
 
   const fetchAnalytics = useCallback(async () => {
@@ -185,6 +198,19 @@ export default function AdminWhatsAppPage() {
       toast.error(err instanceof Error ? err.message : "Update failed")
     } finally {
       setTogglingAlwaysOn(null)
+    }
+  }
+
+  const handleRemoveAll = async () => {
+    setRemovingAll(true)
+    try {
+      await api.admin.removeAllWhatsappData()
+      toast.success("All WhatsApp data has been removed.")
+      await Promise.all([fetchAnalytics(), fetchClients()])
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove WhatsApp data")
+    } finally {
+      setRemovingAll(false)
     }
   }
 
@@ -526,6 +552,59 @@ export default function AdminWhatsAppPage() {
               </TableBody>
             </Table>
           )}
+        </Card>
+      </section>
+
+      {/* Remove all WhatsApp data */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-destructive">
+          <Trash2 className="h-5 w-5" />
+          Danger zone
+        </h2>
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-base">Remove all WhatsApp data</CardTitle>
+            <CardDescription>
+              Permanently delete every WhatsApp account, chat, and message across all organizations.
+              All clients will be shut down. Use this to fully reset WhatsApp integration.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={removingAll}>
+                  {removingAll ? (
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-2" />
+                  )}
+                  Remove all WhatsApp data
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove all WhatsApp data?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will shut down all WhatsApp clients and permanently delete every account,
+                    chat, and message. Organizations will need to connect WhatsApp again and scan a
+                    new QR code. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleRemoveAll}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {removingAll ? (
+                      <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
+                    Remove all
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardContent>
         </Card>
       </section>
     </div>

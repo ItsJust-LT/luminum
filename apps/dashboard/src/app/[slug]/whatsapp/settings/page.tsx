@@ -25,7 +25,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,13 +95,26 @@ export default function WhatsAppSettingsPage() {
   const { organization } = useOrganization()
   const { onMessage } = useRealtime()
   const pathname = usePathname()
+  const router = useRouter()
   const slug = pathname?.split("/")[1] || ""
 
+  const [whatsappAccessChecked, setWhatsappAccessChecked] = useState(false)
+  const [whatsappAccess, setWhatsappAccess] = useState<boolean | null>(null)
   const [account, setAccount] = useState<WhatsAppAccount | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const orgId = organization?.id
+
+  useEffect(() => {
+    if (!orgId) return
+    api.whatsapp.checkEnabled(orgId)
+      .then((r: any) => {
+        setWhatsappAccess(r?.enabled ?? false)
+      })
+      .catch(() => setWhatsappAccess(false))
+      .finally(() => setWhatsappAccessChecked(true))
+  }, [orgId])
 
   const loadAccount = useCallback(async () => {
     if (!orgId) return
@@ -116,8 +129,9 @@ export default function WhatsAppSettingsPage() {
   }, [orgId])
 
   useEffect(() => {
-    loadAccount()
-  }, [loadAccount])
+    if (orgId && whatsappAccess === true) loadAccount()
+    else if (whatsappAccessChecked) setLoading(false)
+  }, [orgId, whatsappAccess, whatsappAccessChecked, loadAccount])
 
   // Poll while connecting (every 2s so we detect CONNECTED soon after scan)
   useEffect(() => {
@@ -202,6 +216,31 @@ export default function WhatsAppSettingsPage() {
     } finally {
       setActionLoading(null)
     }
+  }
+
+  if (!whatsappAccessChecked || whatsappAccess === null) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (whatsappAccess === false) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] px-4">
+        <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-foreground mb-2">WhatsApp not enabled</h3>
+          <p className="text-muted-foreground mb-4">
+            WhatsApp is not enabled for this organization. Contact an administrator if you need access.
+          </p>
+          <Button onClick={() => router.push(`/${slug}/dashboard`)} variant="outline" className="w-full">
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {

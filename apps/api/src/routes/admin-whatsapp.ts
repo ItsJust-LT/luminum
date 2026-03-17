@@ -171,4 +171,24 @@ router.post("/clients/:organizationId/always-on", adminOnly, async (req: Request
   }
 });
 
+/** POST /api/admin/whatsapp/remove-all — destroy all clients and delete all WhatsApp data (accounts, chats, messages). */
+router.post("/remove-all", adminOnly, async (_req: Request, res: Response) => {
+  try {
+    const accounts = await prisma.whatsapp_account.findMany({
+      select: { organization_id: true },
+    });
+    const orgIds = [...new Set(accounts.map((a) => a.organization_id))];
+    for (const orgId of orgIds) {
+      await disconnectClient(orgId);
+    }
+    await prisma.whatsapp_account.deleteMany({});
+    res.json({
+      success: true,
+      message: "All WhatsApp data removed. Accounts, chats, and messages have been deleted.",
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message ?? "Failed to remove WhatsApp data" });
+  }
+});
+
 export { router as adminWhatsappRouter };
