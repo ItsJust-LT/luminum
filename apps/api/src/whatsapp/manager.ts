@@ -582,6 +582,17 @@ async function syncAllChats(managed: ManagedClient): Promise<void> {
       },
     });
   }
+  // Remove any Status/lid chats that may have been created before filters existed.
+  await prisma.whatsapp_chat.deleteMany({
+    where: {
+      account_id: accountId,
+      OR: [
+        { contact_id: { endsWith: "@lid" } },
+        { contact_id: { contains: "@lid" } },
+      ],
+    },
+  }).catch(() => {});
+
   logger.info("WhatsApp synced all chats", { orgId: managed.orgId, accountId, count: chats.length });
 }
 

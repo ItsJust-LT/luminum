@@ -113,10 +113,11 @@ function formatChatDisplayName(chat: { name: string | null; contact_id: string; 
   return formatContactIdAsNumber(chat.contact_id)
 }
 
-/** Format contact_id (e.g. 1234567890@s.whatsapp.net) as +1234567890 for display. */
+/** Format contact_id (e.g. 1234567890@s.whatsapp.net) as +1234567890 for display. Status/lid IDs show as Status. */
 function formatContactIdAsNumber(contactId: string): string {
   if (!contactId) return "Unknown"
-  if (contactId.toLowerCase().endsWith("@lid")) return "Member"
+  const lower = contactId.toLowerCase()
+  if (lower.includes("@lid") || lower.includes("status")) return "Status"
   const at = contactId.indexOf("@")
   const local = at > 0 ? contactId.slice(0, at) : contactId
   const digits = local.replace(/\D/g, "")
@@ -124,7 +125,7 @@ function formatContactIdAsNumber(contactId: string): string {
   return local || "Unknown"
 }
 
-/** Label for a message date (Today, Yesterday, or formatted). */
+/** Label for a message date (Today, Yesterday, or formatted with year when different). */
 function messageDateLabel(dateStr: string): string {
   const d = new Date(dateStr)
   const now = new Date()
@@ -134,6 +135,9 @@ function messageDateLabel(dateStr: string): string {
   const dDate = new Date(d.getFullYear(), d.getMonth(), d.getDate())
   if (dDate.getTime() === today.getTime()) return "Today"
   if (dDate.getTime() === yesterday.getTime()) return "Yesterday"
+  if (d.getFullYear() !== now.getFullYear()) {
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  }
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 }
 
@@ -668,9 +672,9 @@ export default function WhatsAppPage() {
         </div>
 
         {/* Chat list */}
-        <div className="flex-1 min-h-0 flex flex-col">
-          <ScrollArea className="flex-1">
-          {chats.filter((c) => !c.contact_id?.toLowerCase().endsWith("@lid")).length === 0 ? (
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <ScrollArea className="flex-1 h-full min-h-0">
+          {chats.filter((c) => !c.contact_id?.toLowerCase().includes("@lid")).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
               <MessageCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />
               <p className="text-sm text-muted-foreground">No chats yet</p>
@@ -678,7 +682,7 @@ export default function WhatsAppPage() {
             </div>
           ) : (
             <div className="divide-y divide-border/50">
-              {chats.filter((c) => !c.contact_id?.toLowerCase().endsWith("@lid")).map((chat) => {
+              {chats.filter((c) => !c.contact_id?.toLowerCase().includes("@lid")).map((chat) => {
                 const lastMsg = chat.messages?.[0]
                 const isActive = selectedChat?.id === chat.id
                 return (
@@ -755,7 +759,7 @@ export default function WhatsAppPage() {
 
           {/* Messages area */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <ScrollArea className="flex-1 px-4 py-3">
+            <ScrollArea className="flex-1 h-full min-h-0 px-4 py-3 overflow-auto">
             {messagesLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -797,7 +801,7 @@ export default function WhatsAppPage() {
                                 : "bg-muted rounded-bl-sm"
                             )}
                           >
-                            {msg.from_number && !msg.from_me && (
+                            {msg.from_number && !msg.from_me && formatContactIdAsNumber(msg.from_number) !== "Status" && (
                               <p className="text-xs font-semibold text-green-600 mb-0.5">
                                 {formatContactIdAsNumber(msg.from_number)}
                               </p>

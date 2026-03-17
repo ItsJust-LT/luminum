@@ -222,6 +222,7 @@ router.get("/chats", async (req: Request, res: Response) => {
     where.NOT = {
       OR: [
         { contact_id: { endsWith: "@lid" } },
+        { contact_id: { contains: "@lid" } },
         { contact_id: { contains: "status" } },
       ],
     };
@@ -289,6 +290,11 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     if (!chat || chat.account.organization_id !== organizationId) {
       return res.status(404).json({ error: "Chat not found" });
     }
+    // Reject Status/lid chats so they are never opened.
+    const cid = (chat as any).contact_id ?? "";
+    if (cid.toLowerCase().endsWith("@lid") || cid.toLowerCase().includes("@lid") || cid.toLowerCase().includes("status")) {
+      return res.status(404).json({ success: false, error: "Chat not found" });
+    }
 
     const messageWhere: Record<string, unknown> = { chat_id: chatId };
     if (cursor) {
@@ -304,10 +310,16 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     const hasMore = messages.length > limit;
     if (hasMore) messages.pop();
 
+    // Exclude status-update messages (author/lid) so only real chat messages are shown.
+    const filtered = messages.filter((m: any) => {
+      const from = m.from_number ?? "";
+      return !from.toLowerCase().includes("@lid");
+    });
+
     res.json({
       success: true,
       chat,
-      messages: messages.reverse(),
+      messages: filtered.reverse(),
       hasMore,
       nextCursor: hasMore ? messages[0]?.created_at?.toISOString() : null,
     });
