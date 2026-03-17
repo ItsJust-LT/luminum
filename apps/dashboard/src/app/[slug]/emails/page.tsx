@@ -28,6 +28,7 @@ import {
   InboxIcon,
   CheckCircle2,
   Loader2,
+  XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -97,6 +98,12 @@ export default function EmailsPage() {
   const [websites, setWebsites] = useState<{ id: string; domain: string; name?: string }[]>([])
   const [settingDomain, setSettingDomain] = useState(false)
   const [verifyingDns, setVerifyingDns] = useState(false)
+  const [lastVerifyResult, setLastVerifyResult] = useState<{
+    success: boolean
+    error?: string
+    message?: string
+    checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
+  } | null>(null)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
@@ -341,19 +348,32 @@ export default function EmailsPage() {
     const handleVerifyDns = async () => {
       if (!organization?.id) return
       setVerifyingDns(true)
+      setLastVerifyResult(null)
       try {
-        const res = await api.emails.verifyDns(organization.id) as { success?: boolean; error?: string; message?: string }
+        const res = await api.emails.verifyDns(organization.id) as {
+          success?: boolean
+          error?: string
+          message?: string
+          checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
+        }
+        setLastVerifyResult({
+          success: !!res?.success,
+          error: res?.error,
+          message: res?.message,
+          checks: res?.checks,
+        })
         if (res?.success) {
           toast.success(res?.message || "DNS verified. You can send and receive email.")
           const next = await api.emails.getSetupStatus(organization.id)
           setSetupStatus(next)
         } else {
-          toast.error(res?.error || "DNS check failed. Fix the MX record and try again.")
+          toast.error(res?.error || "DNS check failed. See results below.")
           const next = await api.emails.getSetupStatus(organization.id)
           setSetupStatus(next)
         }
       } catch {
         toast.error("Verification failed")
+        setLastVerifyResult({ success: false, error: "Verification failed" })
         const next = await api.emails.getSetupStatus(organization.id)
         setSetupStatus(next)
       } finally {
@@ -463,6 +483,29 @@ export default function EmailsPage() {
                   {verifyingDns ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
                   {verifyingDns ? "Checking DNS…" : "Verify DNS"}
                 </Button>
+                {lastVerifyResult?.checks && (
+                  <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                    <p className="text-sm font-medium text-foreground">DNS check results</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.mx.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
+                        {lastVerifyResult.checks.mx.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                        <span className="text-sm">MX — {lastVerifyResult.checks.mx.ok ? "OK" : lastVerifyResult.checks.mx.error || "Failed"}</span>
+                      </div>
+                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.spf.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
+                        {lastVerifyResult.checks.spf.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                        <span className="text-sm">SPF — {lastVerifyResult.checks.spf.ok ? "OK" : lastVerifyResult.checks.spf.error || "Failed"}</span>
+                      </div>
+                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dkim.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
+                        {lastVerifyResult.checks.dkim.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                        <span className="text-sm">DKIM — {lastVerifyResult.checks.dkim.ok ? "OK" : lastVerifyResult.checks.dkim.error || "Failed"}</span>
+                      </div>
+                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dmarc.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
+                        {lastVerifyResult.checks.dmarc.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                        <span className="text-sm">DMARC — {lastVerifyResult.checks.dmarc.ok ? "OK" : lastVerifyResult.checks.dmarc.error || "Failed"}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <p className="text-sm text-muted-foreground mt-2">
                   After you’ve added the records at your DNS provider, click Verify DNS. We check MX, SPF, DKIM, and DMARC. If all pass, the inbox will appear.
                 </p>

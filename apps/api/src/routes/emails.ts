@@ -105,7 +105,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const domain = org.email_domain?.domain ?? "";
     const [expectedMxHost, expectedSpfRecord] = await Promise.all([
       getExpectedMxHost(),
-      getExpectedSpfRecord(),
+      getExpectedSpfRecord(domain || undefined),
     ]);
     const dkimInfo = domain ? getDkimRecordName(domain) : null;
     const expectedDmarcRecord = domain ? getExpectedDmarcRecord(domain) : "";
@@ -128,7 +128,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
             type: "TXT" as const,
             name: dkimInfo?.name ?? "",
             selector: dkimInfo?.selector ?? "default",
-            valueNote: "TXT value (public key) is provided by your mail server. Contact your administrator or check the mail server documentation.",
+            valueNote: "Your mail provider (e.g. Cloudflare Email Routing, Mailgun, or your server) gives you a DKIM public key. In your DNS, add the TXT record they provide. The record name is usually <selector>._domainkey.<domain> — we use selector \"default\" unless your provider uses another. The TXT value is the public key from the provider; we cannot generate it here.",
           },
           dmarc: {
             type: "TXT" as const,

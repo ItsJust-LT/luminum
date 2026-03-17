@@ -37,11 +37,21 @@ export async function getExpectedMxHost(): Promise<string> {
   return `mail.${domain}`;
 }
 
-/** Suggested SPF TXT value for the mail server (for setup instructions). */
-export async function getExpectedSpfRecord(): Promise<string> {
-  const host = MAIL_SEND_HOST_RAW || (await getExpectedMxHost()) || MAIL_MX_HOST;
+/** Suggested SPF TXT value. If domain is provided, use that domain's actual MX host so the suggestion matches what you've set. */
+export async function getExpectedSpfRecord(domain?: string): Promise<string> {
   const ip = MAIL_SEND_IP;
   if (ip) return `v=spf1 ip4:${ip} -all`;
+  let host = MAIL_SEND_HOST_RAW || MAIL_MX_HOST;
+  if (domain) {
+    try {
+      const records = await dns.resolveMx(domain);
+      const first = (records || []).slice().sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0]?.exchange;
+      if (first) host = first.toLowerCase().replace(/\.$/, "");
+    } catch {
+      // ignore
+    }
+  }
+  if (!host) host = (await getExpectedMxHost()) || "";
   if (host) return `v=spf1 include:${host} -all`;
   return "v=spf1 -all";
 }
@@ -103,7 +113,14 @@ export interface SpfCheckResult {
 export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
   const expectedHost = MAIL_SEND_HOST_RAW || (await getExpectedMxHost()) || MAIL_MX_HOST;
   const expectedIp = MAIL_SEND_IP;
-  if (!expectedHost && !expectedIp) {
+  let actualMxHosts: string[] = [];
+  try {
+    const mxRecords = await dns.resolveMx(domain);
+    actualMxHosts = (mxRecords || []).map((r) => (r.exchange || "").toLowerCase().replace(/\.$/, "")).filter(Boolean);
+  } catch {
+    // ignore
+  }
+  if (!expectedHost && !expectedIp && actualMxHosts.length === 0) {
     return { ok: true, record: undefined };
   }
   try {
@@ -115,9 +132,13 @@ export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
     }
     const record = String(spf).trim();
     const lower = record.toLowerCase();
-    const hasInclude = expectedHost && (lower.includes(`include:${expectedHost}`) || lower.includes(`a:${expectedHost}`));
+    const authorizes = (host: string) =>
+      host && (lower.includes(`include:${host}`) || lower.includes(`a:${host}`));
+    const hasExpected = expectedHost && authorizes(expectedHost);
+    const hasActualMx = actualMxHosts.some((h) => authorizes(h));
     const hasIp = expectedIp && lower.includes(expectedIp);
-    const ok = hasInclude || hasIp || lower.includes("include:_spf.");
+    const hasCloudflare = lower.includes("include:_spf.");
+    const ok = hasExpected || hasActualMx || hasIp || hasCloudflare;
     return { ok, record, error: ok ? undefined : "SPF does not authorize this server" };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
