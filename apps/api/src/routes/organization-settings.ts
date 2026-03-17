@@ -3,7 +3,7 @@ import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { getMemberOrAdmin } from "../lib/access.js";
 import * as s3 from "../lib/storage/s3.js";
-import { logoKey } from "../lib/storage/keys.js";
+import { orgImagesKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 
 const router = Router();
@@ -31,6 +31,55 @@ router.get("/analytics-enabled", async (req: Request, res: Response) => {
     const org = await prisma.organization.findUnique({ where: { id: req.query.organizationId as string }, select: { analytics_enabled: true } });
     res.json({ enabled: org?.analytics_enabled || false });
   } catch { res.json({ enabled: false }); }
+});
+
+// GET /api/organization-settings/storage?organizationId=... — storage usage and breakdown by category
+router.get("/storage", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+
+    const member = await getMemberOrAdmin(organizationId, req.user);
+    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { used_storage_bytes: true, max_storage_bytes: true },
+    });
+    if (!organization) return res.status(404).json({ success: false, error: "Organization not found" });
+
+    const usedStorage = Number(organization.used_storage_bytes ?? 0);
+    const maxStorage = Number(organization.max_storage_bytes ?? 10737418240);
+    const storageUsagePercent = maxStorage > 0 ? Math.min(100, (usedStorage / maxStorage) * 100) : 0;
+
+    let breakdown: Awaited<ReturnType<typeof s3.getOrganizationStorageBreakdown>> | null = null;
+    if (s3.isStorageConfigured()) {
+      try {
+        breakdown = await s3.getOrganizationStorageBreakdown(organizationId);
+      } catch {}
+    }
+
+    res.json({
+      success: true,
+      data: {
+        used_storage_bytes: usedStorage,
+        max_storage_bytes: maxStorage,
+        storage_usage_percent: storageUsagePercent,
+        storage_warning: storageUsagePercent > 80,
+        breakdown: breakdown
+          ? {
+              total: breakdown.total,
+              byCategory: {
+                images: breakdown.byCategory.images,
+                attachments: breakdown.byCategory.attachments,
+              },
+            }
+          : null,
+      },
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
 });
 
 // GET /api/organization-settings?organizationId=...
@@ -130,7 +179,7 @@ router.post("/upload-logo", async (req: Request, res: Response) => {
     }
 
     const ext = (fileName || "logo.png").split(".").pop() || "png";
-    const key = logoKey(organization.name, ext);
+    const key = orgImagesKey(organizationId, ext);
     const { url, bytes } = await s3.upload(buffer, key, { contentType: contentType || "image/png" });
 
     try {
@@ -163,7 +212,9 @@ router.delete("/logo", async (req: Request, res: Response) => {
           const i = imageRecord.url.indexOf(prefix);
           if (i !== -1) {
             const key = decodeURIComponent(imageRecord.url.slice(i + prefix.length));
-            if (key.startsWith("logos/")) {
+            const isOrgKey = key.startsWith(`org/${organizationId}/`);
+            const isLegacyLogo = key.startsWith("logos/");
+            if (isOrgKey || isLegacyLogo) {
               await s3.remove(key);
               if (imageRecord.size_bytes) {
                 await updateOrganizationStorage(organizationId, -Number(imageRecord.size_bytes));

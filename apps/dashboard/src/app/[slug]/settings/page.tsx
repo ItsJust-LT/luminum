@@ -71,6 +71,9 @@ export default function OrganizationSettingsPage() {
   const [isLoadingSettings, setIsLoadingSettings] = useState(false)
   const [formData, setFormData] = useState<Partial<OrganizationSettings>>({})
   const [canEdit, setCanEdit] = useState(false)
+  const [storageBreakdown, setStorageBreakdown] = useState<{
+    byCategory: { images: number; attachments: { support: number; emails: number; forms: number } };
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -96,6 +99,11 @@ export default function OrganizationSettingsPage() {
           billing_address: result.data.billing_address,
           metadata: result.data.metadata
         })
+        if (result.data.max_storage_bytes && organization?.id) {
+          api.organizationSettings.getStorage(organization.id)
+            .then((res: any) => { if (res?.success && res?.data?.breakdown) setStorageBreakdown(res.data.breakdown) })
+            .catch(() => {})
+        }
       } else {
         toast.error(result.error || "Failed to load settings")
       }
@@ -598,6 +606,23 @@ export default function OrganizationSettingsPage() {
                       <span>
                         Storage usage is above 80%. Consider cleaning up old files or upgrading your plan.
                       </span>
+                    </div>
+                  )}
+                  {storageBreakdown && (
+                    <div className="pt-3 border-t border-border/50">
+                      <div className="text-xs font-medium text-muted-foreground mb-2">Usage by category</div>
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                        <span className="flex items-center gap-1.5">
+                          <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                          Images: <strong className="font-mono">{(storageBreakdown.byCategory.images / (1024 * 1024)).toFixed(2)} MB</strong>
+                        </span>
+                        <span>Support attachments: <strong className="font-mono">{(storageBreakdown.byCategory.attachments.support / (1024 * 1024)).toFixed(2)} MB</strong></span>
+                        <span className="flex items-center gap-1.5">
+                          <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                          Email attachments: <strong className="font-mono">{(storageBreakdown.byCategory.attachments.emails / (1024 * 1024)).toFixed(2)} MB</strong>
+                        </span>
+                        <span>Form uploads: <strong className="font-mono">{(storageBreakdown.byCategory.attachments.forms / (1024 * 1024)).toFixed(2)} MB</strong></span>
+                      </div>
                     </div>
                   )}
                 </div>

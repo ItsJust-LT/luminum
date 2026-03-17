@@ -3,7 +3,8 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { upload } from "../lib/storage/s3.js";
-import { emailAttachmentKey } from "../lib/storage/keys.js";
+import { emailAttachmentKey, orgAttachmentsEmailsKey } from "../lib/storage/keys.js";
+import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import crypto from "crypto";
 
 const router = Router();
@@ -132,9 +133,16 @@ router.post("/", async (req: Request, res: Response) => {
           try {
             const buffer = Buffer.from(a.contentBase64, "base64");
             const filename = a.filename || `attachment-${i + 1}`;
-            const storageKey = emailAttachmentKey(email.id, String(i), filename);
+            const storageKey = organizationId
+              ? orgAttachmentsEmailsKey(organizationId, email.id, String(i), filename)
+              : emailAttachmentKey(email.id, String(i), filename);
             const result = await upload(buffer, storageKey, { contentType: a.contentType || "application/octet-stream" });
             key = result.key;
+            if (organizationId) {
+              try {
+                await updateOrganizationStorage(organizationId, result.bytes);
+              } catch {}
+            }
           } catch (err) {
             logger.error("Webhook attachment upload failed", { emailId: email.id, index: i, requestId });
           }

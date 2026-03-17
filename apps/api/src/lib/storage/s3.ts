@@ -198,4 +198,75 @@ export async function getBucketSize(): Promise<number> {
   return total;
 }
 
+export interface ListObjectItem {
+  key: string;
+  size: number;
+}
+
+/**
+ * List all objects under a prefix; paginates. Use for org storage breakdown.
+ */
+export async function listObjectsByPrefix(prefix: string): Promise<ListObjectItem[]> {
+  const c = getClient();
+  const result: ListObjectItem[] = [];
+  let continuationToken: string | undefined;
+  do {
+    const out = await c.send(
+      new ListObjectsV2Command({
+        Bucket: S3_BUCKET,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+    for (const obj of out.Contents ?? []) {
+      if (obj.Key != null) {
+        result.push({ key: obj.Key, size: obj.Size ?? 0 });
+      }
+    }
+    continuationToken = out.IsTruncated ? out.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return result;
+}
+
+export interface OrganizationStorageBreakdown {
+  total: number;
+  byCategory: {
+    images: number;
+    attachments: {
+      support: number;
+      emails: number;
+      forms: number;
+    };
+  };
+}
+
+/**
+ * Get storage usage for an organization by listing objects under org/{organizationId}/.
+ * Categorizes by path: images/logos, attachments/support, attachments/emails, attachments/forms.
+ */
+export async function getOrganizationStorageBreakdown(
+  organizationId: string
+): Promise<OrganizationStorageBreakdown> {
+  const prefix = `org/${organizationId}`;
+  const objects = await listObjectsByPrefix(prefix);
+  const byCategory: OrganizationStorageBreakdown["byCategory"] = {
+    images: 0,
+    attachments: { support: 0, emails: 0, forms: 0 },
+  };
+  let total = 0;
+  for (const { key, size } of objects) {
+    total += size;
+    const rest = key.slice(prefix.length).replace(/^\//, "");
+    const segments = rest.split("/");
+    if (segments[0] === "images") {
+      byCategory.images += size;
+    } else if (segments[0] === "attachments" && segments[1]) {
+      if (segments[1] === "support") byCategory.attachments.support += size;
+      else if (segments[1] === "emails") byCategory.attachments.emails += size;
+      else if (segments[1] === "forms") byCategory.attachments.forms += size;
+    }
+  }
+  return { total, byCategory };
+}
+
 export { S3_BUCKET };

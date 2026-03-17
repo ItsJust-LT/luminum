@@ -3,7 +3,7 @@ import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import * as s3 from "../lib/storage/s3.js";
-import { logoKey, supportKey } from "../lib/storage/keys.js";
+import { orgImagesKey, orgAttachmentsSupportKey, supportKey } from "../lib/storage/keys.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -11,7 +11,7 @@ router.use(requireAuth);
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
-/** POST /api/uploads/logo — organization logo (S3) */
+/** POST /api/uploads/logo — organization logo (S3). Uses org-scoped key when organizationId is provided. */
 router.post("/logo", async (req: Request, res: Response) => {
   try {
     const { logoBase64, fileName, contentType, organizationName, organizationId } = req.body;
@@ -24,7 +24,9 @@ router.post("/logo", async (req: Request, res: Response) => {
     }
 
     const ext = (fileName || "logo.png").split(".").pop() || "png";
-    const key = logoKey(organizationName ?? "logo", ext);
+    const key = organizationId
+      ? orgImagesKey(organizationId, ext)
+      : `logos/${(organizationName || "logo").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}-${Date.now()}.${ext}`;
     const { url, bytes } = await s3.upload(buffer, key, { contentType: contentType || "image/png" });
 
     if (organizationName && organizationId) {
@@ -42,10 +44,10 @@ router.post("/logo", async (req: Request, res: Response) => {
   }
 });
 
-/** POST /api/uploads/file — support/generic file (S3). */
+/** POST /api/uploads/file — support/generic file (S3). Uses org-scoped key when ticket has organizationId. */
 router.post("/file", async (req: Request, res: Response) => {
   try {
-    const { fileBase64, contentType, ticketId, messageId, originalFilename, filename } = req.body;
+    const { fileBase64, contentType, ticketId, messageId, originalFilename, filename, organizationId: bodyOrgId } = req.body;
     if (!fileBase64) return res.status(400).json({ success: false, error: "No file" });
     const buffer = Buffer.from(fileBase64, "base64");
     if (buffer.length > MAX_FILE_BYTES) return res.status(400).json({ success: false, error: "File too large" });
@@ -54,9 +56,26 @@ router.post("/file", async (req: Request, res: Response) => {
       return res.status(503).json({ success: false, error: "Storage not configured" });
     }
 
+    let organizationId: string | null = bodyOrgId || null;
+    if (!organizationId && ticketId) {
+      const ticket = await prisma.support_tickets.findUnique({
+        where: { id: ticketId },
+        select: { organization_id: true },
+      });
+      organizationId = ticket?.organization_id ?? null;
+    }
+
     const name = originalFilename || filename || "file";
-    const key = supportKey(ticketId ?? "upload", messageId ?? null, name);
+    const key = organizationId
+      ? orgAttachmentsSupportKey(organizationId, ticketId ?? "upload", messageId ?? null, name)
+      : supportKey(ticketId ?? "upload", messageId ?? null, name);
     const { url, key: storageKey, bytes } = await s3.upload(buffer, key, { contentType: contentType || "application/octet-stream" });
+
+    if (organizationId) {
+      try {
+        await updateOrganizationStorage(organizationId, bytes);
+      } catch {}
+    }
 
     res.json({
       success: true,

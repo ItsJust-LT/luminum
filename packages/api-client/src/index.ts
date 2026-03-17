@@ -139,6 +139,8 @@ function createApiClient(baseUrl: string = "") {
       ),
     deleteLogo: (organizationId: string) =>
       del(`/api/organization-settings/logo?organizationId=${organizationId}`),
+    getStorage: (organizationId: string) =>
+      get("/api/organization-settings/storage", { organizationId }),
   };
 
   // ─── Organization Actions ─────────────────────────────────
@@ -211,6 +213,11 @@ function createApiClient(baseUrl: string = "") {
     getActivityUsers: (params?: { period?: string; search?: string; limit?: number; offset?: number }) =>
       get("/api/admin/activity/users", params),
     getServerMetrics: () => get("/api/admin/monitoring/metrics"),
+    getWhatsappAnalytics: (params?: { days?: number }) =>
+      get("/api/admin/whatsapp/analytics", params),
+    getWhatsappLiveClients: () => get("/api/admin/whatsapp/clients"),
+    shutdownWhatsappClient: (organizationId: string) =>
+      post(`/api/admin/whatsapp/clients/${encodeURIComponent(organizationId)}/shutdown`),
     getSystemLogs: (params?: { page?: number; limit?: number; service?: string; level?: string; since?: string }) =>
       get("/api/admin/logs", params),
     getAdminEmails: (params?: Record<string, any>) =>

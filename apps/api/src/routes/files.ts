@@ -9,6 +9,7 @@ import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
+import { getOrganizationIdFromKey } from "../lib/storage/keys.js";
 
 const router = Router();
 
@@ -28,6 +29,15 @@ async function getOrganizationIdForKey(
   key: string,
   userId: string
 ): Promise<string | null> {
+  const orgFromKey = getOrganizationIdFromKey(key);
+  if (orgFromKey) {
+    const member = await prisma.member.findFirst({
+      where: { organizationId: orgFromKey, userId },
+      select: { id: true },
+    });
+    return member ? orgFromKey : null;
+  }
+
   if (key.startsWith("logos/")) {
     const base = config.apiUrl.replace(/\/$/, "");
     const expectedUrl = `${base}/api/files/${encodeURIComponent(key)}`;
