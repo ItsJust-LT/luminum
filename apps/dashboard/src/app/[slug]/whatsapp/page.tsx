@@ -115,11 +115,26 @@ function formatChatDisplayName(chat: { name: string | null; contact_id: string; 
 
 /** Format contact_id (e.g. 1234567890@s.whatsapp.net) as +1234567890 for display. */
 function formatContactIdAsNumber(contactId: string): string {
+  if (!contactId) return "Unknown"
+  if (contactId.toLowerCase().endsWith("@lid")) return "Member"
   const at = contactId.indexOf("@")
   const local = at > 0 ? contactId.slice(0, at) : contactId
   const digits = local.replace(/\D/g, "")
   if (digits.length >= 6) return `+${digits}`
   return local || "Unknown"
+}
+
+/** Label for a message date (Today, Yesterday, or formatted). */
+function messageDateLabel(dateStr: string): string {
+  const d = new Date(dateStr)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const dDate = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  if (dDate.getTime() === today.getTime()) return "Today"
+  if (dDate.getTime() === yesterday.getTime()) return "Yesterday"
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 }
 
 function ContactAvatar({ displayName, isGroup }: { displayName: string; isGroup: boolean }) {
@@ -653,8 +668,9 @@ export default function WhatsAppPage() {
         </div>
 
         {/* Chat list */}
-        <ScrollArea className="flex-1">
-          {chats.length === 0 ? (
+        <div className="flex-1 min-h-0 flex flex-col">
+          <ScrollArea className="flex-1">
+          {chats.filter((c) => !c.contact_id?.toLowerCase().endsWith("@lid")).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
               <MessageCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />
               <p className="text-sm text-muted-foreground">No chats yet</p>
@@ -662,7 +678,7 @@ export default function WhatsAppPage() {
             </div>
           ) : (
             <div className="divide-y divide-border/50">
-              {chats.map((chat) => {
+              {chats.filter((c) => !c.contact_id?.toLowerCase().endsWith("@lid")).map((chat) => {
                 const lastMsg = chat.messages?.[0]
                 const isActive = selectedChat?.id === chat.id
                 return (
@@ -706,7 +722,8 @@ export default function WhatsAppPage() {
               })}
             </div>
           )}
-        </ScrollArea>
+          </ScrollArea>
+        </div>
       </div>
 
       {/* ── Chat Detail (right panel) ─────────────────────────────────── */}
@@ -737,7 +754,8 @@ export default function WhatsAppPage() {
           </div>
 
           {/* Messages area */}
-          <ScrollArea className="flex-1 px-4 py-3">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <ScrollArea className="flex-1 px-4 py-3">
             {messagesLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -748,53 +766,71 @@ export default function WhatsAppPage() {
                 <p className="text-sm text-muted-foreground">No messages yet</p>
               </div>
             ) : (
-              <div className="space-y-1.5 max-w-3xl mx-auto">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={cn(
-                      "flex",
-                      msg.from_me ? "justify-end" : "justify-start"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "max-w-[75%] rounded-2xl px-3.5 py-2 shadow-sm",
-                        msg.from_me
-                          ? "bg-green-500 text-white rounded-br-sm"
-                          : "bg-muted rounded-bl-sm"
-                      )}
-                    >
-                      {msg.from_number && !msg.from_me && (
-                        <p className="text-xs font-semibold text-green-600 mb-0.5">
-                          {msg.from_number}
-                        </p>
-                      )}
-                      {msg.type !== "text" && msg.type !== "chat" && !msg.body && (
-                        <p className="text-xs italic opacity-80">[{msg.type}]</p>
-                      )}
-                      {msg.body && (
-                        <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
-                      )}
-                      <div className={cn(
-                        "flex items-center gap-1 mt-0.5",
-                        msg.from_me ? "justify-end" : "justify-start"
-                      )}>
-                        <span className={cn(
-                          "text-[10px]",
-                          msg.from_me ? "text-white/70" : "text-muted-foreground"
-                        )}>
-                          {messageTime(msg.timestamp)}
-                        </span>
-                        {msg.from_me && <AckIcon ack={msg.ack} />}
+              <div className="space-y-1.5 max-w-3xl mx-auto pb-4">
+                {(() => {
+                  let lastDate = ""
+                  return messages.map((msg) => {
+                    const d = new Date(msg.timestamp)
+                    const dateKey = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate()
+                    const showDate = dateKey !== lastDate
+                    if (showDate) lastDate = dateKey
+                    return (
+                      <div key={msg.id}>
+                        {showDate && (
+                          <div className="flex justify-center my-3">
+                            <span className="text-[11px] text-muted-foreground bg-muted/80 px-2 py-0.5 rounded-full">
+                              {messageDateLabel(msg.timestamp)}
+                            </span>
+                          </div>
+                        )}
+                        <div
+                          className={cn(
+                            "flex",
+                            msg.from_me ? "justify-end" : "justify-start"
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "max-w-[75%] rounded-2xl px-3.5 py-2 shadow-sm",
+                              msg.from_me
+                                ? "bg-green-500 text-white rounded-br-sm"
+                                : "bg-muted rounded-bl-sm"
+                            )}
+                          >
+                            {msg.from_number && !msg.from_me && (
+                              <p className="text-xs font-semibold text-green-600 mb-0.5">
+                                {formatContactIdAsNumber(msg.from_number)}
+                              </p>
+                            )}
+                            {msg.type !== "text" && msg.type !== "chat" && !msg.body && (
+                              <p className="text-xs italic opacity-80">[{msg.type}]</p>
+                            )}
+                            {msg.body && (
+                              <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
+                            )}
+                            <div className={cn(
+                              "flex items-center gap-1 mt-0.5",
+                              msg.from_me ? "justify-end" : "justify-start"
+                            )}>
+                              <span className={cn(
+                                "text-[10px]",
+                                msg.from_me ? "text-white/70" : "text-muted-foreground"
+                              )}>
+                                {messageTime(msg.timestamp)}
+                              </span>
+                              {msg.from_me && <AckIcon ack={msg.ack} />}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    )
+                  })
+                })()}
                 <div ref={messagesEndRef} />
               </div>
             )}
-          </ScrollArea>
+            </ScrollArea>
+          </div>
 
           {/* Message input */}
           <div className="p-3 border-t bg-background">

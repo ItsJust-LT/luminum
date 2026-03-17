@@ -218,6 +218,13 @@ router.get("/chats", async (req: Request, res: Response) => {
     if (!account) return res.json({ success: true, chats: [], total: 0 });
 
     const where: Record<string, unknown> = { account_id: account.id };
+    // Exclude WhatsApp Status/lid chats (stories) so they never appear in the conversation list.
+    where.NOT = {
+      OR: [
+        { contact_id: { endsWith: "@lid" } },
+        { contact_id: { contains: "status" } },
+      ],
+    };
     if (search) {
       where.OR = [
         { name: { contains: search, mode: "insensitive" } },

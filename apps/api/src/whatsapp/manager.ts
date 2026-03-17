@@ -445,6 +445,11 @@ function attachEventHandlers(managed: ManagedClient) {
     });
 
     logger.info("WhatsApp client ready", { orgId, accountId, phoneNumber });
+
+    // Sync all real chats into DB so the list shows all conversations (not only those that had a message since connect).
+    syncAllChats(managed).catch((err) =>
+      logger.logError(err, "WhatsApp sync all chats failed", { orgId, accountId })
+    );
   });
 
   client.on("remote_session_saved", async () => {
@@ -547,13 +552,56 @@ function attachEventHandlers(managed: ManagedClient) {
   });
 }
 
+// ── Chat sync ─────────────────────────────────────────────────────────────────
+
+async function syncAllChats(managed: ManagedClient): Promise<void> {
+  const { client, accountId } = managed;
+  let chats: WAWebJS.Chat[];
+  try {
+    chats = await client.getChats();
+  } catch (err) {
+    throw err;
+  }
+  for (const waChat of chats) {
+    const idSer = waChat.id?._serialized;
+    if (!idSer || isStatusOrLidChat(idSer) || (waChat as any).name === "Status") continue;
+    const payload = mapWaChatToDb(waChat, accountId);
+    const lastMsgTs = (waChat as any).timestamp;
+    const last_message_at = lastMsgTs ? new Date(lastMsgTs * 1000) : new Date();
+    await prisma.whatsapp_chat.upsert({
+      where: {
+        account_id_contact_id: { account_id: accountId, contact_id: payload.contact_id },
+      },
+      create: {
+        ...payload,
+        last_message_at,
+      },
+      update: {
+        name: payload.name ?? undefined,
+        last_message_at,
+      },
+    });
+  }
+  logger.info("WhatsApp synced all chats", { orgId: managed.orgId, accountId, count: chats.length });
+}
+
 // ── Message handling ──────────────────────────────────────────────────────────
+
+/** Skip status (WhatsApp Status/stories) and lid-only chats so they are not stored as conversations. */
+function isStatusOrLidChat(contactId: string): boolean {
+  const lower = contactId.toLowerCase();
+  return lower.endsWith("@lid") || lower.includes("status");
+}
 
 async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message) {
   const { orgId, accountId } = managed;
 
   const chatContactId = msg.from;
+  if (isStatusOrLidChat(chatContactId)) return;
+
   const waChat = await msg.getChat();
+  const chatIdSerialized = waChat.id?._serialized ?? chatContactId;
+  if (isStatusOrLidChat(chatIdSerialized) || (waChat as any).name === "Status") return;
 
   const chat = await prisma.whatsapp_chat.upsert({
     where: {
@@ -597,7 +645,11 @@ async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS
   const { accountId, orgId } = managed;
 
   const chatContactId = msg.to;
+  if (isStatusOrLidChat(chatContactId)) return;
+
   const waChat = await msg.getChat();
+  const chatIdSerialized = waChat.id?._serialized ?? chatContactId;
+  if (isStatusOrLidChat(chatIdSerialized) || (waChat as any).name === "Status") return;
 
   const chat = await prisma.whatsapp_chat.upsert({
     where: {
