@@ -75,6 +75,7 @@ export interface LiveClientEntry {
   connectedAt: string | null;
   lastSeenAt: string | null;
   runningSinceMs: number | null;
+  alwaysOn: boolean;
 }
 
 interface ManagedClient {
@@ -117,7 +118,11 @@ export async function initWhatsAppManager(deps: {
       status: "CONNECTED",
       organization: { whatsapp_enabled: true },
     },
-    orderBy: { last_seen_at: "desc" },
+    orderBy: [
+      // Cast to avoid type drift if Prisma client isn't regenerated yet.
+      { organization: { whatsapp_always_on: "desc" } } as any,
+      { last_seen_at: "desc" },
+    ],
     take: MAX_ORG_CLIENTS,
     select: { id: true, organization_id: true },
   });
@@ -901,12 +906,12 @@ export async function getLiveClientsForAdmin(): Promise<LiveClientEntry[]> {
       status: true,
       connected_at: true,
       last_seen_at: true,
-      organization: { select: { name: true, slug: true } },
+      organization: { select: { name: true, slug: true, whatsapp_always_on: true } } as any,
     },
   });
 
   const now = Date.now();
-  return accounts.map((a) => ({
+  return (accounts as any[]).map((a) => ({
     organizationId: a.organization_id,
     accountId: a.id,
     organizationName: a.organization.name,
@@ -917,6 +922,7 @@ export async function getLiveClientsForAdmin(): Promise<LiveClientEntry[]> {
     lastSeenAt: a.last_seen_at?.toISOString() ?? null,
     runningSinceMs:
       a.connected_at != null ? Math.max(0, now - a.connected_at.getTime()) : null,
+    alwaysOn: !!a.organization.whatsapp_always_on,
   }));
 }
 

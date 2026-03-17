@@ -31,6 +31,7 @@ import {
   PowerOff,
   Wifi,
   Building2,
+  Infinity as InfinityIcon,
 } from "lucide-react"
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
@@ -48,6 +49,7 @@ interface LiveClientEntry {
   connectedAt: string | null
   lastSeenAt: string | null
   runningSinceMs: number | null
+  alwaysOn: boolean
 }
 
 interface AnalyticsData {
@@ -100,6 +102,7 @@ export default function AdminWhatsAppPage() {
   const [clients, setClients] = useState<LiveClientEntry[]>([])
   const [days, setDays] = useState("30")
   const [shuttingDown, setShuttingDown] = useState<string | null>(null)
+  const [togglingAlwaysOn, setTogglingAlwaysOn] = useState<string | null>(null)
   const { connected, onMessage } = useRealtime()
 
   const fetchAnalytics = useCallback(async () => {
@@ -169,6 +172,19 @@ export default function AdminWhatsAppPage() {
       toast.error(err instanceof Error ? err.message : "Shutdown failed")
     } finally {
       setShuttingDown(null)
+    }
+  }
+
+  const handleAlwaysOn = async (organizationId: string, enabled: boolean) => {
+    setTogglingAlwaysOn(organizationId)
+    try {
+      await api.admin.setWhatsappAlwaysOn(organizationId, enabled)
+      toast.success(enabled ? "Always-on enabled" : "Always-on disabled")
+      await fetchClients()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Update failed")
+    } finally {
+      setTogglingAlwaysOn(null)
     }
   }
 
@@ -432,6 +448,7 @@ export default function AdminWhatsAppPage() {
                   <TableHead>Organization</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Always on</TableHead>
                   <TableHead>Running since</TableHead>
                   <TableHead>Last seen</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
@@ -460,6 +477,23 @@ export default function AdminWhatsAppPage() {
                       <Badge variant={c.status === "CONNECTED" ? "default" : "secondary"}>
                         {c.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant={c.alwaysOn ? "default" : "outline"}
+                        size="sm"
+                        className="gap-1"
+                        disabled={togglingAlwaysOn === c.organizationId || c.status !== "CONNECTED"}
+                        onClick={() => handleAlwaysOn(c.organizationId, !c.alwaysOn)}
+                        title={c.status !== "CONNECTED" ? "Only available once fully connected" : undefined}
+                      >
+                        {togglingAlwaysOn === c.organizationId ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <InfinityIcon className="h-4 w-4" />
+                        )}
+                        {c.alwaysOn ? "On" : "Off"}
+                      </Button>
                     </TableCell>
                     <TableCell>
                       <span className="flex items-center gap-1 text-muted-foreground">

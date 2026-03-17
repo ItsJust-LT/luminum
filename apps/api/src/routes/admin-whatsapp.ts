@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { getPathParam } from "../lib/req-params.js";
-import { getLiveClientsForAdmin, disconnectClient } from "../whatsapp/manager.js";
+import { getLiveClientsForAdmin, disconnectClient, startOrRestartClient } from "../whatsapp/manager.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -140,6 +140,34 @@ router.post("/clients/:organizationId/shutdown", adminOnly, async (req: Request,
     res.json({ success: true, message: "Client shutdown" });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error?.message ?? "Failed to shutdown client" });
+  }
+});
+
+/** POST /api/admin/whatsapp/clients/:organizationId/always-on — keep client running until admin turns it off. */
+router.post("/clients/:organizationId/always-on", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const organizationId = getPathParam(req, "organizationId");
+    if (!organizationId) {
+      return res.status(400).json({ success: false, error: "organizationId required" });
+    }
+    const enabled = !!(req.body as { enabled?: unknown })?.enabled;
+
+    await prisma.organization.update({
+      where: { id: organizationId },
+      // Prisma client types may lag behind migrations in some builds; keep runtime correct.
+      data: { whatsapp_always_on: enabled } as any,
+    });
+
+    // Best-effort: if turning on, ensure client is running; if turning off, stop it.
+    if (enabled) {
+      await startOrRestartClient(organizationId);
+    } else {
+      await disconnectClient(organizationId);
+    }
+
+    res.json({ success: true, organizationId, alwaysOn: enabled });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message ?? "Failed to update always-on setting" });
   }
 });
 

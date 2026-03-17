@@ -236,6 +236,7 @@ model organization {
   email_dns_last_error                                              String?                   @db.Text
   email_from_address                                                String?                   @db.VarChar(255)
   whatsapp_enabled                                                  Boolean                   @default(false)
+  whatsapp_always_on                                                Boolean                   @default(false)
   analytics_enabled                                                 Boolean                   @default(false)
   emails                                                            email[]
   images                                                            images[]

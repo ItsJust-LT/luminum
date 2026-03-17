@@ -218,6 +218,8 @@ function createApiClient(baseUrl: string = "") {
     getWhatsappLiveClients: () => get("/api/admin/whatsapp/clients"),
     shutdownWhatsappClient: (organizationId: string) =>
       post(`/api/admin/whatsapp/clients/${encodeURIComponent(organizationId)}/shutdown`),
+    setWhatsappAlwaysOn: (organizationId: string, enabled: boolean) =>
+      post(`/api/admin/whatsapp/clients/${encodeURIComponent(organizationId)}/always-on`, { enabled }),
     getSystemLogs: (params?: { page?: number; limit?: number; service?: string; level?: string; since?: string }) =>
       get("/api/admin/logs", params),
     getAdminEmails: (params?: Record<string, any>) =>
