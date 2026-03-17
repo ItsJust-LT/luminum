@@ -39,17 +39,32 @@ const LEASE_TTL_MS = 90_000;
 
 function formatUnknownError(err: unknown): { message: string; details?: string } {
   if (err instanceof Error) {
+    const details = [err.stack, err.cause != null ? String(err.cause) : null].filter(Boolean).join("\nCaused by: ");
     return {
       message: err.message || "Unknown error",
-      details: err.stack || undefined,
+      details: details || undefined,
     };
   }
   if (typeof err === "string") return { message: err };
   if (err && typeof err === "object") {
+    const obj = err as Record<string, unknown>;
+    const msg = typeof obj.message === "string" ? obj.message : undefined;
+    const stack = typeof obj.stack === "string" ? obj.stack : undefined;
+    if (msg || stack) {
+      return {
+        message: msg || "Unknown error",
+        details: stack || undefined,
+      };
+    }
     try {
-      return { message: JSON.stringify(err) };
+      const json = JSON.stringify(err);
+      if (json === "{}" || json === "[]" || json.length < 10) {
+        const inspected = util.inspect(err, { depth: 4, maxArrayLength: 20, showHidden: true });
+        return { message: inspected || "Unknown error object" };
+      }
+      return { message: json };
     } catch {
-      return { message: util.inspect(err, { depth: 5, maxArrayLength: 50 }) };
+      return { message: util.inspect(err, { depth: 4, maxArrayLength: 20, showHidden: true }) };
     }
   }
   return { message: String(err) };
@@ -402,18 +417,24 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     await client.initialize();
   } catch (err) {
     const formatted = formatUnknownError(err);
+    const displayMessage = formatted.message.trim() && formatted.message !== "{}"
+      ? formatted.message
+      : "Initialization failed. Try reconnecting or check server logs.";
     logger.logError(err, "WhatsApp client initialization failed", {
       orgId: organizationId,
       accountId: account.id,
-      error_message: formatted.message,
+      error_message: displayMessage,
       error_details: formatted.details,
     });
     clients.delete(organizationId);
+    const lastErrorStored = formatted.details
+      ? `${displayMessage}\n${formatted.details}`
+      : displayMessage;
     await prisma.whatsapp_account.update({
       where: { id: account.id },
       data: {
         status: "ERROR",
-        last_error: formatted.details ? `${formatted.message}\n${formatted.details}` : formatted.message,
+        last_error: lastErrorStored,
         owner_instance_id: null,
         lease_expires_at: null,
       },

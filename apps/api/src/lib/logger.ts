@@ -61,7 +61,10 @@ export const logger = {
    * Use in catch blocks so errors can be found and investigated in System Logs.
    */
   logError(err: unknown, contextMessage: string, extra?: Record<string, unknown>, requestId?: string) {
-    const message = err instanceof Error ? err.message : String(err);
+    const fallbackMessage = err instanceof Error ? err.message : String(err);
+    const message = (extra && typeof extra.error_message === "string" && extra.error_message)
+      ? extra.error_message
+      : fallbackMessage;
     const meta = errorMeta(err, { context: contextMessage, ...extra });
     const fullMessage = `${contextMessage}: ${message}`;
     console.error(formatMessage("ERROR", fullMessage, meta));
