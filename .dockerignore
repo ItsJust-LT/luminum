@@ -18,3 +18,23 @@ coverage
 __tests__
 node_modules
 **/node_modules
+
+# CI / editor / build artifacts
+.github
+.cursor
+**/.cursor
+**/.next
+**/dist
+**/.turbo
+**/coverage
+**/*.log
+
+# Local/dev-only
+**/.pnpm-store
+**/.cache
+**/.eslintcache
+**/*.map
+
+# Not needed for building API/Dashboard images
+apps/site
+apps/site/**

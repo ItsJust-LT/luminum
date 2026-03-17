@@ -1,11 +1,12 @@
-# Single-stage API build: install and run in same stage so node_modules is never copied (avoids pnpm symlink issues)
-FROM node:20-alpine
-# WhatsApp (whatsapp-web.js) needs Chromium for QR auth; Puppeteer's bundled Chrome is not in the image
+# Multi-stage API build: smaller runtime image with pruned deps + built outputs.
+FROM node:20-alpine AS base
+# WhatsApp (whatsapp-web.js) needs Chromium for auth; Puppeteer's bundled Chrome is not in the image
 RUN apk add --no-cache chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 WORKDIR /app
 
+FROM base AS builder
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
@@ -17,8 +18,19 @@ ENV DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN pnpm run build --filter=@luminum/database --filter=@luminum/api
 RUN pnpm prune --prod
 
+# Keep only what runtime needs (built outputs + prod deps)
+RUN rm -rf apps/api/src packages/**/src packages/**/test packages/**/tests apps/**/test apps/**/tests || true
+
+FROM base AS runner
 ENV NODE_ENV=production
 EXPOSE 4000
+
+COPY --from=builder /entrypoint.sh /entrypoint.sh
+COPY --from=builder /app/node_modules /app/node_modules
+COPY --from=builder /app/apps/api/dist /app/apps/api/dist
+COPY --from=builder /app/packages/database/dist /app/packages/database/dist
+COPY --from=builder /app/packages/database/package.json /app/packages/database/package.json
+
 WORKDIR /app
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "apps/api/dist/index.js"]

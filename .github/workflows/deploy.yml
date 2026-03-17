@@ -217,6 +217,23 @@ jobs:
               echo "Docker Compose already available."
             fi
 
+            # Optional: configure Docker registry mirror (helps if your server is far from GHCR)
+            MIRROR="${{ vars.PROD_DOCKER_REGISTRY_MIRROR }}"
+            if [ -n "$MIRROR" ]; then
+              echo "Configuring Docker registry mirror: $MIRROR"
+              sudo mkdir -p /etc/docker
+              TMP=$(mktemp)
+              echo "{\"registry-mirrors\":[\"$MIRROR\"]}" | sudo tee "$TMP" >/dev/null
+              if [ ! -f /etc/docker/daemon.json ] || ! sudo diff -q /etc/docker/daemon.json "$TMP" >/dev/null 2>&1; then
+                sudo mv "$TMP" /etc/docker/daemon.json
+                sudo systemctl restart docker
+                echo "Docker restarted to apply mirror."
+              else
+                rm -f "$TMP"
+                echo "Mirror already configured."
+              fi
+            fi
+
             # 3. Caddy
             if ! command -v caddy &>/dev/null; then
               echo "Installing Caddy..."
@@ -254,7 +271,8 @@ jobs:
             cd ${{ vars.DEPLOY_PATH || '~/luminum' }}
             [ "$(whoami)" = "root" ] && DOCKER="docker" || DOCKER="sudo docker"
             echo "${{ secrets.PROD_SERVER_GHCR_TOKEN }}" | $DOCKER login ${{ env.REGISTRY }} -u ${{ github.repository_owner }} --password-stdin
-            $DOCKER compose -f docker-compose.prod.yml pull
+            # Pull only app images (not postgres/redis/minio) and do it in parallel.
+            $DOCKER compose -f docker-compose.prod.yml pull --parallel api dashboard analytics mail
             # Prevent container-name conflicts if old project names / orphaned containers exist
             $DOCKER compose -f docker-compose.prod.yml down --remove-orphans || true
             $DOCKER compose -f docker-compose.prod.yml up -d --force-recreate
