@@ -6,6 +6,7 @@ export interface ServerMetricsSnapshot {
   platform: string;
   node_version: string;
   cpu_usage_percent: number | null;
+  process_cpu_usage_percent: number | null;
   cpu_cores: number;
   memory_used_bytes: number;
   memory_total_bytes: number;
@@ -48,9 +49,22 @@ function computeCpuPercent(prev: { idle: number; total: number }[], next: { idle
   return Math.min(100, Math.max(0, ((totalTotalDelta - totalIdleDelta) / totalTotalDelta) * 100));
 }
 
+/** Process CPU %: sample process.cpuUsage() twice over ~400ms. Works in containers where os.cpus() is often 0. */
+async function sampleProcessCpuPercent(): Promise<number | null> {
+  const cores = os.cpus().length || 1;
+  const first = process.cpuUsage();
+  await new Promise((r) => setTimeout(r, 400));
+  const second = process.cpuUsage();
+  const elapsedUs = 400 * 1000;
+  const userDelta = (second.user - first.user) + (second.system - first.system);
+  if (elapsedUs <= 0) return null;
+  const processPercent = (userDelta / elapsedUs) * 100 * cores;
+  return Math.min(100, Math.max(0, processPercent));
+}
+
 /**
  * Collect current server metrics (CPU, memory, load, uptime, process stats).
- * CPU % is computed by sampling twice with a short delay.
+ * CPU % uses both system (os.cpus) and process (process.cpuUsage) so it works in Docker.
  */
 export async function collectServerMetrics(): Promise<ServerMetricsSnapshot> {
   const totalMem = os.totalmem();
@@ -64,10 +78,15 @@ export async function collectServerMetrics(): Promise<ServerMetricsSnapshot> {
   const platform = `${os.platform()}-${os.arch()}`;
   const nodeVersion = process.version;
 
-  const first = sampleCpu();
-  await new Promise((r) => setTimeout(r, 120));
-  const second = sampleCpu();
-  const cpuPercent = computeCpuPercent(first, second);
+  const [cpuPercent, processCpuPercent] = await Promise.all([
+    (async () => {
+      const first = sampleCpu();
+      await new Promise((r) => setTimeout(r, 300));
+      const second = sampleCpu();
+      return computeCpuPercent(first, second);
+    })(),
+    sampleProcessCpuPercent(),
+  ]);
 
   let diskUsed: number | null = null;
   let diskTotal: number | null = null;
@@ -99,6 +118,7 @@ export async function collectServerMetrics(): Promise<ServerMetricsSnapshot> {
     platform,
     node_version: nodeVersion,
     cpu_usage_percent: cpuPercent,
+    process_cpu_usage_percent: processCpuPercent,
     cpu_cores: os.cpus().length,
     memory_used_bytes: usedMem,
     memory_total_bytes: totalMem,

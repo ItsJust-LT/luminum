@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { collectServerMetrics } from "../lib/server-metrics.js";
+import * as s3 from "../lib/storage/s3.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -14,10 +15,44 @@ function adminOnly(req: Request, res: Response, next: () => void) {
   next();
 }
 
+export interface StorageBreakdown {
+  database_bytes: number | null;
+  s3_bytes: number | null;
+  database_error?: string;
+  s3_error?: string;
+}
+
+async function getStorageBreakdown(
+  diskUsedBytes: number | null,
+  diskTotalBytes: number | null
+): Promise<StorageBreakdown> {
+  let database_bytes: number | null = null;
+  let database_error: string | undefined;
+  let s3_bytes: number | null = null;
+  let s3_error: string | undefined;
+  try {
+    const rows = await prisma.$queryRawUnsafe<[{ pg_database_size: bigint | null }]>(
+      "SELECT pg_database_size(current_database()) AS pg_database_size"
+    );
+    if (rows?.[0]?.pg_database_size != null) database_bytes = Number(rows[0].pg_database_size);
+  } catch (e: unknown) {
+    database_error = e instanceof Error ? e.message : String(e);
+  }
+  if (s3.isStorageConfigured()) {
+    try {
+      s3_bytes = await s3.getBucketSize();
+    } catch (e: unknown) {
+      s3_error = e instanceof Error ? e.message : String(e);
+    }
+  }
+  return { database_bytes, s3_bytes, database_error, s3_error };
+}
+
 /** GET /api/admin/monitoring/metrics — current snapshot + history (last 24h). Records current to DB. */
 router.get("/metrics", adminOnly, async (_req: Request, res: Response) => {
   try {
     const current = await collectServerMetrics();
+    const storageBreakdown = await getStorageBreakdown(current.disk_used_bytes, current.disk_total_bytes);
 
     const row = await prisma.server_metrics.create({
       data: {
@@ -76,7 +111,12 @@ router.get("/metrics", adminOnly, async (_req: Request, res: Response) => {
 
     res.json({
       success: true,
-      current: { ...current, id: row.id, created_at: row.created_at.toISOString() },
+      current: {
+        ...current,
+        id: row.id,
+        created_at: row.created_at.toISOString(),
+        storage_breakdown: storageBreakdown,
+      },
       history: history.map(serialize),
     });
   } catch (error: any) {

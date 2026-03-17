@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { RefreshCw, Server, Cpu, HardDrive, MemoryStick, Activity, Clock, Wifi, Activity as PulseIcon } from "lucide-react"
+import { RefreshCw, Server, Cpu, HardDrive, MemoryStick, Activity, Clock, Wifi, Activity as PulseIcon, Database, Cloud } from "lucide-react"
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Line, LineChart } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { api } from "@/lib/api"
@@ -30,10 +30,18 @@ function formatUptime(seconds: number): string {
   return parts.join(" ")
 }
 
+interface StorageBreakdown {
+  database_bytes?: number | null
+  s3_bytes?: number | null
+  database_error?: string
+  s3_error?: string
+}
+
 interface MetricPoint {
   created_at: string
   time: string
   cpu_usage_percent?: number | null
+  process_cpu_usage_percent?: number | null
   memory_usage_percent?: number | null
   load_avg_1m?: number | null
   load_avg_5m?: number | null
@@ -46,6 +54,7 @@ interface CurrentSnapshot {
   platform?: string
   node_version?: string
   cpu_usage_percent?: number | null
+  process_cpu_usage_percent?: number | null
   cpu_cores?: number
   memory_usage_percent?: number | null
   memory_used_bytes?: number
@@ -61,23 +70,32 @@ interface CurrentSnapshot {
   disk_usage_percent?: number | null
   disk_used_bytes?: number | null
   disk_total_bytes?: number | null
+  storage_breakdown?: StorageBreakdown
   id?: string
   created_at?: string
 }
 
+const CHART_CPU = "#0ea5e9"
+const CHART_MEM = "#8b5cf6"
+const CHART_LOAD1 = "#f59e0b"
+const CHART_LOAD5 = "#10b981"
+const CHART_LOAD15 = "#6366f1"
+const CHART_DISK = "#ec4899"
+
 const cpuMemoryChartConfig: ChartConfig = {
-  cpu_usage_percent: { label: "CPU %", color: "hsl(var(--chart-1))" },
-  memory_usage_percent: { label: "Memory %", color: "hsl(var(--chart-2))" },
+  process_cpu_usage_percent: { label: "Process CPU %", color: CHART_CPU },
+  cpu_usage_percent: { label: "System CPU %", color: "#64748b" },
+  memory_usage_percent: { label: "Memory %", color: CHART_MEM },
 }
 
 const loadChartConfig: ChartConfig = {
-  load_avg_1m: { label: "Load 1m", color: "hsl(var(--chart-1))" },
-  load_avg_5m: { label: "Load 5m", color: "hsl(var(--chart-2))" },
-  load_avg_15m: { label: "Load 15m", color: "hsl(var(--chart-3))" },
+  load_avg_1m: { label: "Load 1m", color: CHART_LOAD1 },
+  load_avg_5m: { label: "Load 5m", color: CHART_LOAD5 },
+  load_avg_15m: { label: "Load 15m", color: CHART_LOAD15 },
 }
 
 const diskChartConfig: ChartConfig = {
-  disk_usage_percent: { label: "Disk %", color: "hsl(var(--chart-4))" },
+  disk_usage_percent: { label: "Disk %", color: CHART_DISK },
 }
 
 const MAX_LIVE_POINTS = 120 // ~10 min at 5s interval
@@ -103,6 +121,7 @@ export default function AdminMonitoringPage() {
         setCurrent(result.current)
         const hist = (result.history ?? []).map((h: Record<string, unknown>) => ({
           ...h,
+          process_cpu_usage_percent: (h as { process_cpu_usage_percent?: number }).process_cpu_usage_percent ?? (h as { cpu_usage_percent?: number }).cpu_usage_percent,
           time: new Date((h.created_at as string) || 0).toLocaleTimeString(undefined, {
             hour: "2-digit",
             minute: "2-digit",
@@ -134,6 +153,7 @@ export default function AdminMonitoringPage() {
         created_at,
         time: new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
         cpu_usage_percent: data.cpu_usage_percent ?? undefined,
+        process_cpu_usage_percent: data.process_cpu_usage_percent ?? data.cpu_usage_percent ?? undefined,
         memory_usage_percent: data.memory_usage_percent ?? undefined,
         load_avg_1m: data.load_avg_1m,
         load_avg_5m: data.load_avg_5m,
@@ -233,9 +253,9 @@ export default function AdminMonitoringPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-lg font-bold tabular-nums">
-                  {current.cpu_usage_percent != null ? (
+                  {(current.process_cpu_usage_percent ?? current.cpu_usage_percent) != null ? (
                     <AnimatedNumber
-                      value={current.cpu_usage_percent}
+                      value={current.process_cpu_usage_percent ?? current.cpu_usage_percent ?? 0}
                       format={(n) => `${n.toFixed(1)}%`}
                       chaseDuration={400}
                       className="text-foreground"
@@ -364,6 +384,61 @@ export default function AdminMonitoringPage() {
                 )}
               </CardContent>
             </Card>
+            <Card className="overflow-hidden transition-all duration-300 border-border/60 md:col-span-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <HardDrive className="h-4 w-4" />
+                  Storage breakdown
+                </CardTitle>
+                <CardDescription className="text-xs">System disk, PostgreSQL, S3 / MinIO</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-lg bg-muted/40 p-3 flex items-center gap-3">
+                    <HardDrive className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-muted-foreground text-xs">System disk</p>
+                      {current.disk_used_bytes != null && current.disk_total_bytes != null ? (
+                        <p className="font-mono font-semibold tabular-nums">
+                          {formatBytes(current.disk_used_bytes)} / {formatBytes(current.disk_total_bytes)}
+                          {current.disk_usage_percent != null && (
+                            <span className="text-muted-foreground font-normal ml-1">({current.disk_usage_percent.toFixed(1)}%)</span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-muted-foreground">—</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-3 flex items-center gap-3">
+                    <Database className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-muted-foreground text-xs">PostgreSQL</p>
+                      {current.storage_breakdown?.database_error ? (
+                        <p className="text-destructive text-xs">{current.storage_breakdown.database_error}</p>
+                      ) : current.storage_breakdown?.database_bytes != null ? (
+                        <p className="font-mono font-semibold tabular-nums">{formatBytes(current.storage_breakdown.database_bytes)}</p>
+                      ) : (
+                        <p className="text-muted-foreground">—</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-3 flex items-center gap-3">
+                    <Cloud className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-muted-foreground text-xs">S3 / MinIO</p>
+                      {current.storage_breakdown?.s3_error ? (
+                        <p className="text-destructive text-xs">{current.storage_breakdown.s3_error}</p>
+                      ) : current.storage_breakdown?.s3_bytes != null ? (
+                        <p className="font-mono font-semibold tabular-nums">{formatBytes(current.storage_breakdown.s3_bytes)}</p>
+                      ) : (
+                        <p className="text-muted-foreground">Not configured or empty</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {chartData.length > 0 && (
@@ -382,7 +457,7 @@ export default function AdminMonitoringPage() {
                   <ChartContainer config={cpuMemoryChartConfig} className="h-[320px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" vertical={false} />
                         <XAxis
                           dataKey="time"
                           className="text-xs fill-muted-foreground"
@@ -411,39 +486,43 @@ export default function AdminMonitoringPage() {
                         />
                         <defs>
                           <linearGradient id="monitoringCpu" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--color-cpu_usage_percent)" stopOpacity={0.9} />
-                            <stop offset="95%" stopColor="var(--color-cpu_usage_percent)" stopOpacity={0.1} />
+                            <stop offset="0%" stopColor={CHART_CPU} stopOpacity={0.5} />
+                            <stop offset="100%" stopColor={CHART_CPU} stopOpacity={0.08} />
                           </linearGradient>
                           <linearGradient id="monitoringMem" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--color-memory_usage_percent)" stopOpacity={0.9} />
-                            <stop offset="95%" stopColor="var(--color-memory_usage_percent)" stopOpacity={0.1} />
+                            <stop offset="0%" stopColor={CHART_MEM} stopOpacity={0.5} />
+                            <stop offset="100%" stopColor={CHART_MEM} stopOpacity={0.08} />
                           </linearGradient>
                         </defs>
                         <Area
                           type="monotone"
-                          dataKey="cpu_usage_percent"
+                          dataKey="process_cpu_usage_percent"
+                          name="Process CPU %"
                           fill="url(#monitoringCpu)"
-                          fillOpacity={0.6}
-                          stroke="var(--color-cpu_usage_percent)"
-                          strokeWidth={3}
+                          fillOpacity={1}
+                          stroke={CHART_CPU}
+                          strokeWidth={2.5}
                           dot={false}
                           activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
                           isAnimationActive={true}
                           animationDuration={800}
                           animationEasing="ease-out"
+                          connectNulls
                         />
                         <Area
                           type="monotone"
                           dataKey="memory_usage_percent"
+                          name="Memory %"
                           fill="url(#monitoringMem)"
-                          fillOpacity={0.6}
-                          stroke="var(--color-memory_usage_percent)"
-                          strokeWidth={3}
+                          fillOpacity={1}
+                          stroke={CHART_MEM}
+                          strokeWidth={2.5}
                           dot={false}
                           activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
                           isAnimationActive={true}
                           animationDuration={800}
                           animationEasing="ease-out"
+                          connectNulls
                         />
                       </AreaChart>
                     </ResponsiveContainer>
@@ -459,7 +538,7 @@ export default function AdminMonitoringPage() {
                   <ChartContainer config={loadChartConfig} className="h-[280px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" vertical={false} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" vertical={false} />
                         <XAxis
                           dataKey="time"
                           className="text-xs fill-muted-foreground"
@@ -487,35 +566,38 @@ export default function AdminMonitoringPage() {
                         <Line
                           type="monotone"
                           dataKey="load_avg_1m"
-                          stroke="var(--color-load_avg_1m)"
-                          strokeWidth={3}
+                          stroke={CHART_LOAD1}
+                          strokeWidth={2.5}
                           dot={false}
                           activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
                           isAnimationActive={true}
                           animationDuration={800}
                           animationEasing="ease-out"
+                          connectNulls
                         />
                         <Line
                           type="monotone"
                           dataKey="load_avg_5m"
-                          stroke="var(--color-load_avg_5m)"
-                          strokeWidth={3}
+                          stroke={CHART_LOAD5}
+                          strokeWidth={2.5}
                           dot={false}
                           activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
                           isAnimationActive={true}
                           animationDuration={800}
                           animationEasing="ease-out"
+                          connectNulls
                         />
                         <Line
                           type="monotone"
                           dataKey="load_avg_15m"
-                          stroke="var(--color-load_avg_15m)"
-                          strokeWidth={3}
+                          stroke={CHART_LOAD15}
+                          strokeWidth={2.5}
                           dot={false}
                           activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
                           isAnimationActive={true}
                           animationDuration={800}
                           animationEasing="ease-out"
+                          connectNulls
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -531,7 +613,7 @@ export default function AdminMonitoringPage() {
                     <ChartContainer config={diskChartConfig} className="h-[260px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" vertical={false} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.08)" vertical={false} />
                           <XAxis
                             dataKey="time"
                             className="text-xs fill-muted-foreground"
@@ -560,22 +642,23 @@ export default function AdminMonitoringPage() {
                           />
                           <defs>
                             <linearGradient id="monitoringDisk" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="var(--color-disk_usage_percent)" stopOpacity={0.9} />
-                              <stop offset="95%" stopColor="var(--color-disk_usage_percent)" stopOpacity={0.1} />
+                              <stop offset="0%" stopColor={CHART_DISK} stopOpacity={0.5} />
+                              <stop offset="100%" stopColor={CHART_DISK} stopOpacity={0.08} />
                             </linearGradient>
                           </defs>
                           <Area
                             type="monotone"
                             dataKey="disk_usage_percent"
                             fill="url(#monitoringDisk)"
-                            fillOpacity={0.6}
-                            stroke="var(--color-disk_usage_percent)"
-                            strokeWidth={3}
+                            fillOpacity={1}
+                            stroke={CHART_DISK}
+                            strokeWidth={2.5}
                             dot={false}
                             activeDot={{ r: 6, strokeWidth: 2, fill: "var(--background)" }}
                             isAnimationActive={true}
                             animationDuration={800}
                             animationEasing="ease-out"
+                            connectNulls
                           />
                         </AreaChart>
                       </ResponsiveContainer>

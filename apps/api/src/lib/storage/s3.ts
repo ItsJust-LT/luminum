@@ -11,6 +11,7 @@ import {
   HeadObjectCommand,
   CreateBucketCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { Readable } from "stream";
@@ -173,6 +174,28 @@ export async function headObject(key: string): Promise<{
     if (code === "NotFound" || code === "NoSuchKey") return null;
     throw err;
   }
+}
+
+/**
+ * Sum object sizes in the bucket (for monitoring). Paginates ListObjectsV2.
+ */
+export async function getBucketSize(): Promise<number> {
+  const c = getClient();
+  let total = 0;
+  let continuationToken: string | undefined;
+  do {
+    const out = await c.send(
+      new ListObjectsV2Command({
+        Bucket: S3_BUCKET,
+        ContinuationToken: continuationToken,
+      })
+    );
+    for (const obj of out.Contents ?? []) {
+      if (obj.Size != null) total += obj.Size;
+    }
+    continuationToken = out.IsTruncated ? out.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return total;
 }
 
 export { S3_BUCKET };
