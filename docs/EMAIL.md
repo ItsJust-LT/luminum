@@ -77,23 +77,30 @@ Example:
 
 ## Env vars
 
-### API
+### API (apps/api)
 
-| Variable | Purpose |
-|----------|--------|
-| `MAIL_APP_URL` | Base URL of the in-repo mail service (e.g. `http://mail:8025`). Required for sending. |
-| `MAIL_APP_SECRET` | Optional secret sent as `X-Mail-Secret` / `Authorization: Bearer` to the mail app. |
-| `MAIL_FROM_DEFAULT` | Default From header (e.g. `Luminum <noreply@luminum.agency>`). |
-| `MAIL_MX_HOST` | Optional. Override for the MX host the UI shows (e.g. `mail.luminum.agency`). |
-| `MAIL_MX_DOMAIN` | Optional. Domain used to resolve MX for setup/verification (e.g. `luminum.agency`). |
-| `WEBHOOK_SECRET` | Secret used to verify `x-webhook-signature` on `POST /api/webhook/emails`. Must match the value used by the mail service. |
+Set these in the **API** process (e.g. `apps/api/.env` or your deployment env).
+
+| Variable | Required? | Purpose | Where to get it |
+|----------|-----------|--------|------------------|
+| `MAIL_APP_URL` | **Yes** (for sending) | Base URL of the mail service the API calls for outbound mail. | Your mail service URL. In Docker: `http://mail:8025`. Locally: `http://localhost:8025`. |
+| `WEBHOOK_SECRET` | **Yes** (for inbound) | Shared secret to verify `x-webhook-signature` on `POST /api/webhook/emails`. | Generate a random string (e.g. `openssl rand -hex 32`). **Must be the same value** in both API and mail service. |
+| `MAIL_APP_SECRET` | Optional | If set, sent as `X-Mail-Secret` and `Authorization: Bearer` when the API calls the mail app’s `/send`. | Generate a random string. Set the same in the mail service if you add auth there. |
+| `MAIL_FROM_DEFAULT` | Optional | Default From header when the org doesn’t override (e.g. `Luminum <noreply@luminum.agency>`). | Your chosen default sender; domain is also used for DNS hints if MX/DKIM vars are unset. |
+| `MAIL_MX_HOST` | Optional | Exact MX hostname the dashboard shows (e.g. `mail.luminum.agency`). Skips DNS lookup. | Your mail server’s public hostname (same as the A record for the host receiving mail on port 25). |
+| `MAIL_MX_DOMAIN` | Optional | Domain used to resolve MX for setup/verification (e.g. `luminum.agency`). | Your email domain. If unset, derived from `MAIL_FROM_DEFAULT`. |
+| `MAIL_SEND_HOST` | Optional | Host used in **SPF** suggestion in the dashboard (e.g. `mail.luminum.agency`). | Same as your MX host if you use `include:` in SPF. |
+| `MAIL_SEND_IP` | Optional | IP used in **SPF** suggestion (e.g. your server’s public IP). If set, SPF suggestion uses `ip4:...` instead of `include:...`. | Your mail server’s public IPv4. |
+| `MAIL_DKIM_SELECTOR` | Optional | DKIM selector for setup instructions (default `default`). Record name becomes `{selector}._domainkey.{domain}`. | Whatever selector you use for DKIM (e.g. `default`). |
 
 ### Mail service (apps/mail)
 
-| Variable | Purpose |
-|----------|--------|
-| `API_URL` | Base URL of the API (e.g. `http://api:4000`). Required. |
-| `WEBHOOK_SECRET` | Same as API; used to sign inbound webhook payloads. Required. |
-| `MAIL_FROM_DEFAULT` | Optional default From when not provided on send. |
-| `PORT_HTTP` | HTTP server port for `/send` and `/health` (default 8025). |
-| `PORT_SMTP` | SMTP server port for receiving mail (default 25). |
+Set these in the **mail** process (e.g. `apps/mail/.env` or your deployment env for the mail container).
+
+| Variable | Required? | Purpose | Where to get it |
+|----------|-----------|--------|------------------|
+| `API_URL` | **Yes** | Base URL of the API. Mail service POSTs inbound messages to `API_URL/api/webhook/emails`. | Your API base URL. In Docker: `http://api:4000`. Locally: `http://localhost:4000`. |
+| `WEBHOOK_SECRET` | **Yes** | Same as API; used to sign inbound webhook payloads. | **Must match** the API’s `WEBHOOK_SECRET` (e.g. `openssl rand -hex 32` once, then set in both). |
+| `MAIL_FROM_DEFAULT` | Optional | Default From when a send request doesn’t provide one. | Same as API’s default sender if you want consistency. |
+| `PORT_HTTP` | Optional | HTTP port for `/send` and `/health`. Default **8025**. | Only change if 8025 is in use; ensure API’s `MAIL_APP_URL` uses this port. |
+| `PORT_SMTP` | Optional | SMTP port for receiving mail. Default **25**. | Host must expose port 25 for internet MX delivery; some providers block 25. |

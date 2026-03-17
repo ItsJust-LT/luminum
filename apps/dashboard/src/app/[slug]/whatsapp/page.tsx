@@ -144,6 +144,19 @@ function QrSetup({ account, organizationId, onRefresh }: {
     }
   }
 
+  const handleReconnect = async () => {
+    setLoading(true)
+    try {
+      await api.whatsapp.reconnect(organizationId)
+      toast.success("Reconnecting… A new QR code will appear shortly.")
+      onRefresh()
+    } catch (err: any) {
+      toast.error((err as any)?.message || "Reconnect failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (!account) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -165,6 +178,34 @@ function QrSetup({ account, organizationId, onRefresh }: {
           >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}
             Connect WhatsApp
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // QR code expired or not ready (e.g. stale after 5 min, or client not emitting)
+  if (account.status === "QR_PENDING" && !account.qr_code) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-6 max-w-md px-4">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg">
+            <RefreshCw className="h-8 w-8 text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">QR code expired or not ready</h2>
+            <p className="text-muted-foreground text-sm mt-1">
+              The previous QR code is no longer valid. Click below to get a new one, then scan it with WhatsApp.
+            </p>
+          </div>
+          <Button
+            onClick={handleReconnect}
+            disabled={loading}
+            size="lg"
+            className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
+          >
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Get new QR code
           </Button>
         </div>
       </div>
@@ -239,7 +280,7 @@ function QrSetup({ account, organizationId, onRefresh }: {
           <WifiOff className="h-12 w-12 text-destructive mx-auto" />
           <h2 className="text-xl font-bold">Connection Error</h2>
           <p className="text-muted-foreground text-sm">{account.last_error || "An error occurred."}</p>
-          <Button onClick={handleConnect} disabled={loading}>
+          <Button onClick={handleReconnect} disabled={loading}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
             Retry Connection
           </Button>
@@ -248,7 +289,31 @@ function QrSetup({ account, organizationId, onRefresh }: {
     )
   }
 
-  return null
+  // DISCONNECTED or any other status: show reconnect so we never render nothing
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="text-center space-y-6 max-w-md px-4">
+        <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg">
+          <MessageCircle className="h-10 w-10 text-white" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Reconnect WhatsApp</h2>
+          <p className="text-muted-foreground mt-2">
+            The connection is not active. Click below to generate a new QR code and link your number again.
+          </p>
+        </div>
+        <Button
+          onClick={handleReconnect}
+          disabled={loading}
+          size="lg"
+          className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
+        >
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+          Reconnect WhatsApp
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 // ── Main Page ───────────────────────────────────────────────────────────────
