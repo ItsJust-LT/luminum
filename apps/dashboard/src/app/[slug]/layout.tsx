@@ -99,6 +99,37 @@ export default function SlugLayout({
   useEffect(() => {
     if (!isPending && session) {
       if (state.organization && state.organization.slug === slug) {
+        // Same org already loaded: refetch feature flags so sidebar stays in sync (e.g. after admin enables analytics)
+        const orgId = state.organization.id
+        Promise.all([
+          api.organizationSettings.getEmailsEnabled(orgId),
+          api.whatsapp.checkEnabled(orgId).catch(() => ({ enabled: false })),
+          api.organizationSettings.getAnalyticsEnabled(orgId).catch(() => ({ enabled: false })),
+        ]).then(([emailRes, waRes, analyticsRes]) => {
+          const emailsEnabled = (emailRes as { enabled?: boolean })?.enabled ?? false
+          const whatsappEnabled = (waRes as { enabled?: boolean })?.enabled ?? false
+          const analyticsEnabled = (analyticsRes as { enabled?: boolean })?.enabled ?? false
+          setState((prev) => {
+            if (!prev.organization || prev.organization.id !== orgId) return prev
+            return {
+              ...prev,
+              organization: {
+                ...prev.organization,
+                emails_enabled: emailsEnabled,
+                whatsapp_enabled: whatsappEnabled,
+                analytics_enabled: analyticsEnabled,
+              },
+              sidebarData: prev.sidebarData
+                ? {
+                    ...prev.sidebarData,
+                    emailsEnabled,
+                    whatsappEnabled,
+                    analyticsEnabled,
+                  }
+                : null,
+            }
+          })
+        }).catch(() => {})
         return
       }
       validateOrganizationAccess(false)

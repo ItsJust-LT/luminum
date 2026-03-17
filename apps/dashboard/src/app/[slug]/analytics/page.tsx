@@ -203,6 +203,8 @@ export default function AnalyticsPage() {
     access: boolean
     websites: Array<{ id: string; domain: string; name?: string; analytics: boolean; scriptVerified: boolean; scriptLastVerifiedAt?: string; scriptError?: string }>
   } | null>(null)
+  const [analyticsAccessChecked, setAnalyticsAccessChecked] = useState(false)
+  const [analyticsAccess, setAnalyticsAccess] = useState<boolean | null>(null)
 
   // Realtime: refetch when form created/updated (Ably organization channel)
   const fetchAnalyticsDataRef = useRef<() => void>(() => {})
@@ -244,19 +246,34 @@ export default function AnalyticsPage() {
     }
   }, [onMessage, website])
 
-  // Fetch website data and analytics setup status when organization is available
+  // Route guard: fetch analytics access from API (source of truth) so direct URL access is blocked when disabled
   useEffect(() => {
-    if (organization) {
-      fetchWebsite()
-    }
+    if (!organization?.id) return
+    setAnalyticsAccessChecked(false)
+    api.organizationSettings.getAnalyticsEnabled(organization.id)
+      .then((r: any) => {
+        setAnalyticsAccess(!!r?.enabled)
+        setAnalyticsAccessChecked(true)
+      })
+      .catch(() => {
+        setAnalyticsAccess(false)
+        setAnalyticsAccessChecked(true)
+      })
   }, [organization?.id])
 
+  // Fetch website data when organization is available and access is granted
   useEffect(() => {
-    if (!organization?.id || !(organization as { analytics_enabled?: boolean }).analytics_enabled) return
+    if (organization && analyticsAccess) {
+      fetchWebsite()
+    }
+  }, [organization?.id, analyticsAccess])
+
+  useEffect(() => {
+    if (!organization?.id || !analyticsAccess) return
     api.analytics.getSetupStatus(organization.id).then((r: any) => {
       if (r?.success) setAnalyticsSetupStatus({ access: r.access, websites: r.websites || [] })
     }).catch(() => {})
-  }, [organization?.id, (organization as { analytics_enabled?: boolean })?.analytics_enabled])
+  }, [organization?.id, analyticsAccess])
 
   const fetchWebsite = async () => {
     if (!organization) return
@@ -463,8 +480,8 @@ export default function AnalyticsPage() {
     )
   }
 
-  // Analytics feature not enabled for this organization (admin toggle)
-  if (!(organization as { analytics_enabled?: boolean }).analytics_enabled) {
+  // Route guard: analytics feature not enabled (API-checked so direct URL access is blocked)
+  if (analyticsAccessChecked && analyticsAccess === false) {
     return (
       <AppPageContainer>
         <div className="flex items-center justify-center min-h-[50vh]">
@@ -480,6 +497,32 @@ export default function AnalyticsPage() {
               </Button>
             </CardContent>
           </Card>
+        </div>
+      </AppPageContainer>
+    )
+  }
+
+  // Wait for access check before showing any analytics UI
+  if (!analyticsAccessChecked || analyticsAccess !== true) {
+    return (
+      <AppPageContainer fullWidth>
+        <div className="app-hero relative overflow-hidden bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 p-6 sm:p-8 md:p-12">
+          <div className="relative space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-xl">
+                <BarChart3 className="h-6 w-6 text-primary" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-foreground">
+                Analytics Dashboard
+              </h1>
+            </div>
+            <p className="text-muted-foreground text-base sm:text-lg md:text-xl max-w-2xl leading-relaxed">
+              Checking access…
+            </p>
+          </div>
+        </div>
+        <div className="py-16 sm:py-24">
+          <AnalyticsSkeleton />
         </div>
       </AppPageContainer>
     )

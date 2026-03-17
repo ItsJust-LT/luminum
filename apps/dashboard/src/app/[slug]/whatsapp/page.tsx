@@ -29,7 +29,7 @@ import {
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 
 interface WhatsAppAccount {
   id: string
@@ -234,8 +234,11 @@ export default function WhatsAppPage() {
   const { organization } = useOrganization()
   const { onMessage } = useRealtime()
   const pathname = usePathname()
+  const router = useRouter()
   const slug = pathname?.split("/")[1] || ""
 
+  const [whatsappAccessChecked, setWhatsappAccessChecked] = useState(false)
+  const [whatsappAccess, setWhatsappAccess] = useState<boolean | null>(null)
   const [account, setAccount] = useState<WhatsAppAccount | null>(null)
   const [chats, setChats] = useState<WhatsAppChat[]>([])
   const [selectedChat, setSelectedChat] = useState<WhatsAppChat | null>(null)
@@ -285,12 +288,27 @@ export default function WhatsAppPage() {
     }
   }, [orgId])
 
-  // Initial load
+  // Route guard: fetch WhatsApp access from API so direct URL access is blocked when disabled
   useEffect(() => {
     if (!orgId) return
+    setWhatsappAccessChecked(false)
+    api.whatsapp.checkEnabled(orgId)
+      .then((r: any) => {
+        setWhatsappAccess(!!r?.enabled)
+        setWhatsappAccessChecked(true)
+      })
+      .catch(() => {
+        setWhatsappAccess(false)
+        setWhatsappAccessChecked(true)
+      })
+  }, [orgId])
+
+  // Initial load (only when access granted)
+  useEffect(() => {
+    if (!orgId || whatsappAccess !== true) return
     setLoading(true)
     Promise.all([loadAccount(), loadChats()]).finally(() => setLoading(false))
-  }, [orgId, loadAccount, loadChats])
+  }, [orgId, whatsappAccess, loadAccount, loadChats])
 
   // Poll for account status while connecting/QR pending
   useEffect(() => {
@@ -428,6 +446,35 @@ export default function WhatsAppPage() {
     } finally {
       setSending(false)
     }
+  }
+
+  if (!organization) return null
+
+  // Route guard: WhatsApp not enabled (direct URL access blocked)
+  if (whatsappAccessChecked && whatsappAccess === false) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] px-4">
+        <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-foreground mb-2">WhatsApp not enabled</h3>
+          <p className="text-muted-foreground mb-4">
+            WhatsApp is not enabled for this organization. Contact an administrator if you need access.
+          </p>
+          <Button onClick={() => router.push(`/${slug}/dashboard`)} variant="outline" className="w-full">
+            Back to Dashboard
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Wait for access check
+  if (!whatsappAccessChecked || whatsappAccess !== true) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   if (loading) {

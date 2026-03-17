@@ -12,6 +12,7 @@ import { OrganizationEvents } from "@/lib/ably/events"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Mail,
@@ -284,6 +285,28 @@ export default function EmailsPage() {
             <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">Checking email setup…</p>
           </div>
+        </div>
+      </AppPageContainer>
+    )
+  }
+
+  // Route guard: emails feature not enabled (direct URL access blocked)
+  if (setupStatus.access === false) {
+    return (
+      <AppPageContainer fullWidth>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Card className="app-card w-full max-w-md border border-border">
+            <CardContent className="pt-6 px-6 pb-6 text-center">
+              <Mail className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">Emails not enabled</h3>
+              <p className="text-muted-foreground mb-4">
+                Emails is not enabled for this organization. Contact an administrator if you need access.
+              </p>
+              <Button onClick={() => router.push(`/${organization.slug}/dashboard`)} variant="outline" className="w-full">
+                Back to Dashboard
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </AppPageContainer>
     )
