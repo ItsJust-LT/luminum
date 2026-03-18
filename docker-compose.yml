@@ -50,6 +50,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     restart: unless-stopped
+    shm_size: "1gb"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

@@ -47,6 +47,8 @@ services:
   api:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-api:latest
     restart: unless-stopped
+    # Chromium needs shared memory; default 64MB often causes "socket hang up" / crashes on WhatsApp Web
+    shm_size: "1gb"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

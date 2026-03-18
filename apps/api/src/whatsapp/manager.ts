@@ -30,7 +30,13 @@ const TAKEOVER_ON_CONFLICT =
   process.env.WHATSAPP_TAKEOVER_ON_CONFLICT === "true";
 
 const AUTH_TIMEOUT_MS = parseInt(
-  process.env.WHATSAPP_AUTH_TIMEOUT_MS || "60000",
+  process.env.WHATSAPP_AUTH_TIMEOUT_MS || "120000",
+  10,
+);
+
+/** CDP / DevTools timeout — "socket hang up" often means Chrome dropped the connection before WA Web finished loading. */
+const PUPPETEER_PROTOCOL_TIMEOUT_MS = parseInt(
+  process.env.WHATSAPP_PROTOCOL_TIMEOUT_MS || "300000",
   10,
 );
 
@@ -401,19 +407,47 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     process.env.CHROMIUM_PATH ||
     "";
 
+  // Default: multi-process Chromium — single-process is prone to "socket hang up" on heavy pages (WhatsApp Web).
+  // Set WHATSAPP_PUPPETEER_MINIMAL=true only on very low-memory hosts (may be less stable).
+  const minimal = process.env.WHATSAPP_PUPPETEER_MINIMAL === "true";
+  const puppeteerArgs = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--no-first-run",
+    "--disable-extensions",
+    "--window-size=1280,900",
+    ...(minimal
+      ? [
+          "--single-process",
+          "--no-zygote",
+          "--disable-features=IsolateOrigins,site-per-process",
+        ]
+      : [
+          "--disable-features=IsolateOrigins,site-per-process",
+          "--disable-background-networking",
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-breakpad",
+          "--disable-component-extensions-with-background-pages",
+          "--disable-default-apps",
+          "--disable-hang-monitor",
+          "--disable-ipc-flooding-protection",
+          "--disable-popup-blocking",
+          "--disable-prompt-on-repost",
+          "--disable-renderer-backgrounding",
+          "--disable-sync",
+          "--metrics-recording-only",
+          "--mute-audio",
+        ]),
+  ];
+
   const puppeteerOptions: Record<string, unknown> = {
     headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--disable-features=IsolateOrigins,site-per-process",
-      "--no-first-run",
-      "--no-zygote",
-      "--disable-extensions",
-    ],
+    args: puppeteerArgs,
+    protocolTimeout: PUPPETEER_PROTOCOL_TIMEOUT_MS,
+    timeout: PUPPETEER_PROTOCOL_TIMEOUT_MS,
   };
   if (puppeteerExecutablePath) {
     puppeteerOptions.executablePath = puppeteerExecutablePath;
