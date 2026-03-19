@@ -8,7 +8,7 @@ import { logger } from "../lib/logger.js";
 import * as util from "node:util";
 
 // Extract CommonJS exports from whatsapp-web.js
-const { Client, RemoteAuth } = whatsappWeb;
+const { Client, RemoteAuth, MessageMedia } = whatsappWeb;
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -342,9 +342,75 @@ export async function sendMessage(opts: {
     data: { last_message_at: new Date() },
   });
 
-  broadcastToOrg(organizationId, {
-    type: "whatsapp:message",
-    data: { chatId, message },
+  return message;
+}
+
+function parseDataUrl(dataUrl: string): { mime: string; base64: string } {
+  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || "");
+  if (!match) throw new Error("Invalid image data format");
+  return { mime: match[1], base64: match[2] };
+}
+
+export async function sendMediaMessage(opts: {
+  organizationId: string;
+  chatId: string;
+  dataUrl: string;
+  caption?: string;
+  clientMessageId?: string;
+}) {
+  const { organizationId, chatId, dataUrl, caption, clientMessageId } = opts;
+  if (!dataUrl) throw new Error("Image data is required");
+
+  if (clientMessageId) {
+    const existing = await prisma.whatsapp_message.findFirst({
+      where: { chat_id: chatId, client_message_id: clientMessageId },
+    });
+    if (existing) return existing;
+  }
+
+  const managed = await ensureClient(organizationId);
+  if (!managed || !managed.ready) throw new Error("WhatsApp client not ready");
+
+  const chat = await prisma.whatsapp_chat.findUnique({
+    where: { id: chatId },
+    select: { contact_id: true },
+  });
+  if (!chat) throw new Error("Chat not found");
+
+  const { mime, base64 } = parseDataUrl(dataUrl);
+  const media = new MessageMedia(mime, base64, "image");
+  const sentMsg: WAWebJS.Message = await managed.client.sendMessage(chat.contact_id, media, {
+    caption: caption || undefined,
+  } as any);
+
+  const mapped = mapWaMessageToDb(sentMsg, chatId);
+  const approxBytes = Math.floor((base64.length * 3) / 4);
+  const message = await prisma.whatsapp_message.upsert({
+    where: {
+      chat_id_wa_message_id: { chat_id: chatId, wa_message_id: mapped.wa_message_id },
+    },
+    create: {
+      ...mapped,
+      body: caption || mapped.body,
+      media_url: dataUrl,
+      mime_type: mime,
+      media_size: approxBytes,
+      client_message_id: clientMessageId || null,
+      sent_at: new Date(),
+    },
+    update: {
+      ack: sentMsg.ack ?? 0,
+      sent_at: new Date(),
+      body: caption || mapped.body,
+      media_url: dataUrl,
+      mime_type: mime,
+      media_size: approxBytes,
+    },
+  });
+
+  await prisma.whatsapp_chat.update({
+    where: { id: chatId },
+    data: { last_message_at: new Date() },
   });
 
   return message;
@@ -789,7 +855,8 @@ function isStatusOrLidChat(contactId: string): boolean {
 async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message) {
   const { orgId, accountId } = managed;
 
-  const chatContactId = msg.from;
+  // For messages sent from our own linked phone, chat id is in "to", not "from".
+  const chatContactId = msg.fromMe ? msg.to : msg.from;
   if (isStatusOrLidChat(chatContactId)) return;
 
   const waChat = await msg.getChat();
@@ -806,12 +873,12 @@ async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message
     create: {
       ...mapWaChatToDb(waChat, accountId),
       last_message_at: new Date(),
-      unread_count: 1,
+      unread_count: msg.fromMe ? 0 : 1,
     },
     update: {
       name: waChat.name || undefined,
       last_message_at: new Date(),
-      unread_count: { increment: 1 },
+      ...(msg.fromMe ? {} : { unread_count: { increment: 1 } }),
     },
   });
 
@@ -974,6 +1041,26 @@ export async function getContactDisplayNames(
       if (typeof name === "string" && name.trim()) out[jid] = name.trim();
     } catch {
       // ignore per-contact failures
+    }
+  }
+  return out;
+}
+
+/** Resolve profile picture urls for chat JIDs. */
+export async function getContactProfilePictures(
+  organizationId: string,
+  jids: string[],
+): Promise<Record<string, string>> {
+  const managed = await ensureClient(organizationId);
+  if (!managed?.ready || jids.length === 0) return {};
+  const out: Record<string, string> = {};
+  const unique = [...new Set(jids)].filter((j) => j && !j.toLowerCase().includes("@lid"));
+  for (const jid of unique) {
+    try {
+      const url = await (managed.client as any).getProfilePicUrl?.(jid);
+      if (typeof url === "string" && url.trim()) out[jid] = url;
+    } catch {
+      // ignore
     }
   }
   return out;

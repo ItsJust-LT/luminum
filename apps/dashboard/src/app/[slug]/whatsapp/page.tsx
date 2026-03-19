@@ -25,11 +25,14 @@ import {
   Check,
   CheckCheck,
   User,
+  ImagePlus,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { useWhatsAppCache } from "@/lib/contexts/whatsapp-context"
 
 interface WhatsAppAccount {
   id: string
@@ -51,11 +54,15 @@ interface WhatsAppChat {
   last_message_at: string | null
   unread_count: number
   is_group: boolean
+  display_name?: string | null
+  profile_picture_url?: string | null
   messages?: {
     id: string
     body: string | null
     from_me: boolean
     type: string
+    media_url?: string | null
+    mime_type?: string | null
     timestamp: string
   }[]
 }
@@ -75,6 +82,14 @@ interface WhatsAppMessage {
   timestamp: string
   ack: number | null
   created_at: string
+}
+
+interface LinkPreview {
+  url: string
+  title?: string | null
+  description?: string | null
+  image?: string | null
+  siteName?: string | null
 }
 
 function smartDate(date: string): string {
@@ -118,6 +133,25 @@ function formatChatDisplayName(chat: { name: string | null; contact_id: string; 
   return formatContactIdAsNumber(chat.contact_id)
 }
 
+function dedupeMessages(items: WhatsAppMessage[]): WhatsAppMessage[] {
+  const out: WhatsAppMessage[] = []
+  for (const m of items) {
+    const exists = out.some((x) =>
+      x.id === m.id ||
+      (!!x.wa_message_id && !!m.wa_message_id && x.wa_message_id === m.wa_message_id) ||
+      (!!x.client_message_id && !!m.client_message_id && x.client_message_id === m.client_message_id)
+    )
+    if (!exists) out.push(m)
+  }
+  return out
+}
+
+function extractFirstUrl(text?: string | null): string | null {
+  if (!text) return null
+  const match = /(https?:\/\/[^\s<>"')]+)/i.exec(text)
+  return match?.[1] || null
+}
+
 /** Format contact_id (e.g. 1234567890@s.whatsapp.net) as +1234567890 for display. Status/lid IDs show as Status. */
 function formatContactIdAsNumber(contactId: string): string {
   if (!contactId) return "Unknown"
@@ -147,10 +181,14 @@ function messageDateLabel(dateStr: string | Date): string {
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 }
 
-function ContactAvatar({ displayName, isGroup }: { displayName: string; isGroup: boolean }) {
+function ContactAvatar({ displayName, isGroup, photoUrl }: { displayName: string; isGroup: boolean; photoUrl?: string | null }) {
   const initial = isGroup ? "#" : (displayName.charAt(0).match(/\d/) ? displayName.replace(/\D/g, "").charAt(0) || "?" : displayName.charAt(0).toUpperCase())
   return (
     <Avatar className="h-10 w-10 flex-shrink-0">
+      {photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photoUrl} alt={displayName} className="h-10 w-10 rounded-full object-cover" />
+      ) : null}
       <AvatarFallback className={cn(
         "text-white font-semibold text-sm",
         isGroup
@@ -383,10 +421,23 @@ export default function WhatsAppPage() {
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [messageInput, setMessageInput] = useState("")
+  const [selectedImage, setSelectedImage] = useState<{ dataUrl: string; fileName: string } | null>(null)
   const [sending, setSending] = useState(false)
+  const [linkPreviewCache, setLinkPreviewCache] = useState<Record<string, LinkPreview | null>>({})
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const loadingOlderRef = useRef(false)
+  const hydratedPreviewRef = useRef<Set<string>>(new Set())
+  const {
+    selectedChatId: cachedSelectedChatId,
+    setSelectedChatId: setCachedSelectedChatId,
+    chatListCache,
+    setChatListCache,
+    chatStateById,
+    setChatStateById,
+  } = useWhatsAppCache()
 
   const orgId = organization?.id
 
@@ -404,9 +455,13 @@ export default function WhatsAppPage() {
     if (!orgId) return
     try {
       const res = await api.whatsapp.getChats(orgId, { search: searchQuery || undefined }) as any
-      if (res.success) setChats(res.chats || [])
+      if (res.success) {
+        const items = res.chats || []
+        setChats(items)
+        setChatListCache(items)
+      }
     } catch {}
-  }, [orgId, searchQuery])
+  }, [orgId, searchQuery, setChatListCache])
 
   const [nextCursor, setNextCursor] = useState<string | null>(null)
 
@@ -418,17 +473,29 @@ export default function WhatsAppPage() {
       if (res.success) {
         const list = Array.isArray(res.messages) ? res.messages : []
         if (cursor) {
-          setMessages((prev) => [...list, ...prev])
+          setMessages((prev) => {
+            const next = dedupeMessages([...list, ...prev])
+            setChatStateById({
+              ...chatStateById,
+              [chatId]: { messages: next, nextCursor: res.nextCursor ?? null, hasLoaded: true },
+            })
+            return next
+          })
         } else {
-          setMessages(list)
+          const next = dedupeMessages(list)
+          setMessages(next)
+          setChatStateById({
+            ...chatStateById,
+            [chatId]: { messages: next, nextCursor: res.nextCursor ?? null, hasLoaded: true },
+          })
         }
         setNextCursor(res.nextCursor ?? null)
-        if (res.chat) setSelectedChat(res.chat)
+        if (res.chat) setSelectedChat((prev) => (prev ? { ...prev, ...res.chat } : res.chat))
       }
     } catch {} finally {
       setMessagesLoading(false)
     }
-  }, [orgId])
+  }, [orgId, chatStateById, setChatStateById])
 
   // Route guard: fetch WhatsApp access from API so direct URL access is blocked when disabled
   useEffect(() => {
@@ -451,6 +518,13 @@ export default function WhatsAppPage() {
     setLoading(true)
     Promise.all([loadAccount(), loadChats()]).finally(() => setLoading(false))
   }, [orgId, whatsappAccess, loadAccount, loadChats])
+
+  // Restore cached chat list quickly to avoid constant reload feel.
+  useEffect(() => {
+    if (chatListCache.length > 0 && chats.length === 0) {
+      setChats(chatListCache as WhatsAppChat[])
+    }
+  }, [chatListCache, chats.length])
 
   // Poll for account status while connecting/QR pending
   useEffect(() => {
@@ -476,6 +550,26 @@ export default function WhatsAppPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
+  // Lazy load OG metadata for links present in messages.
+  useEffect(() => {
+    if (!orgId) return
+    const urls = [...new Set(messages.map((m) => extractFirstUrl(m.body)).filter(Boolean) as string[])]
+    urls.forEach((url) => {
+      if (linkPreviewCache[url] !== undefined) return
+      setLinkPreviewCache((prev) => ({ ...prev, [url]: null }))
+      api.whatsapp.getLinkPreview(orgId, url)
+        .then((res: any) => {
+          setLinkPreviewCache((prev) => ({
+            ...prev,
+            [url]: res?.success ? (res?.preview ?? null) : null,
+          }))
+        })
+        .catch(() => {
+          setLinkPreviewCache((prev) => ({ ...prev, [url]: null }))
+        })
+    })
+  }, [messages, orgId, linkPreviewCache])
+
   // Real-time message handling
   useEffect(() => {
     const unsub = onMessage("whatsapp:message", (data: any) => {
@@ -483,28 +577,47 @@ export default function WhatsAppPage() {
         // Add to messages if viewing this chat
         if (selectedChat?.id === data.chatId) {
           setMessages((prev) => {
-            const exists = prev.some((m) => m.id === data.message.id)
-            if (exists) return prev
-            return [...prev, data.message]
+            const next = dedupeMessages([...prev, data.message])
+            setChatStateById({
+              ...chatStateById,
+              [data.chatId]: { messages: next, nextCursor, hasLoaded: true },
+            })
+            return next
           })
         }
         // Update chat list
-        if (data.chat) {
-          setChats((prev) => {
-            const idx = prev.findIndex((c) => c.id === data.chatId)
-            const updated = data.chat
-            if (idx >= 0) {
-              const copy = [...prev]
-              copy[idx] = { ...copy[idx], ...updated }
-              return copy.sort((a, b) => {
-                const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
-                const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
-                return bTime - aTime
-              })
-            }
-            return [updated, ...prev]
+        setChats((prev) => {
+          const idx = prev.findIndex((c) => c.id === data.chatId)
+          const base = idx >= 0 ? prev[idx] : null
+          const merged = {
+            ...(base || {}),
+            ...(data.chat || {}),
+            id: data.chatId,
+            last_message_at: data.message?.timestamp || data.chat?.last_message_at || base?.last_message_at || new Date().toISOString(),
+            messages: [{
+              id: data.message.id,
+              body: data.message.body,
+              from_me: data.message.from_me,
+              type: data.message.type,
+              media_url: data.message.media_url ?? null,
+              mime_type: data.message.mime_type ?? null,
+              timestamp: data.message.timestamp,
+            }],
+            unread_count: selectedChat?.id === data.chatId
+              ? 0
+              : Math.max(0, (base?.unread_count || 0) + (data.message.from_me ? 0 : 1)),
+          } as WhatsAppChat
+          const next = idx >= 0
+            ? prev.map((c, i) => (i === idx ? merged : c))
+            : [merged, ...prev]
+          const sorted = next.sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+            return bTime - aTime
           })
-        }
+          setChatListCache(sorted)
+          return sorted
+        })
       }
 
       // Handle ack updates
@@ -517,7 +630,7 @@ export default function WhatsAppPage() {
       }
     })
     return unsub
-  }, [onMessage, selectedChat?.id])
+  }, [onMessage, selectedChat?.id, chatStateById, nextCursor, setChatStateById, setChatListCache])
 
   // Real-time status handling (WebSocket may not reach this client in multi-instance setups; polling + "Check status" button are fallbacks)
   useEffect(() => {
@@ -539,7 +652,15 @@ export default function WhatsAppPage() {
 
   const handleSelectChat = async (chat: WhatsAppChat) => {
     setSelectedChat(chat)
-    await loadMessages(chat.id)
+    setCachedSelectedChatId(chat.id)
+
+    const cached = chatStateById[chat.id]
+    if (cached?.hasLoaded) {
+      setMessages(cached.messages)
+      setNextCursor(cached.nextCursor)
+    } else {
+      await loadMessages(chat.id)
+    }
 
     // Mark as read
     if (chat.unread_count > 0 && orgId) {
@@ -552,8 +673,67 @@ export default function WhatsAppPage() {
     }
   }
 
+  useEffect(() => {
+    if (!cachedSelectedChatId || !chats.length || selectedChat) return
+    const chat = chats.find((c) => c.id === cachedSelectedChatId)
+    if (chat) {
+      setSelectedChat(chat)
+      const cached = chatStateById[chat.id]
+      if (cached?.hasLoaded) {
+        setMessages(cached.messages)
+        setNextCursor(cached.nextCursor)
+      }
+    }
+  }, [cachedSelectedChatId, chats, selectedChat, chatStateById])
+
+  // Lazy hydrate previews for chats that currently show "No messages yet".
+  useEffect(() => {
+    if (!orgId || chats.length === 0) return
+    const targets = chats.filter((c) => !c.messages?.length).slice(0, 8)
+    targets.forEach((chat, i) => {
+      if (hydratedPreviewRef.current.has(chat.id)) return
+      hydratedPreviewRef.current.add(chat.id)
+      setTimeout(async () => {
+        try {
+          const res = await api.whatsapp.getChat(chat.id, orgId, { limit: 1 }) as any
+          const latest = Array.isArray(res?.messages) && res.messages.length > 0 ? res.messages[res.messages.length - 1] : null
+          if (!latest) return
+          setChats((prev) => prev.map((c) => c.id === chat.id ? {
+            ...c,
+            last_message_at: latest.timestamp || c.last_message_at,
+            messages: [{
+              id: latest.id,
+              body: latest.body,
+              from_me: latest.from_me,
+              type: latest.type,
+              media_url: latest.media_url ?? null,
+              mime_type: latest.mime_type ?? null,
+              timestamp: latest.timestamp,
+            }],
+          } : c))
+        } catch {
+          // ignore
+        }
+      }, i * 200)
+    })
+  }, [orgId, chats])
+
+  const handleMessagesScroll = useCallback(async (e: React.UIEvent<HTMLDivElement>) => {
+    if (!selectedChat || !nextCursor || messagesLoading || loadingOlderRef.current) return
+    const el = e.currentTarget
+    if (el.scrollTop > 120) return
+    loadingOlderRef.current = true
+    const prevHeight = el.scrollHeight
+    await loadMessages(selectedChat.id, nextCursor)
+    requestAnimationFrame(() => {
+      const newHeight = el.scrollHeight
+      el.scrollTop = Math.max(0, newHeight - prevHeight + el.scrollTop)
+      loadingOlderRef.current = false
+    })
+  }, [selectedChat, nextCursor, messagesLoading, loadMessages])
+
   const handleSendMessage = async () => {
-    if (!messageInput.trim() || !selectedChat || !orgId) return
+    if ((!messageInput.trim() && !selectedImage) || !selectedChat || !orgId) return
 
     const body = messageInput.trim()
     setMessageInput("")
@@ -568,20 +748,23 @@ export default function WhatsAppPage() {
       from_me: true,
       from_number: null,
       body,
-      type: "text",
+      type: selectedImage ? "image" : "text",
+      media_url: selectedImage?.dataUrl ?? null,
+      mime_type: selectedImage ? "image/*" : null,
       timestamp: new Date().toISOString(),
       ack: 0,
       created_at: new Date().toISOString(),
     }
-    setMessages((prev) => [...prev, optimisticMsg])
+    setMessages((prev) => dedupeMessages([...prev, optimisticMsg]))
 
     try {
-      const res = await api.whatsapp.sendMessage(selectedChat.id, body, orgId, tempId) as any
+      const res = selectedImage
+        ? await api.whatsapp.sendMediaMessage(selectedChat.id, selectedImage.dataUrl, orgId, body || undefined, tempId) as any
+        : await api.whatsapp.sendMessage(selectedChat.id, body, orgId, tempId) as any
       if (res.success && res.message) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? res.message : m))
-        )
+        setMessages((prev) => dedupeMessages(prev.map((m) => (m.id === tempId ? res.message : m))))
       }
+      setSelectedImage(null)
     } catch (err: any) {
       toast.error(err.message || "Failed to send message")
       setMessages((prev) => prev.filter((m) => m.id !== tempId))
@@ -715,11 +898,15 @@ export default function WhatsAppPage() {
                       isActive && "bg-muted/70"
                     )}
                   >
-                    <ContactAvatar displayName={formatChatDisplayName(chat)} isGroup={chat.is_group} />
+                    <ContactAvatar
+                      displayName={chat.display_name || formatChatDisplayName(chat)}
+                      isGroup={chat.is_group}
+                      photoUrl={chat.profile_picture_url}
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium text-sm truncate">
-                          {formatChatDisplayName(chat)}
+                          {chat.display_name || formatChatDisplayName(chat)}
                         </span>
                         {chat.last_message_at && (
                           <span className={cn(
@@ -735,7 +922,11 @@ export default function WhatsAppPage() {
                           {lastMsg ? (
                             <>
                               {lastMsg.from_me && <span className="text-muted-foreground/70">You: </span>}
-                              {(lastMsg.body != null && lastMsg.body !== "" ? lastMsg.body : (lastMsg.type && lastMsg.type !== "text" ? `[${lastMsg.type}]` : "No messages"))}
+                              {(lastMsg.body != null && lastMsg.body !== ""
+                                ? lastMsg.body
+                                : (lastMsg.media_url && lastMsg.mime_type?.startsWith("image/"))
+                                  ? "[Image]"
+                                  : (lastMsg.type && lastMsg.type !== "text" ? `[${lastMsg.type}]` : "No messages"))}
                             </>
                           ) : (
                             <span className="italic">No messages yet</span>
@@ -773,10 +964,14 @@ export default function WhatsAppPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <ContactAvatar displayName={formatChatDisplayName(selectedChat)} isGroup={selectedChat.is_group} />
+            <ContactAvatar
+              displayName={selectedChat.display_name || formatChatDisplayName(selectedChat)}
+              isGroup={selectedChat.is_group}
+              photoUrl={selectedChat.profile_picture_url}
+            />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm truncate">
-                {formatChatDisplayName(selectedChat)}
+                {selectedChat.display_name || formatChatDisplayName(selectedChat)}
               </p>
               <p className="text-xs text-muted-foreground truncate">
                 {selectedChat.is_group ? "Group" : (selectedChat.name ? formatContactIdAsNumber(selectedChat.contact_id) : null)}
@@ -786,7 +981,11 @@ export default function WhatsAppPage() {
 
           {/* Messages area */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            <ScrollArea className="flex-1 h-full min-h-0 px-4 py-3 overflow-auto">
+            <div
+              ref={messagesScrollRef}
+              className="flex-1 h-full min-h-0 px-4 py-3 overflow-auto"
+              onScroll={handleMessagesScroll}
+            >
             {messagesLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -860,6 +1059,41 @@ export default function WhatsAppPage() {
                             {(msg.body != null && msg.body !== "") && (
                               <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
                             )}
+                            {(() => {
+                              const url = extractFirstUrl(msg.body)
+                              if (!url) return null
+                              const preview = linkPreviewCache[url]
+                              if (!preview) return null
+                              return (
+                                <a
+                                  href={preview.url || url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className={cn(
+                                    "mt-2 block rounded-lg border overflow-hidden no-underline",
+                                    msg.from_me ? "border-white/30 bg-white/10" : "border-border bg-background",
+                                  )}
+                                >
+                                  {preview.image ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={preview.image} alt={preview.title || "Link preview"} className="w-full max-h-40 object-cover" />
+                                  ) : null}
+                                  <div className="p-2">
+                                    {preview.siteName ? (
+                                      <p className={cn("text-[10px] uppercase tracking-wide", msg.from_me ? "text-white/70" : "text-muted-foreground")}>
+                                        {preview.siteName}
+                                      </p>
+                                    ) : null}
+                                    {preview.title ? <p className="text-xs font-semibold line-clamp-2">{preview.title}</p> : null}
+                                    {preview.description ? (
+                                      <p className={cn("text-[11px] line-clamp-2", msg.from_me ? "text-white/80" : "text-muted-foreground")}>
+                                        {preview.description}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </a>
+                              )
+                            })()}
                             <div className={cn(
                               "flex items-center gap-1 mt-0.5",
                               msg.from_me ? "justify-end" : "justify-start"
@@ -881,7 +1115,7 @@ export default function WhatsAppPage() {
                 <div ref={messagesEndRef} />
               </div>
             )}
-            </ScrollArea>
+            </div>
           </div>
 
           {/* Message input */}
@@ -890,6 +1124,37 @@ export default function WhatsAppPage() {
               onSubmit={(e) => { e.preventDefault(); handleSendMessage() }}
               className="flex items-center gap-2 max-w-3xl mx-auto"
             >
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                id="wa-image-upload"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  if (file.size > 3_000_000) {
+                    toast.error("Image too large. Max 3MB.")
+                    return
+                  }
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    const dataUrl = typeof reader.result === "string" ? reader.result : null
+                    if (dataUrl) setSelectedImage({ dataUrl, fileName: file.name })
+                  }
+                  reader.readAsDataURL(file)
+                }}
+              />
+              <Button type="button" variant="outline" size="icon" onClick={() => document.getElementById("wa-image-upload")?.click()}>
+                <ImagePlus className="h-4 w-4" />
+              </Button>
+              {selectedImage ? (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs">
+                  <span className="max-w-[140px] truncate">{selectedImage.fileName}</span>
+                  <button type="button" onClick={() => setSelectedImage(null)} className="opacity-70 hover:opacity-100">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : null}
               <Input
                 placeholder="Type a message..."
                 value={messageInput}
@@ -900,7 +1165,7 @@ export default function WhatsAppPage() {
               <Button
                 type="submit"
                 size="icon"
-                disabled={!messageInput.trim() || sending}
+                disabled={(!messageInput.trim() && !selectedImage) || sending}
                 className="h-10 w-10 rounded-full bg-green-500 hover:bg-green-600 text-white flex-shrink-0"
               >
                 {sending ? (

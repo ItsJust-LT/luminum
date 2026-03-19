@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, usePathname } from "next/navigation"
 import { useSession } from "@/lib/auth/client"
 import LoadingAnimation from "@/components/LoadingAnimation"
 import { useEffect, useState } from "react"
@@ -46,6 +46,7 @@ import { api } from "@/lib/api"
 import { UserNotificationProvider } from "@/components/realtime/user-notification-provider"
 import { useDisplayMode } from "@/lib/hooks/use-display-mode"
 import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
+import { cn } from "@/lib/utils"
 
 interface Organization {
   id: string
@@ -84,6 +85,7 @@ export default function SlugLayout({
   const params = useParams()
   const router = useRouter()
   const { data: session, isPending } = useSession()
+  const pathname = usePathname()
   const [state, setState] = useState<LayoutState>({
     organization: null,
     loading: true,
@@ -95,6 +97,7 @@ export default function SlugLayout({
   const { isStandalone, isReady } = useDisplayMode()
 
   const slug = params.slug as string
+  const isWhatsappRoute = pathname?.includes(`/${slug}/whatsapp`)
 
   useEffect(() => {
     if (!isPending && session) {
@@ -662,7 +665,12 @@ export default function SlugLayout({
               </div>
             </header>
 
-            <main className="flex-1 overflow-auto p-3 md:p-6 bg-background/50">{children}</main>
+            <main className={cn(
+              "flex-1 bg-background/50",
+              isWhatsappRoute ? "overflow-hidden p-0" : "overflow-auto p-3 md:p-6",
+            )}>
+              {children}
+            </main>
           </SidebarInset>
         </div>
       </SidebarProvider>

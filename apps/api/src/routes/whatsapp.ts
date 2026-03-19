@@ -10,13 +10,26 @@ import {
   disconnectClient,
   removeAccount,
   sendMessage,
+  sendMediaMessage,
   fetchChatHistory,
   getContactDisplayNames,
+  getContactProfilePictures,
   clearSessionData,
 } from "../whatsapp/manager.js";
 
 const router = Router();
 router.use(requireAuth);
+
+function extractMetaTag(html: string, attr: string, key: string): string | null {
+  const re = new RegExp(`<meta[^>]*${attr}=["']${key}["'][^>]*content=["']([^"']+)["'][^>]*>`, "i");
+  const match = re.exec(html);
+  return match?.[1]?.trim() || null;
+}
+
+function extractTitle(html: string): string | null {
+  const match = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
+  return match?.[1]?.trim() || null;
+}
 
 // ── Middleware: ensure whatsapp_enabled for the org ──────────────────────────
 
@@ -54,6 +67,50 @@ router.get("/enabled", async (req: Request, res: Response) => {
     res.json({ success: true, enabled: org?.whatsapp_enabled || false });
   } catch (error: any) {
     res.json({ success: false, enabled: false, error: error.message });
+  }
+});
+
+// ── GET /api/whatsapp/link-preview?organizationId=...&url=... ───────────────
+router.get("/link-preview", async (req: Request, res: Response) => {
+  try {
+    const organizationId = await requireWhatsappEnabled(req, res);
+    if (!organizationId) return;
+    const raw = getQueryParam(req, "url");
+    const target = raw ? decodeURIComponent(raw) : "";
+    if (!target || !/^https?:\/\//i.test(target)) {
+      return res.status(400).json({ success: false, error: "Valid url is required" });
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(target, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 Luminum WhatsApp LinkPreview" },
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      return res.status(200).json({ success: true, preview: null });
+    }
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/html")) {
+      return res.status(200).json({ success: true, preview: null });
+    }
+    const html = await response.text();
+    const preview = {
+      url: response.url || target,
+      title: extractMetaTag(html, "property", "og:title") || extractMetaTag(html, "name", "twitter:title") || extractTitle(html),
+      description: extractMetaTag(html, "property", "og:description") || extractMetaTag(html, "name", "description"),
+      image: extractMetaTag(html, "property", "og:image") || extractMetaTag(html, "name", "twitter:image"),
+      siteName: extractMetaTag(html, "property", "og:site_name"),
+    };
+    if (!preview.title && !preview.description && !preview.image) {
+      return res.status(200).json({ success: true, preview: null });
+    }
+    return res.json({ success: true, preview });
+  } catch {
+    return res.status(200).json({ success: true, preview: null });
   }
 });
 
@@ -267,6 +324,8 @@ router.get("/chats", async (req: Request, res: Response) => {
               body: true,
               from_me: true,
               type: true,
+              media_url: true,
+              mime_type: true,
               timestamp: true,
             },
           },
@@ -275,7 +334,18 @@ router.get("/chats", async (req: Request, res: Response) => {
       prisma.whatsapp_chat.count({ where: where as any }),
     ]);
 
-    res.json({ success: true, chats, total, page, limit });
+    const jids = chats.map((c: any) => c.contact_id).filter(Boolean);
+    const [displayNames, profilePics] = await Promise.all([
+      getContactDisplayNames(organizationId, jids),
+      getContactProfilePictures(organizationId, jids),
+    ]);
+    const enriched = chats.map((c: any) => ({
+      ...c,
+      display_name: displayNames[c.contact_id] ?? null,
+      profile_picture_url: profilePics[c.contact_id] ?? null,
+    }));
+
+    res.json({ success: true, chats: enriched, total, page, limit });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/chats");
     res.status(500).json({ success: false, error: error.message });
@@ -395,6 +465,35 @@ router.post("/chats/:id/messages", async (req: Request, res: Response) => {
     res.json({ success: true, message });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/messages");
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── POST /api/whatsapp/chats/:id/media ───────────────────────────────────────
+router.post("/chats/:id/media", async (req: Request, res: Response) => {
+  try {
+    const chatId = getPathParam(req, "id");
+    if (!chatId) return res.status(400).json({ error: "Chat ID required" });
+
+    const { dataUrl, caption, clientMessageId, organizationId } = req.body;
+    if (!dataUrl) return res.status(400).json({ error: "Image data required" });
+    if (!organizationId) return res.status(400).json({ error: "organizationId required" });
+
+    if (!(await canAccessOrganization(organizationId, req.user))) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const message = await sendMediaMessage({
+      organizationId,
+      chatId,
+      dataUrl,
+      caption,
+      clientMessageId,
+    });
+
+    res.json({ success: true, message });
+  } catch (error: any) {
+    logger.logError(error, "POST /api/whatsapp/chats/:id/media");
     res.status(500).json({ success: false, error: error.message });
   }
 });

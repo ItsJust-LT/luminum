@@ -552,10 +552,19 @@ function createApiClient(baseUrl: string = "") {
       get(`/api/whatsapp/chats/${chatId}`, { organizationId, ...params }),
     sendMessage: (chatId: string, body: string, organizationId: string, clientMessageId?: string) =>
       post(`/api/whatsapp/chats/${chatId}/messages`, { body, organizationId, clientMessageId }),
+    sendMediaMessage: (
+      chatId: string,
+      dataUrl: string,
+      organizationId: string,
+      caption?: string,
+      clientMessageId?: string,
+    ) => post(`/api/whatsapp/chats/${chatId}/media`, { dataUrl, caption, organizationId, clientMessageId }),
     markChatRead: (chatId: string, organizationId: string) =>
       post(`/api/whatsapp/chats/${chatId}/read`, { organizationId }),
     getUnreadCount: (organizationId: string) =>
       get("/api/whatsapp/unread-count", { organizationId }),
+    getLinkPreview: (organizationId: string, url: string) =>
+      get("/api/whatsapp/link-preview", { organizationId, url }),
   };
 
   // ─── User Management ─────────────────────────────────────
