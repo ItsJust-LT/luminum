@@ -15,6 +15,7 @@ import {
   getContactDisplayNames,
   getContactProfilePictures,
   getContactDetails,
+  setContactBlocked,
   clearSessionData,
 } from "../whatsapp/manager.js";
 
@@ -475,6 +476,58 @@ router.get("/contacts/:chatId", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/contacts/:chatId");
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── POST /api/whatsapp/contacts/:chatId/block ────────────────────────────────
+router.post("/contacts/:chatId/block", async (req: Request, res: Response) => {
+  try {
+    const chatId = getPathParam(req, "chatId");
+    if (!chatId) return res.status(400).json({ success: false, error: "chatId required" });
+    const organizationId = req.body?.organizationId || getQueryParam(req, "organizationId");
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+    const chat = await prisma.whatsapp_chat.findUnique({
+      where: { id: chatId },
+      include: { account: { select: { organization_id: true } } },
+    });
+    if (!chat || chat.account.organization_id !== organizationId) {
+      return res.status(404).json({ success: false, error: "Chat not found" });
+    }
+    const result = await setContactBlocked(organizationId, chat.contact_id, true);
+    if (result == null) return res.status(400).json({ success: false, error: "Block not supported for this contact" });
+    res.json({ success: true, blocked: true });
+  } catch (error: any) {
+    logger.logError(error, "POST /api/whatsapp/contacts/:chatId/block");
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── POST /api/whatsapp/contacts/:chatId/unblock ──────────────────────────────
+router.post("/contacts/:chatId/unblock", async (req: Request, res: Response) => {
+  try {
+    const chatId = getPathParam(req, "chatId");
+    if (!chatId) return res.status(400).json({ success: false, error: "chatId required" });
+    const organizationId = req.body?.organizationId || getQueryParam(req, "organizationId");
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+    const chat = await prisma.whatsapp_chat.findUnique({
+      where: { id: chatId },
+      include: { account: { select: { organization_id: true } } },
+    });
+    if (!chat || chat.account.organization_id !== organizationId) {
+      return res.status(404).json({ success: false, error: "Chat not found" });
+    }
+    const result = await setContactBlocked(organizationId, chat.contact_id, false);
+    if (result == null) return res.status(400).json({ success: false, error: "Unblock not supported for this contact" });
+    res.json({ success: true, blocked: false });
+  } catch (error: any) {
+    logger.logError(error, "POST /api/whatsapp/contacts/:chatId/unblock");
     res.status(500).json({ success: false, error: error.message });
   }
 });

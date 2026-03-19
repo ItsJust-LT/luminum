@@ -855,12 +855,10 @@ function isStatusOrLidChat(contactId: string): boolean {
 async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message) {
   const { orgId, accountId } = managed;
 
-  // For messages sent from our own linked phone, chat id is in "to", not "from".
-  const chatContactId = msg.fromMe ? msg.to : msg.from;
-  if (isStatusOrLidChat(chatContactId)) return;
-
   const waChat = await msg.getChat();
-  const chatIdSerialized = waChat.id?._serialized ?? chatContactId;
+  // Use WA chat id as source of truth; msg.from/msg.to can vary across devices.
+  const chatIdSerialized = waChat.id?._serialized ?? (msg.fromMe ? msg.to : msg.from);
+  const chatContactId = chatIdSerialized;
   if (isStatusOrLidChat(chatIdSerialized) || (waChat as any).name === "Status") return;
 
   const chat = await prisma.whatsapp_chat.upsert({
@@ -924,11 +922,10 @@ async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message
 async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS.Message) {
   const { accountId, orgId } = managed;
 
-  const chatContactId = msg.to;
-  if (isStatusOrLidChat(chatContactId)) return;
-
   const waChat = await msg.getChat();
-  const chatIdSerialized = waChat.id?._serialized ?? chatContactId;
+  // Use WA chat id as source of truth for messages sent from linked phone.
+  const chatIdSerialized = waChat.id?._serialized ?? msg.to;
+  const chatContactId = chatIdSerialized;
   if (isStatusOrLidChat(chatIdSerialized) || (waChat as any).name === "Status") return;
 
   const chat = await prisma.whatsapp_chat.upsert({
@@ -969,7 +966,7 @@ async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS
     }
   }
 
-  await prisma.whatsapp_message.upsert({
+  const message = await prisma.whatsapp_message.upsert({
     where: {
       chat_id_wa_message_id: {
         chat_id: chat.id,
@@ -978,6 +975,12 @@ async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS
     },
     create: createData,
     update: {},
+  });
+
+  // Realtime update for phone-sent messages (message_create path).
+  broadcastToOrg(orgId, {
+    type: "whatsapp:message",
+    data: { chatId: chat.id, message, chat },
   });
 }
 
@@ -1079,6 +1082,11 @@ export async function getContactDetails(
     const contact: any = await managed.client.getContactById(jid);
     const profilePictureUrl = await (managed.client as any).getProfilePicUrl?.(jid).catch(() => null);
     const about = typeof contact?.getAbout === "function" ? await contact.getAbout().catch(() => null) : null;
+    const countryCode = typeof contact?.getCountryCode === "function" ? await contact.getCountryCode().catch(() => null) : null;
+    const formattedNumber = typeof contact?.getFormattedNumber === "function" ? await contact.getFormattedNumber().catch(() => null) : null;
+    const commonGroups = typeof contact?.getCommonGroups === "function" ? await contact.getCommonGroups().catch(() => []) : [];
+    const chatObj = typeof contact?.getChat === "function" ? await contact.getChat().catch(() => null) : null;
+    const broadcast = typeof contact?.getBroadcast === "function" ? await contact.getBroadcast().catch(() => null) : null;
 
     const displayName =
       (typeof contact?.name === "string" && contact.name.trim() ? contact.name.trim() : null) ||
@@ -1093,6 +1101,13 @@ export async function getContactDetails(
       pushname: contact?.pushname ?? null,
       shortName: contact?.shortName ?? null,
       about: typeof about === "string" ? about : null,
+      countryCode: countryCode ?? null,
+      formattedNumber: formattedNumber ?? null,
+      commonGroups: Array.isArray(commonGroups) ? commonGroups : [],
+      chatId: (chatObj as any)?.id?._serialized ?? null,
+      chatIsMuted: (chatObj as any)?.isMuted ?? null,
+      chatIsGroup: !!(chatObj as any)?.isGroup,
+      hasBroadcast: !!broadcast,
       profilePictureUrl: typeof profilePictureUrl === "string" ? profilePictureUrl : null,
       isMe: !!contact?.isMe,
       isUser: !!contact?.isUser,
@@ -1105,6 +1120,27 @@ export async function getContactDetails(
       verifiedName: (contact as any)?.verifiedName ?? null,
       businessProfile: (contact as any)?.businessProfile ?? null,
     };
+  } catch {
+    return null;
+  }
+}
+
+export async function setContactBlocked(
+  organizationId: string,
+  jid: string,
+  blocked: boolean,
+): Promise<boolean | null> {
+  const managed = await ensureClient(organizationId);
+  if (!managed?.ready || !jid) return null;
+  try {
+    const contact: any = await managed.client.getContactById(jid);
+    if (!contact) return null;
+    if (blocked) {
+      if (typeof contact.block !== "function") return null;
+      return await contact.block();
+    }
+    if (typeof contact.unblock !== "function") return null;
+    return await contact.unblock();
   } catch {
     return null;
   }
