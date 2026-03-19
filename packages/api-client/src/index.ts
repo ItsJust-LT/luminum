@@ -550,6 +550,8 @@ function createApiClient(baseUrl: string = "") {
       get("/api/whatsapp/chats", { organizationId, ...params }),
     getChat: (chatId: string, organizationId: string, params?: { cursor?: string; limit?: number }) =>
       get(`/api/whatsapp/chats/${chatId}`, { organizationId, ...params }),
+    getContactInfo: (chatId: string, organizationId: string) =>
+      get(`/api/whatsapp/contacts/${chatId}`, { organizationId }),
     sendMessage: (chatId: string, body: string, organizationId: string, clientMessageId?: string) =>
       post(`/api/whatsapp/chats/${chatId}/messages`, { body, organizationId, clientMessageId }),
     sendMediaMessage: (

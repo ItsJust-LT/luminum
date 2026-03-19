@@ -14,6 +14,7 @@ import {
   fetchChatHistory,
   getContactDisplayNames,
   getContactProfilePictures,
+  getContactDetails,
   clearSessionData,
 } from "../whatsapp/manager.js";
 
@@ -428,6 +429,52 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/chats/:id");
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── GET /api/whatsapp/contacts/:chatId?organizationId=... ───────────────────
+router.get("/contacts/:chatId", async (req: Request, res: Response) => {
+  try {
+    const chatId = getPathParam(req, "chatId");
+    if (!chatId) return res.status(400).json({ success: false, error: "chatId required" });
+    const organizationId = getQueryParam(req, "organizationId");
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+
+    const chat = await prisma.whatsapp_chat.findUnique({
+      where: { id: chatId },
+      include: { account: { select: { organization_id: true } } },
+    });
+    if (!chat || chat.account.organization_id !== organizationId) {
+      return res.status(404).json({ success: false, error: "Chat not found" });
+    }
+
+    const details = await getContactDetails(organizationId, chat.contact_id);
+    const [messageCount, mediaCount, firstMessage] = await Promise.all([
+      prisma.whatsapp_message.count({ where: { chat_id: chatId } }),
+      prisma.whatsapp_message.count({ where: { chat_id: chatId, media_url: { not: null } } }),
+      prisma.whatsapp_message.findFirst({
+        where: { chat_id: chatId },
+        orderBy: { timestamp: "asc" },
+        select: { timestamp: true },
+      }),
+    ]);
+
+    return res.json({
+      success: true,
+      chat,
+      contact: details,
+      stats: {
+        messageCount,
+        mediaCount,
+        firstMessageAt: firstMessage?.timestamp ?? null,
+      },
+    });
+  } catch (error: any) {
+    logger.logError(error, "GET /api/whatsapp/contacts/:chatId");
     res.status(500).json({ success: false, error: error.message });
   }
 });

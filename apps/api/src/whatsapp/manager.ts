@@ -1037,7 +1037,10 @@ export async function getContactDisplayNames(
   for (const jid of unique) {
     try {
       const contact = await managed.client.getContactById(jid);
-      const name = (contact as any).name ?? (contact as any).pushname ?? (contact as any).shortName;
+      const name =
+        (typeof (contact as any).name === "string" && (contact as any).name.trim() ? (contact as any).name.trim() : null) ||
+        (typeof (contact as any).pushname === "string" && (contact as any).pushname.trim() ? (contact as any).pushname.trim() : null) ||
+        (typeof (contact as any).shortName === "string" && (contact as any).shortName.trim() ? (contact as any).shortName.trim() : null);
       if (typeof name === "string" && name.trim()) out[jid] = name.trim();
     } catch {
       // ignore per-contact failures
@@ -1064,6 +1067,47 @@ export async function getContactProfilePictures(
     }
   }
   return out;
+}
+
+export async function getContactDetails(
+  organizationId: string,
+  jid: string,
+): Promise<Record<string, unknown> | null> {
+  const managed = await ensureClient(organizationId);
+  if (!managed?.ready || !jid) return null;
+  try {
+    const contact: any = await managed.client.getContactById(jid);
+    const profilePictureUrl = await (managed.client as any).getProfilePicUrl?.(jid).catch(() => null);
+    const about = typeof contact?.getAbout === "function" ? await contact.getAbout().catch(() => null) : null;
+
+    const displayName =
+      (typeof contact?.name === "string" && contact.name.trim() ? contact.name.trim() : null) ||
+      (typeof contact?.pushname === "string" && contact.pushname.trim() ? contact.pushname.trim() : null) ||
+      (typeof contact?.shortName === "string" && contact.shortName.trim() ? contact.shortName.trim() : null);
+
+    return {
+      jid,
+      number: String(jid).split("@")[0] || null,
+      displayName,
+      name: contact?.name ?? null,
+      pushname: contact?.pushname ?? null,
+      shortName: contact?.shortName ?? null,
+      about: typeof about === "string" ? about : null,
+      profilePictureUrl: typeof profilePictureUrl === "string" ? profilePictureUrl : null,
+      isMe: !!contact?.isMe,
+      isUser: !!contact?.isUser,
+      isGroup: !!contact?.isGroup,
+      isWAContact: !!contact?.isWAContact,
+      isMyContact: !!contact?.isMyContact,
+      isBusiness: !!contact?.isBusiness,
+      isEnterprise: !!contact?.isEnterprise,
+      isBlocked: !!contact?.isBlocked,
+      verifiedName: (contact as any)?.verifiedName ?? null,
+      businessProfile: (contact as any)?.businessProfile ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Fetch recent message history from WhatsApp for a chat and upsert into DB. Returns saved messages (oldest first). */

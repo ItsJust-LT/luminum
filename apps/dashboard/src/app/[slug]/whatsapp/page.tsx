@@ -27,6 +27,7 @@ import {
   User,
   ImagePlus,
   X,
+  Info,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -977,6 +978,11 @@ export default function WhatsAppPage() {
                 {selectedChat.is_group ? "Group" : (selectedChat.name ? formatContactIdAsNumber(selectedChat.contact_id) : null)}
               </p>
             </div>
+            <Link href={`/${slug}/whatsapp/contacts/${selectedChat.id}`}>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Info className="h-4 w-4" />
+              </Button>
+            </Link>
           </div>
 
           {/* Messages area */}
