@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   MessageCircle,
@@ -186,10 +186,7 @@ function ContactAvatar({ displayName, isGroup, photoUrl }: { displayName: string
   const initial = isGroup ? "#" : (displayName.charAt(0).match(/\d/) ? displayName.replace(/\D/g, "").charAt(0) || "?" : displayName.charAt(0).toUpperCase())
   return (
     <Avatar className="h-10 w-10 flex-shrink-0">
-      {photoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={photoUrl} alt={displayName} className="h-10 w-10 rounded-full object-cover" />
-      ) : null}
+      <AvatarImage src={photoUrl || undefined} alt={displayName} className="object-cover" />
       <AvatarFallback className={cn(
         "text-white font-semibold text-sm",
         isGroup
