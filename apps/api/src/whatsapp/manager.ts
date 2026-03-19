@@ -79,6 +79,21 @@ function formatUnknownError(err: unknown): { message: string; details?: string }
   return { message: String(err) };
 }
 
+async function safeUpdateAccountById(
+  accountId: string,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const updated = await prisma.whatsapp_account.updateMany({
+      where: { id: accountId },
+      data: data as any,
+    });
+    return updated.count > 0;
+  } catch {
+    return false;
+  }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface BroadcastFn {
@@ -405,7 +420,7 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
   const puppeteerExecutablePath =
     process.env.PUPPETEER_EXECUTABLE_PATH ||
     process.env.CHROMIUM_PATH ||
-    "";
+    "/usr/bin/chromium";
 
   // Default: multi-process Chromium — single-process is prone to "socket hang up" on heavy pages (WhatsApp Web).
   // Set WHATSAPP_PUPPETEER_MINIMAL=true only on very low-memory hosts (may be less stable).
@@ -448,10 +463,9 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     args: puppeteerArgs,
     protocolTimeout: PUPPETEER_PROTOCOL_TIMEOUT_MS,
     timeout: PUPPETEER_PROTOCOL_TIMEOUT_MS,
+    dumpio: process.env.WHATSAPP_PUPPETEER_DUMPIO === "true",
   };
-  if (puppeteerExecutablePath) {
-    puppeteerOptions.executablePath = puppeteerExecutablePath;
-  }
+  puppeteerOptions.executablePath = puppeteerExecutablePath;
 
   const managed: ManagedClient = {
     client: null as unknown as WAWebJS.Client,
@@ -495,17 +509,14 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
         error_message: displayMessage,
         error_details: formatted.details,
       });
-      await prisma.whatsapp_account.update({
-        where: { id: account.id },
-        data: {
-          status: "ERROR",
-          last_error: displayMessage,
-          retry_count: attempt,
-          next_retry_at: attempt < INIT_RETRY_MAX ? new Date(Date.now() + INIT_RETRY_BASE_MS * attempt) : null,
-          owner_instance_id: null,
-          lease_expires_at: null,
-        },
-      }).catch(() => {});
+      await safeUpdateAccountById(account.id, {
+        status: "ERROR",
+        last_error: displayMessage,
+        retry_count: attempt,
+        next_retry_at: attempt < INIT_RETRY_MAX ? new Date(Date.now() + INIT_RETRY_BASE_MS * attempt) : null,
+        owner_instance_id: null,
+        lease_expires_at: null,
+      });
       try {
         await client.destroy();
       } catch {
@@ -530,14 +541,11 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     const displayMessage = formatted.message.trim() && formatted.message !== "{}"
       ? formatted.message
       : "Initialization failed after retries. Wait a few minutes and try again.";
-    await prisma.whatsapp_account.update({
-      where: { id: account.id },
-      data: {
-        status: "ERROR",
-        last_error: displayMessage,
-        owner_instance_id: null,
-        lease_expires_at: null,
-      },
+    await safeUpdateAccountById(account.id, {
+      status: "ERROR",
+      last_error: displayMessage,
+      owner_instance_id: null,
+      lease_expires_at: null,
     });
   }
   return null;

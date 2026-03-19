@@ -57,6 +57,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      CHROMIUM_PATH: /usr/bin/chromium
       APP_URL: ${APP_URL}
       API_URL: ${API_URL:-https://api.luminum.agency}
       API_WS_URL: ${API_WS_URL}

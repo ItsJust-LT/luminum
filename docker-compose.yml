@@ -58,6 +58,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      CHROMIUM_PATH: /usr/bin/chromium
       APP_URL: ${APP_URL:-http://localhost:3000}
       API_WS_URL: ${API_WS_URL:-http://localhost:4000}
       API_URL: ${API_URL:-http://localhost:4000}
