@@ -6,6 +6,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  # Avoid overlapping deploys that race on fixed container names on the same host.
+  group: luminum-prod-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
 

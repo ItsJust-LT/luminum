@@ -153,6 +153,16 @@ function extractFirstUrl(text?: string | null): string | null {
   return match?.[1] || null
 }
 
+function mediaLabel(type?: string | null): string {
+  const t = (type || "").toLowerCase()
+  if (t === "image") return "Image"
+  if (t === "audio" || t === "ptt") return "Voice message"
+  if (t === "video") return "Video"
+  if (t === "document") return "Document"
+  if (t === "sticker") return "Sticker"
+  return "Media"
+}
+
 /** Format contact_id (e.g. 1234567890@s.whatsapp.net) as +1234567890 for display. Status/lid IDs show as Status. */
 function formatContactIdAsNumber(contactId: string): string {
   if (!contactId) return "Unknown"
@@ -925,9 +935,9 @@ export default function WhatsAppPage() {
                               {lastMsg.from_me && <span className="text-muted-foreground/70">You: </span>}
                               {(lastMsg.body != null && lastMsg.body !== ""
                                 ? lastMsg.body
-                                : (lastMsg.media_url && lastMsg.mime_type?.startsWith("image/"))
-                                  ? "[Image]"
-                                  : (lastMsg.type && lastMsg.type !== "text" ? `[${lastMsg.type}]` : "No messages"))}
+                                : (lastMsg.media_url || (lastMsg.type && lastMsg.type !== "text"))
+                                  ? mediaLabel(lastMsg.type)
+                                  : "No messages")}
                             </>
                           ) : (
                             <span className="italic">No messages yet</span>
@@ -1056,11 +1066,10 @@ export default function WhatsAppPage() {
                           >
                             {msg.from_number && !msg.from_me && formatContactIdAsNumber(msg.from_number) !== "Status" && (
                               <p className="text-xs font-semibold text-green-600 mb-0.5">
-                                {(msg as WhatsAppMessage).sender_display_name ?? formatContactIdAsNumber(msg.from_number)}
+                                {selectedChat?.is_group
+                                  ? ((msg as WhatsAppMessage).sender_display_name ?? selectedChat?.display_name ?? selectedChat?.name ?? formatContactIdAsNumber(msg.from_number))
+                                  : (selectedChat?.display_name ?? selectedChat?.name ?? (msg as WhatsAppMessage).sender_display_name ?? formatContactIdAsNumber(msg.from_number))}
                               </p>
-                            )}
-                            {msg.type !== "text" && msg.type !== "chat" && (msg.body == null || msg.body === "") && (
-                              <p className="text-xs italic opacity-80">[{msg.type ?? "message"}]</p>
                             )}
                             {((msg as WhatsAppMessage).media_url && (msg as WhatsAppMessage).mime_type?.startsWith("image/")) && (
                               // eslint-disable-next-line @next/next/no-img-element
@@ -1069,6 +1078,19 @@ export default function WhatsAppPage() {
                                 alt="Image"
                                 className="mt-1 max-h-64 w-auto rounded-lg object-contain"
                               />
+                            )}
+                            {((msg as WhatsAppMessage).media_url && (msg as WhatsAppMessage).mime_type?.startsWith("audio/")) && (
+                              <audio controls className="mt-1 w-full max-w-[280px]">
+                                <source src={(msg as WhatsAppMessage).media_url as string} type={(msg as WhatsAppMessage).mime_type || undefined} />
+                              </audio>
+                            )}
+                            {((msg as WhatsAppMessage).media_url && (msg as WhatsAppMessage).mime_type?.startsWith("video/")) && (
+                              <video controls className="mt-1 max-h-64 w-auto rounded-lg">
+                                <source src={(msg as WhatsAppMessage).media_url as string} type={(msg as WhatsAppMessage).mime_type || undefined} />
+                              </video>
+                            )}
+                            {(msg.type !== "text" && msg.type !== "chat" && (msg.body == null || msg.body === "") && !(msg as WhatsAppMessage).media_url) && (
+                              <p className="text-xs italic opacity-80">{mediaLabel(msg.type)}</p>
                             )}
                             {(msg.body != null && msg.body !== "") && (
                               <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
