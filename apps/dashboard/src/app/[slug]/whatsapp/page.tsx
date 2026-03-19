@@ -28,7 +28,39 @@ import {
   ImagePlus,
   X,
   Info,
+  Reply,
+  Forward,
+  Star,
+  Trash2,
+  SmilePlus,
+  MoreVertical,
+  Pin,
+  Archive,
+  BellOff,
+  Bell,
+  Eye,
+  Copy,
+  Users,
 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
@@ -55,6 +87,9 @@ interface WhatsAppChat {
   last_message_at: string | null
   unread_count: number
   is_group: boolean
+  is_archived?: boolean
+  is_muted?: boolean
+  is_pinned?: boolean
   display_name?: string | null
   profile_picture_url?: string | null
   messages?: {
@@ -80,6 +115,13 @@ interface WhatsAppMessage {
   type: string
   media_url?: string | null
   mime_type?: string | null
+  quoted_wa_message_id?: string | null
+  quoted_body?: string | null
+  quoted_from?: string | null
+  is_starred?: boolean
+  is_pinned?: boolean
+  is_deleted?: boolean
+  reactions?: { emoji: string; senderId: string }[] | null
   timestamp: string
   ack: number | null
   created_at: string
@@ -191,6 +233,8 @@ function messageDateLabel(dateStr: string | Date): string {
   }
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 }
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
 
 function ContactAvatar({ displayName, isGroup, photoUrl }: { displayName: string; isGroup: boolean; photoUrl?: string | null }) {
   const initial = isGroup ? "#" : (displayName.charAt(0).match(/\d/) ? displayName.replace(/\D/g, "").charAt(0) || "?" : displayName.charAt(0).toUpperCase())
@@ -433,6 +477,12 @@ export default function WhatsAppPage() {
   const [selectedImage, setSelectedImage] = useState<{ dataUrl: string; fileName: string } | null>(null)
   const [sending, setSending] = useState(false)
   const [linkPreviewCache, setLinkPreviewCache] = useState<Record<string, LinkPreview | null>>({})
+  const [replyingTo, setReplyingTo] = useState<WhatsAppMessage | null>(null)
+  const [forwardModalOpen, setForwardModalOpen] = useState(false)
+  const [forwardingMessage, setForwardingMessage] = useState<WhatsAppMessage | null>(null)
+  const [messageInfoOpen, setMessageInfoOpen] = useState(false)
+  const [messageInfoData, setMessageInfoData] = useState<any>(null)
+  const [messageInfoLoading, setMessageInfoLoading] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -643,6 +693,20 @@ export default function WhatsAppPage() {
     return unsub
   }, [onMessage, selectedChat?.id, chatStateById, nextCursor, setChatStateById, setChatListCache])
 
+  // Real-time reaction handling
+  useEffect(() => {
+    const unsub = onMessage("whatsapp:reaction", (data: any) => {
+      if (data?.messageId && data?.reactions !== undefined) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === data.messageId ? { ...m, reactions: data.reactions } : m
+          )
+        )
+      }
+    })
+    return unsub
+  }, [onMessage])
+
   // Real-time status handling (WebSocket may not reach this client in multi-instance setups; polling + "Check status" button are fallbacks)
   useEffect(() => {
     const unsub = onMessage("whatsapp:status", (data: any) => {
@@ -762,16 +826,22 @@ export default function WhatsAppPage() {
       type: selectedImage ? "image" : "text",
       media_url: selectedImage?.dataUrl ?? null,
       mime_type: selectedImage ? "image/*" : null,
+      quoted_wa_message_id: replyingTo?.wa_message_id ?? null,
+      quoted_body: replyingTo?.body?.slice(0, 200) ?? null,
+      quoted_from: replyingTo?.from_number ?? null,
       timestamp: new Date().toISOString(),
       ack: 0,
       created_at: new Date().toISOString(),
     }
     setMessages((prev) => dedupeMessages([...prev, optimisticMsg]))
 
+    const quotedWaId = replyingTo?.wa_message_id || undefined
+    setReplyingTo(null)
+
     try {
       const res = selectedImage
         ? await api.whatsapp.sendMediaMessage(selectedChat.id, selectedImage.dataUrl, orgId, body || undefined, tempId) as any
-        : await api.whatsapp.sendMessage(selectedChat.id, body, orgId, tempId) as any
+        : await api.whatsapp.sendMessage(selectedChat.id, body, orgId, tempId, quotedWaId) as any
       if (res.success && res.message) {
         setMessages((prev) => dedupeMessages(prev.map((m) => (m.id === tempId ? res.message : m))))
       }
@@ -782,6 +852,112 @@ export default function WhatsAppPage() {
       setMessageInput(body)
     } finally {
       setSending(false)
+    }
+  }
+
+  const handleReply = (msg: WhatsAppMessage) => {
+    setReplyingTo(msg)
+  }
+
+  const handleReact = async (msg: WhatsAppMessage, emoji: string) => {
+    if (!orgId || !msg.wa_message_id) return
+    try {
+      await api.whatsapp.reactToMessage(msg.wa_message_id, orgId, emoji)
+    } catch (err: any) {
+      toast.error(err.message || "Failed to react")
+    }
+  }
+
+  const handleStar = async (msg: WhatsAppMessage) => {
+    if (!orgId || !msg.wa_message_id) return
+    try {
+      await api.whatsapp.starMessage(msg.wa_message_id, orgId, !msg.is_starred)
+      setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, is_starred: !msg.is_starred } : m))
+      toast.success(msg.is_starred ? "Unstarred" : "Starred")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to star message")
+    }
+  }
+
+  const handleDelete = async (msg: WhatsAppMessage, everyone: boolean) => {
+    if (!orgId || !msg.wa_message_id) return
+    try {
+      await api.whatsapp.deleteMessage(msg.wa_message_id, orgId, everyone)
+      setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, is_deleted: true, body: null } : m))
+      toast.success("Message deleted")
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete message")
+    }
+  }
+
+  const handleForward = (msg: WhatsAppMessage) => {
+    setForwardingMessage(msg)
+    setForwardModalOpen(true)
+  }
+
+  const handleForwardConfirm = async (targetChatIds: string[]) => {
+    if (!orgId || !forwardingMessage?.wa_message_id) return
+    try {
+      await api.whatsapp.forwardMessage(forwardingMessage.wa_message_id, orgId, targetChatIds)
+      toast.success(`Forwarded to ${targetChatIds.length} chat${targetChatIds.length > 1 ? "s" : ""}`)
+    } catch (err: any) {
+      toast.error(err.message || "Failed to forward")
+    }
+    setForwardModalOpen(false)
+    setForwardingMessage(null)
+  }
+
+  const handleCopyMessage = (msg: WhatsAppMessage) => {
+    if (msg.body) {
+      navigator.clipboard.writeText(msg.body)
+      toast.success("Copied to clipboard")
+    }
+  }
+
+  const handleMessageInfo = async (msg: WhatsAppMessage) => {
+    if (!orgId || !msg.wa_message_id) return
+    setMessageInfoLoading(true)
+    setMessageInfoOpen(true)
+    try {
+      const res = await api.whatsapp.getMessageInfo(msg.wa_message_id, orgId) as any
+      setMessageInfoData(res?.info || null)
+    } catch {
+      setMessageInfoData(null)
+    } finally {
+      setMessageInfoLoading(false)
+    }
+  }
+
+  const handleArchiveChat = async (chat: WhatsAppChat, archive: boolean) => {
+    if (!orgId) return
+    try {
+      await api.whatsapp.archiveChat(chat.id, orgId, archive)
+      setChats((prev) => prev.map((c) => c.id === chat.id ? { ...c, is_archived: archive } : c))
+      toast.success(archive ? "Chat archived" : "Chat unarchived")
+    } catch (err: any) {
+      toast.error(err.message || "Failed")
+    }
+  }
+
+  const handlePinChat = async (chat: WhatsAppChat, pin: boolean) => {
+    if (!orgId) return
+    try {
+      await api.whatsapp.pinChat(chat.id, orgId, pin)
+      setChats((prev) => prev.map((c) => c.id === chat.id ? { ...c, is_pinned: pin } : c))
+      toast.success(pin ? "Chat pinned" : "Chat unpinned")
+    } catch (err: any) {
+      toast.error(err.message || "Failed")
+    }
+  }
+
+  const handleMuteChat = async (chat: WhatsAppChat, mute: boolean) => {
+    if (!orgId) return
+    try {
+      await api.whatsapp.muteChat(chat.id, orgId, mute)
+      setChats((prev) => prev.map((c) => c.id === chat.id ? { ...c, is_muted: mute } : c))
+      toast.success(mute ? "Chat muted" : "Chat unmuted")
+    } catch (err: any) {
+      toast.error(err.message || "Failed")
     }
   }
 
@@ -943,6 +1119,8 @@ export default function WhatsAppPage() {
                             <span className="italic">No messages yet</span>
                           )}
                         </p>
+                        {chat.is_pinned && <Pin className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+                        {chat.is_muted && <BellOff className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                         {chat.unread_count > 0 && (
                           <Badge className="bg-green-500 text-white text-[10px] h-5 min-w-[20px] px-1.5 rounded-full flex-shrink-0">
                             {chat.unread_count}
@@ -988,11 +1166,38 @@ export default function WhatsAppPage() {
                 {selectedChat.is_group ? "Group" : (selectedChat.name ? formatContactIdAsNumber(selectedChat.contact_id) : null)}
               </p>
             </div>
-            <Link href={`/${slug}/whatsapp/contacts/${selectedChat.id}`}>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Info className="h-4 w-4" />
-              </Button>
-            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => handleArchiveChat(selectedChat, !selectedChat.is_archived)}>
+                  <Archive className="h-4 w-4 mr-2" />{selectedChat.is_archived ? "Unarchive" : "Archive"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handlePinChat(selectedChat, !selectedChat.is_pinned)}>
+                  <Pin className="h-4 w-4 mr-2" />{selectedChat.is_pinned ? "Unpin" : "Pin"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleMuteChat(selectedChat, !selectedChat.is_muted)}>
+                  {selectedChat.is_muted ? <Bell className="h-4 w-4 mr-2" /> : <BellOff className="h-4 w-4 mr-2" />}
+                  {selectedChat.is_muted ? "Unmute" : "Mute"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {selectedChat.is_group && (
+                  <DropdownMenuItem asChild>
+                    <Link href={`/${slug}/whatsapp/groups/${encodeURIComponent(selectedChat.id)}`}>
+                      <Users className="h-4 w-4 mr-2" />Group info
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem asChild>
+                  <Link href={`/${slug}/whatsapp/contacts/${encodeURIComponent(selectedChat.id)}`}>
+                    <Info className="h-4 w-4 mr-2" />Contact info
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Messages area */}
@@ -1041,6 +1246,9 @@ export default function WhatsAppPage() {
                     const dateKey = d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate()
                     const showDate = dateKey !== lastDate
                     if (showDate) lastDate = dateKey
+                    const reactions = Array.isArray(msg.reactions) ? msg.reactions : []
+                    const groupedReactions: Record<string, number> = {}
+                    reactions.forEach((r: any) => { groupedReactions[r.emoji] = (groupedReactions[r.emoji] || 0) + 1 })
                     return (
                       <div key={msg.id}>
                         {showDate && (
@@ -1052,95 +1260,166 @@ export default function WhatsAppPage() {
                         )}
                         <div
                           className={cn(
-                            "flex",
+                            "flex group/msg",
                             msg.from_me ? "justify-end" : "justify-start"
                           )}
                         >
-                          <div
-                            className={cn(
-                              "max-w-[75%] rounded-2xl px-3.5 py-2 shadow-sm",
-                              msg.from_me
-                                ? "bg-green-500 text-white rounded-br-sm"
-                                : "bg-muted rounded-bl-sm"
-                            )}
-                          >
-                            {msg.from_number && !msg.from_me && formatContactIdAsNumber(msg.from_number) !== "Status" && (
-                              <p className="text-xs font-semibold text-green-600 mb-0.5">
-                                {selectedChat?.is_group
-                                  ? ((msg as WhatsAppMessage).sender_display_name ?? selectedChat?.display_name ?? selectedChat?.name ?? formatContactIdAsNumber(msg.from_number))
-                                  : (selectedChat?.display_name ?? selectedChat?.name ?? (msg as WhatsAppMessage).sender_display_name ?? formatContactIdAsNumber(msg.from_number))}
-                              </p>
-                            )}
-                            {((msg as WhatsAppMessage).media_url && (msg as WhatsAppMessage).mime_type?.startsWith("image/")) && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={(msg as WhatsAppMessage).media_url as string}
-                                alt="Image"
-                                className="mt-1 max-h-64 w-auto rounded-lg object-contain"
-                              />
-                            )}
-                            {((msg as WhatsAppMessage).media_url && (msg as WhatsAppMessage).mime_type?.startsWith("audio/")) && (
-                              <audio controls className="mt-1 w-full max-w-[280px]">
-                                <source src={(msg as WhatsAppMessage).media_url as string} type={(msg as WhatsAppMessage).mime_type || undefined} />
-                              </audio>
-                            )}
-                            {((msg as WhatsAppMessage).media_url && (msg as WhatsAppMessage).mime_type?.startsWith("video/")) && (
-                              <video controls className="mt-1 max-h-64 w-auto rounded-lg">
-                                <source src={(msg as WhatsAppMessage).media_url as string} type={(msg as WhatsAppMessage).mime_type || undefined} />
-                              </video>
-                            )}
-                            {(msg.type !== "text" && msg.type !== "chat" && (msg.body == null || msg.body === "") && !(msg as WhatsAppMessage).media_url) && (
-                              <p className="text-xs italic opacity-80">{mediaLabel(msg.type)}</p>
-                            )}
-                            {(msg.body != null && msg.body !== "") && (
-                              <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
-                            )}
-                            {(() => {
-                              const url = extractFirstUrl(msg.body)
-                              if (!url) return null
-                              const preview = linkPreviewCache[url]
-                              if (!preview) return null
-                              return (
-                                <a
-                                  href={preview.url || url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className={cn(
-                                    "mt-2 block rounded-lg border overflow-hidden no-underline",
-                                    msg.from_me ? "border-white/30 bg-white/10" : "border-border bg-background",
+                          <div className={cn("flex items-start gap-1 max-w-[80%]", msg.from_me ? "flex-row-reverse" : "flex-row")}>
+                            <div
+                              className={cn(
+                                "relative rounded-2xl px-3.5 py-2 shadow-sm",
+                                msg.from_me
+                                  ? "bg-green-500 text-white rounded-br-sm"
+                                  : "bg-muted rounded-bl-sm",
+                                msg.is_deleted && "opacity-60 italic"
+                              )}
+                            >
+                              {msg.is_starred && (
+                                <Star className="absolute -top-1.5 -right-1.5 h-3 w-3 text-yellow-400 fill-yellow-400" />
+                              )}
+                              {msg.quoted_body && (
+                                <div className={cn(
+                                  "mb-1.5 px-2.5 py-1.5 rounded-lg border-l-[3px] text-xs",
+                                  msg.from_me
+                                    ? "bg-white/15 border-l-white/50"
+                                    : "bg-background/80 border-l-green-500"
+                                )}>
+                                  {msg.quoted_from && (
+                                    <p className="font-semibold text-[11px] mb-0.5 opacity-80">
+                                      {formatContactIdAsNumber(msg.quoted_from)}
+                                    </p>
                                   )}
-                                >
-                                  {preview.image ? (
+                                  <p className="line-clamp-2 opacity-80">{msg.quoted_body}</p>
+                                </div>
+                              )}
+                              {msg.is_deleted ? (
+                                <p className="text-xs italic opacity-60">This message was deleted</p>
+                              ) : (
+                                <>
+                                  {msg.from_number && !msg.from_me && formatContactIdAsNumber(msg.from_number) !== "Status" && (
+                                    <p className="text-xs font-semibold text-green-600 mb-0.5">
+                                      {selectedChat?.is_group
+                                        ? (msg.sender_display_name ?? selectedChat?.display_name ?? selectedChat?.name ?? formatContactIdAsNumber(msg.from_number))
+                                        : (selectedChat?.display_name ?? selectedChat?.name ?? msg.sender_display_name ?? formatContactIdAsNumber(msg.from_number))}
+                                    </p>
+                                  )}
+                                  {(msg.media_url && msg.mime_type?.startsWith("image/")) && (
                                     // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={preview.image} alt={preview.title || "Link preview"} className="w-full max-h-40 object-cover" />
-                                  ) : null}
-                                  <div className="p-2">
-                                    {preview.siteName ? (
-                                      <p className={cn("text-[10px] uppercase tracking-wide", msg.from_me ? "text-white/70" : "text-muted-foreground")}>
-                                        {preview.siteName}
-                                      </p>
-                                    ) : null}
-                                    {preview.title ? <p className="text-xs font-semibold line-clamp-2">{preview.title}</p> : null}
-                                    {preview.description ? (
-                                      <p className={cn("text-[11px] line-clamp-2", msg.from_me ? "text-white/80" : "text-muted-foreground")}>
-                                        {preview.description}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                </a>
-                              )
-                            })()}
+                                    <img src={msg.media_url} alt="Image" className="mt-1 max-h-64 w-auto rounded-lg object-contain" />
+                                  )}
+                                  {(msg.media_url && msg.mime_type?.startsWith("audio/")) && (
+                                    <audio controls className="mt-1 w-full max-w-[280px]">
+                                      <source src={msg.media_url} type={msg.mime_type || undefined} />
+                                    </audio>
+                                  )}
+                                  {(msg.media_url && msg.mime_type?.startsWith("video/")) && (
+                                    <video controls className="mt-1 max-h-64 w-auto rounded-lg">
+                                      <source src={msg.media_url} type={msg.mime_type || undefined} />
+                                    </video>
+                                  )}
+                                  {(msg.type !== "text" && msg.type !== "chat" && !msg.body && !msg.media_url) && (
+                                    <p className="text-xs italic opacity-80">{mediaLabel(msg.type)}</p>
+                                  )}
+                                  {msg.body && (
+                                    <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
+                                  )}
+                                  {(() => {
+                                    const url = extractFirstUrl(msg.body)
+                                    if (!url) return null
+                                    const preview = linkPreviewCache[url]
+                                    if (!preview) return null
+                                    return (
+                                      <a href={preview.url || url} target="_blank" rel="noreferrer"
+                                        className={cn("mt-2 block rounded-lg border overflow-hidden no-underline", msg.from_me ? "border-white/30 bg-white/10" : "border-border bg-background")}>
+                                        {preview.image && (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img src={preview.image} alt={preview.title || "Link preview"} className="w-full max-h-40 object-cover" />
+                                        )}
+                                        <div className="p-2">
+                                          {preview.siteName && <p className={cn("text-[10px] uppercase tracking-wide", msg.from_me ? "text-white/70" : "text-muted-foreground")}>{preview.siteName}</p>}
+                                          {preview.title && <p className="text-xs font-semibold line-clamp-2">{preview.title}</p>}
+                                          {preview.description && <p className={cn("text-[11px] line-clamp-2", msg.from_me ? "text-white/80" : "text-muted-foreground")}>{preview.description}</p>}
+                                        </div>
+                                      </a>
+                                    )
+                                  })()}
+                                </>
+                              )}
+                              {Object.keys(groupedReactions).length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {Object.entries(groupedReactions).map(([emoji, count]) => (
+                                    <span key={emoji} className={cn(
+                                      "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs border",
+                                      msg.from_me ? "border-white/30 bg-white/15" : "border-border bg-background/80"
+                                    )}>
+                                      {emoji}{count > 1 && <span className="text-[10px]">{count}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className={cn("flex items-center gap-1 mt-0.5", msg.from_me ? "justify-end" : "justify-start")}>
+                                <span className={cn("text-[10px]", msg.from_me ? "text-white/70" : "text-muted-foreground")}>
+                                  {messageTime(msg.timestamp)}
+                                </span>
+                                {msg.from_me && <AckIcon ack={msg.ack} />}
+                              </div>
+                            </div>
+                            {/* Message action buttons */}
                             <div className={cn(
-                              "flex items-center gap-1 mt-0.5",
-                              msg.from_me ? "justify-end" : "justify-start"
+                              "flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity pt-2",
+                              msg.from_me ? "flex-row-reverse" : "flex-row"
                             )}>
-                              <span className={cn(
-                                "text-[10px]",
-                                msg.from_me ? "text-white/70" : "text-muted-foreground"
-                              )}>
-                                {messageTime(msg.timestamp)}
-                              </span>
-                              {msg.from_me && <AckIcon ack={msg.ack} />}
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button className="p-1 rounded-full hover:bg-muted/80 text-muted-foreground">
+                                    <SmilePlus className="h-3.5 w-3.5" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-2" side="top" align="center">
+                                  <div className="flex gap-1">
+                                    {QUICK_REACTIONS.map((emoji) => (
+                                      <button key={emoji} onClick={() => handleReact(msg, emoji)}
+                                        className="text-lg hover:scale-125 transition-transform p-1">{emoji}</button>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button className="p-1 rounded-full hover:bg-muted/80 text-muted-foreground">
+                                    <MoreVertical className="h-3.5 w-3.5" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align={msg.from_me ? "end" : "start"} className="w-44">
+                                  <DropdownMenuItem onClick={() => handleReply(msg)}>
+                                    <Reply className="h-4 w-4 mr-2" />Reply
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleForward(msg)}>
+                                    <Forward className="h-4 w-4 mr-2" />Forward
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleCopyMessage(msg)}>
+                                    <Copy className="h-4 w-4 mr-2" />Copy
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleStar(msg)}>
+                                    <Star className={cn("h-4 w-4 mr-2", msg.is_starred && "fill-yellow-400 text-yellow-400")} />
+                                    {msg.is_starred ? "Unstar" : "Star"}
+                                  </DropdownMenuItem>
+                                  {msg.from_me && (
+                                    <DropdownMenuItem onClick={() => handleMessageInfo(msg)}>
+                                      <Info className="h-4 w-4 mr-2" />Message info
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuSeparator />
+                                  {msg.from_me && (
+                                    <DropdownMenuItem onClick={() => handleDelete(msg, true)} className="text-destructive">
+                                      <Trash2 className="h-4 w-4 mr-2" />Delete for everyone
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem onClick={() => handleDelete(msg, false)} className="text-destructive">
+                                    <Trash2 className="h-4 w-4 mr-2" />Delete for me
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
                           </div>
                         </div>
@@ -1154,8 +1433,25 @@ export default function WhatsAppPage() {
             </div>
           </div>
 
+          {/* Reply pill */}
+          {replyingTo && (
+            <div className="px-3 pt-2 pb-0 border-t bg-background">
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/80 border-l-4 border-l-green-500 max-w-3xl mx-auto">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-green-600">
+                    {replyingTo.from_me ? "You" : (replyingTo.sender_display_name || formatContactIdAsNumber(replyingTo.from_number || ""))}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{replyingTo.body || mediaLabel(replyingTo.type)}</p>
+                </div>
+                <button onClick={() => setReplyingTo(null)} className="text-muted-foreground hover:text-foreground p-1">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Message input */}
-          <div className="p-3 border-t bg-background">
+          <div className={cn("p-3 border-t bg-background", replyingTo && "pt-2")}>
             <form
               onSubmit={(e) => { e.preventDefault(); handleSendMessage() }}
               className="flex items-center gap-2 max-w-3xl mx-auto"
@@ -1225,6 +1521,122 @@ export default function WhatsAppPage() {
           </div>
         </div>
       )}
+
+      {/* Forward dialog */}
+      <Dialog open={forwardModalOpen} onOpenChange={setForwardModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Forward message</DialogTitle>
+            <DialogDescription>Select chats to forward this message to.</DialogDescription>
+          </DialogHeader>
+          <ForwardChatPicker
+            chats={chats}
+            onConfirm={handleForwardConfirm}
+            onCancel={() => { setForwardModalOpen(false); setForwardingMessage(null) }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Message info dialog */}
+      <Dialog open={messageInfoOpen} onOpenChange={setMessageInfoOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Message info</DialogTitle>
+          </DialogHeader>
+          {messageInfoLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : messageInfoData ? (
+            <div className="space-y-3 text-sm">
+              {messageInfoData.read?.length > 0 && (
+                <div>
+                  <p className="font-semibold text-blue-600 flex items-center gap-1"><CheckCheck className="h-3.5 w-3.5" /> Read by</p>
+                  {messageInfoData.read.map((r: any, i: number) => (
+                    <p key={i} className="text-muted-foreground ml-5">{r.id?._serialized || r.t || "—"}</p>
+                  ))}
+                </div>
+              )}
+              {messageInfoData.delivery?.length > 0 && (
+                <div>
+                  <p className="font-semibold text-muted-foreground flex items-center gap-1"><CheckCheck className="h-3.5 w-3.5" /> Delivered to</p>
+                  {messageInfoData.delivery.map((r: any, i: number) => (
+                    <p key={i} className="text-muted-foreground ml-5">{r.id?._serialized || r.t || "—"}</p>
+                  ))}
+                </div>
+              )}
+              {messageInfoData.played?.length > 0 && (
+                <div>
+                  <p className="font-semibold text-green-600 flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> Played by</p>
+                  {messageInfoData.played.map((r: any, i: number) => (
+                    <p key={i} className="text-muted-foreground ml-5">{r.id?._serialized || r.t || "—"}</p>
+                  ))}
+                </div>
+              )}
+              {(!messageInfoData.read?.length && !messageInfoData.delivery?.length && !messageInfoData.played?.length) && (
+                <p className="text-muted-foreground text-center py-4">No delivery info available yet.</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-center py-4">No info available.</p>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function ForwardChatPicker({ chats, onConfirm, onCancel }: {
+  chats: WhatsAppChat[]
+  onConfirm: (ids: string[]) => void
+  onCancel: () => void
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState("")
+
+  const filtered = chats.filter((c) => {
+    if (!search) return true
+    const name = (c.display_name || c.name || c.contact_id).toLowerCase()
+    return name.includes(search.toLowerCase())
+  })
+
+  return (
+    <div className="space-y-3">
+      <Input placeholder="Search chats..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-9" />
+      <ScrollArea className="h-60">
+        <div className="space-y-1">
+          {filtered.map((chat) => (
+            <button
+              key={chat.id}
+              onClick={() => {
+                setSelected((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(chat.id)) next.delete(chat.id)
+                  else next.add(chat.id)
+                  return next
+                })
+              }}
+              className={cn(
+                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm hover:bg-muted/50 transition-colors",
+                selected.has(chat.id) && "bg-green-50 dark:bg-green-950/30"
+              )}
+            >
+              <ContactAvatar
+                displayName={chat.display_name || formatChatDisplayName(chat)}
+                isGroup={chat.is_group}
+                photoUrl={chat.profile_picture_url}
+              />
+              <span className="flex-1 truncate">{chat.display_name || formatChatDisplayName(chat)}</span>
+              {selected.has(chat.id) && <Check className="h-4 w-4 text-green-600 flex-shrink-0" />}
+            </button>
+          ))}
+        </div>
+      </ScrollArea>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" disabled={selected.size === 0} onClick={() => onConfirm(Array.from(selected))}
+          className="bg-green-500 hover:bg-green-600 text-white">
+          Forward{selected.size > 0 && ` (${selected.size})`}
+        </Button>
+      </div>
     </div>
   )
 }

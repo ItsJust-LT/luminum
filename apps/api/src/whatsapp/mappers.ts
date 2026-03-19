@@ -1,31 +1,46 @@
 import type WAWebJS from "whatsapp-web.js";
-import { Prisma } from "@luminum/database";
 
 /**
- * Map a whatsapp-web.js Message to a shape suitable for DB insertion.
+ * Map a whatsapp-web.js Message to a Redis-storable shape.
  */
-export function mapWaMessageToDb(
+export function mapWaMessageToRedis(
   msg: WAWebJS.Message,
-  chatId: string,
-) {
+  contactId: string,
+): {
+  wa_message_id: string;
+  from_me: boolean;
+  from_number: string | null;
+  body: string | null;
+  type: string;
+  timestamp: string;
+  ack: number;
+  media_url: string | null;
+  mime_type: string | null;
+  media_size: number | null;
+  quoted_wa_message_id: string | null;
+  quoted_body: string | null;
+  quoted_from: string | null;
+  is_starred: boolean;
+  chat_id: string;
+} {
   const fromNumber = (msg.author ?? (msg as any).from ?? null) as string | null;
+  const quotedMsg = (msg as any).hasQuotedMsg ? (msg as any)._data?.quotedMsg : null;
   return {
     wa_message_id: msg.id._serialized,
     from_me: msg.fromMe,
     from_number: fromNumber,
     body: msg.body || null,
     type: mapMessageType(msg.type),
-    timestamp: new Date(msg.timestamp * 1000),
+    timestamp: new Date(msg.timestamp * 1000).toISOString(),
     ack: msg.ack ?? 0,
     media_url: null,
     mime_type: null,
     media_size: null,
-    raw_metadata: {
-      hasMedia: msg.hasMedia,
-      isForwarded: msg.isForwarded,
-      deviceType: msg.deviceType,
-    } satisfies Prisma.InputJsonValue,
-    chat_id: chatId,
+    quoted_wa_message_id: quotedMsg?.id?._serialized ?? null,
+    quoted_body: quotedMsg?.body ? String(quotedMsg.body).slice(0, 500) : null,
+    quoted_from: quotedMsg?.author ?? quotedMsg?.from ?? null,
+    is_starred: !!(msg as any).isStarred,
+    chat_id: contactId,
   };
 }
 
@@ -47,9 +62,9 @@ function mapMessageType(type: string): string {
 }
 
 /**
- * Map a whatsapp-web.js Chat to a shape suitable for DB upsertion.
+ * Map a whatsapp-web.js Chat to Redis-storable fields.
  */
-export function mapWaChatToDb(
+export function mapWaChatToRedis(
   chat: WAWebJS.Chat,
   accountId: string,
 ): {

@@ -33,6 +33,11 @@ import {
   Building2,
   Infinity as InfinityIcon,
   Trash2,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Image,
+  Send,
+  Inbox,
 } from "lucide-react"
 import {
   AlertDialog,
@@ -45,7 +50,18 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  Legend,
+  Tooltip,
+} from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { api } from "@/lib/api"
 import { useRealtime } from "@/components/realtime/realtime-provider"
@@ -67,13 +83,16 @@ interface LiveClientEntry {
 interface AnalyticsData {
   totalAccounts: number
   connectedAccounts: number
-  totalChats: number
   totalMessages: number
+  totalSent: number
+  totalReceived: number
+  totalMediaSent: number
+  totalMediaReceived: number
   messagesLast24h: number
   messagesLast7d: number
-  messagesByDay: { day: string; count: number }[]
-  messagesByOrg: { organizationId: string; organizationName: string; messageCount: number }[]
-  chatsByOrg: { organizationId: string; organizationName: string; chatCount: number }[]
+  messagesByDay: { day: string; sent: number; received: number; count: number }[]
+  messagesByOrg: { organizationId: string; organizationName: string; messageCount: number; sentCount: number; receivedCount: number }[]
+  inboundOutboundByDay: { day: string; sent: number; received: number; mediaSent: number; mediaReceived: number }[]
 }
 
 function formatDuration(ms: number | null): string {
@@ -101,8 +120,14 @@ function formatRelative(dateStr: string | null): string {
   return d.toLocaleDateString()
 }
 
-const messagesChartConfig: ChartConfig = {
-  count: { label: "Messages", color: "#22c55e" },
+const volumeChartConfig: ChartConfig = {
+  sent: { label: "Sent", color: "#22c55e" },
+  received: { label: "Received", color: "#3b82f6" },
+}
+
+const mediaChartConfig: ChartConfig = {
+  mediaSent: { label: "Media sent", color: "#f59e0b" },
+  mediaReceived: { label: "Media received", color: "#8b5cf6" },
 }
 
 export default function AdminWhatsAppPage() {
@@ -131,90 +156,57 @@ export default function AdminWhatsAppPage() {
       else setAnalyticsError(res?.error || "Failed to load analytics")
     } catch (err: unknown) {
       setAnalyticsError(err instanceof Error ? err.message : "Failed to load analytics")
-    } finally {
-      setAnalyticsLoading(false)
-    }
+    } finally { setAnalyticsLoading(false) }
   }, [days])
 
   const fetchClients = useCallback(async () => {
     setClientsLoading(true)
     setClientsError(null)
     try {
-      const res = (await api.admin.getWhatsappLiveClients()) as {
-        success?: boolean
-        clients?: LiveClientEntry[]
-        error?: string
-      }
+      const res = (await api.admin.getWhatsappLiveClients()) as { success?: boolean; clients?: LiveClientEntry[]; error?: string }
       if (res?.success && Array.isArray(res.clients)) setClients(res.clients)
       else setClientsError(res?.error || "Failed to load clients")
     } catch (err: unknown) {
       setClientsError(err instanceof Error ? err.message : "Failed to load clients")
-    } finally {
-      setClientsLoading(false)
-    }
+    } finally { setClientsLoading(false) }
   }, [])
 
-  useEffect(() => {
-    fetchAnalytics()
-  }, [fetchAnalytics])
+  useEffect(() => { fetchAnalytics() }, [fetchAnalytics])
+  useEffect(() => { fetchClients() }, [fetchClients])
 
   useEffect(() => {
-    fetchClients()
-  }, [fetchClients])
-
-  useEffect(() => {
-    const unsubConnect = onMessage("whatsapp:client_connected", () => {
-      fetchClients()
-    })
-    const unsubDisconnect = onMessage("whatsapp:client_disconnected", () => {
-      fetchClients()
-    })
-    return () => {
-      unsubConnect()
-      unsubDisconnect()
-    }
+    const unsubConnect = onMessage("whatsapp:client_connected", () => fetchClients())
+    const unsubDisconnect = onMessage("whatsapp:client_disconnected", () => fetchClients())
+    return () => { unsubConnect(); unsubDisconnect() }
   }, [onMessage, fetchClients])
 
   const handleShutdown = async (organizationId: string) => {
     setShuttingDown(organizationId)
-    try {
-      await api.admin.shutdownWhatsappClient(organizationId)
-      toast.success("Client shutdown")
-      await fetchClients()
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Shutdown failed")
-    } finally {
-      setShuttingDown(null)
-    }
+    try { await api.admin.shutdownWhatsappClient(organizationId); toast.success("Client shutdown"); await fetchClients() }
+    catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Shutdown failed") }
+    finally { setShuttingDown(null) }
   }
 
   const handleAlwaysOn = async (organizationId: string, enabled: boolean) => {
     setTogglingAlwaysOn(organizationId)
-    try {
-      await api.admin.setWhatsappAlwaysOn(organizationId, enabled)
-      toast.success(enabled ? "Always-on enabled" : "Always-on disabled")
-      await fetchClients()
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Update failed")
-    } finally {
-      setTogglingAlwaysOn(null)
-    }
+    try { await api.admin.setWhatsappAlwaysOn(organizationId, enabled); toast.success(enabled ? "Always-on enabled" : "Always-on disabled"); await fetchClients() }
+    catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Update failed") }
+    finally { setTogglingAlwaysOn(null) }
   }
 
   const handleRemoveAll = async () => {
     setRemovingAll(true)
-    try {
-      await api.admin.removeAllWhatsappData()
-      toast.success("All WhatsApp data has been removed.")
-      await Promise.all([fetchAnalytics(), fetchClients()])
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to remove WhatsApp data")
-    } finally {
-      setRemovingAll(false)
-    }
+    try { await api.admin.removeAllWhatsappData(); toast.success("All WhatsApp data has been removed."); await Promise.all([fetchAnalytics(), fetchClients()]) }
+    catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed to remove WhatsApp data") }
+    finally { setRemovingAll(false) }
   }
 
-  const chartData = analytics?.messagesByDay?.map((d) => ({
+  const volumeData = analytics?.messagesByDay?.map((d) => ({
+    ...d,
+    label: new Date(d.day).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+  })) ?? []
+
+  const mediaData = analytics?.inboundOutboundByDay?.map((d) => ({
     ...d,
     label: new Date(d.day).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
   })) ?? []
@@ -228,140 +220,109 @@ export default function AdminWhatsAppPage() {
             WhatsApp
             {connected && (
               <Badge variant="secondary" className="font-normal gap-1 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
-                <Wifi className="h-3 w-3" />
-                Live
+                <Wifi className="h-3 w-3" /> Live
               </Badge>
             )}
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Analytics and live clients; shutdown clients from here.
-          </p>
+          <p className="text-muted-foreground text-sm mt-1">Analytics, live clients, and data management</p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={days} onValueChange={setDays}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="7">Last 7 days</SelectItem>
               <SelectItem value="30">Last 30 days</SelectItem>
               <SelectItem value="90">Last 90 days</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={() => { fetchAnalytics(); fetchClients(); }}>
+          <Button variant="outline" size="icon" onClick={() => { fetchAnalytics(); fetchClients() }}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      {/* Analytics summary cards */}
+      {/* ── KPI Cards ─────────────────────────────────────────────────────────── */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          Analytics
-        </h2>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Analytics</h2>
         {analyticsLoading && !analytics ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <Skeleton key={i} className="h-24 rounded-xl" />
-            ))}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
           </div>
         ) : analyticsError ? (
-          <Card className="border-destructive/30">
-            <CardContent className="py-6 text-center text-muted-foreground">
-              {analyticsError}
-            </CardContent>
-          </Card>
+          <Card className="border-destructive/30"><CardContent className="py-6 text-center text-muted-foreground">{analyticsError}</CardContent></Card>
         ) : analytics ? (
           <>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                    <Users className="h-4 w-4" /> Accounts
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1"><Users className="h-4 w-4" /> Accounts</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold">{analytics.totalAccounts}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {analytics.connectedAccounts} connected
-                  </p>
+                  <p className="text-xs text-muted-foreground">{analytics.connectedAccounts} connected</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                    <MessageSquare className="h-4 w-4" /> Chats
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{analytics.totalChats.toLocaleString()}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                    <MessageCircle className="h-4 w-4" /> Total messages
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1"><MessageSquare className="h-4 w-4" /> Total messages</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold">{analytics.totalMessages.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">in selected period</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Messages (24h)
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1"><Send className="h-4 w-4 text-green-600" /> Sent</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-2xl font-bold">{analytics.messagesLast24h.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-green-600">{analytics.totalSent.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">{analytics.totalMediaSent.toLocaleString()} media</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Messages (7d)
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1"><Inbox className="h-4 w-4 text-blue-600" /> Received</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-2xl font-bold">{analytics.messagesLast7d.toLocaleString()}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Period
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-bold">{days}d</p>
+                  <p className="text-2xl font-bold text-blue-600">{analytics.totalReceived.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">{analytics.totalMediaReceived.toLocaleString()} media</p>
                 </CardContent>
               </Card>
             </div>
 
-            {chartData.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2 mt-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Messages (24h)</CardTitle>
+                </CardHeader>
+                <CardContent><p className="text-2xl font-bold">{analytics.messagesLast24h.toLocaleString()}</p></CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Messages (7d)</CardTitle>
+                </CardHeader>
+                <CardContent><p className="text-2xl font-bold">{analytics.messagesLast7d.toLocaleString()}</p></CardContent>
+              </Card>
+            </div>
+
+            {/* ── Volume chart: sent vs received ─────────────────────────────── */}
+            {volumeData.length > 0 && (
               <Card className="mt-4">
                 <CardHeader>
-                  <CardTitle>Messages over time</CardTitle>
-                  <CardDescription>Daily message count</CardDescription>
+                  <CardTitle>Message volume</CardTitle>
+                  <CardDescription>Sent vs received per day</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ChartContainer config={messagesChartConfig} className="h-[280px] w-full">
+                  <ChartContainer config={volumeChartConfig} className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartData}>
+                      <AreaChart data={volumeData}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} />
                         <ChartTooltip content={<ChartTooltipContent />} />
-                        <Area
-                          type="monotone"
-                          dataKey="count"
-                          stroke="#22c55e"
-                          fill="#22c55e"
-                          fillOpacity={0.3}
-                          strokeWidth={2}
-                        />
+                        <Area type="monotone" dataKey="sent" stackId="1" stroke="#22c55e" fill="#22c55e" fillOpacity={0.4} strokeWidth={2} />
+                        <Area type="monotone" dataKey="received" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} strokeWidth={2} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </ChartContainer>
@@ -369,104 +330,84 @@ export default function AdminWhatsAppPage() {
               </Card>
             )}
 
-            <div className="grid gap-4 lg:grid-cols-2 mt-6">
-              <Card>
+            {/* ── Media chart ─────────────────────────────────────────────────── */}
+            {mediaData.length > 0 && (
+              <Card className="mt-4">
                 <CardHeader>
-                  <CardTitle>Messages by organization</CardTitle>
-                  <CardDescription>Top 50 in selected period</CardDescription>
+                  <CardTitle className="flex items-center gap-2"><Image className="h-5 w-5" /> Media messages</CardTitle>
+                  <CardDescription>Media sent vs received per day</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Organization</TableHead>
-                        <TableHead className="text-right">Messages</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {analytics.messagesByOrg.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={2} className="text-center text-muted-foreground">
-                            No data
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        analytics.messagesByOrg.map((row) => (
-                          <TableRow key={row.organizationId}>
-                            <TableCell className="font-medium">{row.organizationName}</TableCell>
-                            <TableCell className="text-right">
-                              {row.messageCount.toLocaleString()}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+                  <ChartContainer config={mediaChartConfig} className="h-[250px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={mediaData}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} />
+                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <Bar dataKey="mediaSent" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="mediaReceived" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartContainer>
                 </CardContent>
               </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Chats by organization</CardTitle>
-                  <CardDescription>Total chats per org</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Organization</TableHead>
-                        <TableHead className="text-right">Chats</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {analytics.chatsByOrg.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={2} className="text-center text-muted-foreground">
-                            No data
-                          </TableCell>
+            )}
+
+            {/* ── Top organizations ────────────────────────────────────────────── */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Top organizations by activity</CardTitle>
+                <CardDescription>Messages in selected period (top 50)</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Organization</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">
+                        <span className="flex items-center justify-end gap-1"><ArrowUpRight className="h-3 w-3 text-green-600" /> Sent</span>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <span className="flex items-center justify-end gap-1"><ArrowDownLeft className="h-3 w-3 text-blue-600" /> Received</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {analytics.messagesByOrg.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">No data</TableCell></TableRow>
+                    ) : (
+                      analytics.messagesByOrg.map((row) => (
+                        <TableRow key={row.organizationId}>
+                          <TableCell className="font-medium">{row.organizationName}</TableCell>
+                          <TableCell className="text-right">{row.messageCount.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-green-600">{row.sentCount.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-blue-600">{row.receivedCount.toLocaleString()}</TableCell>
                         </TableRow>
-                      ) : (
-                        analytics.chatsByOrg.map((row) => (
-                          <TableRow key={row.organizationId}>
-                            <TableCell className="font-medium">{row.organizationName}</TableCell>
-                            <TableCell className="text-right">
-                              {row.chatCount.toLocaleString()}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </div>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </>
         ) : null}
       </section>
 
-      {/* Live clients */}
+      {/* ── Live clients ──────────────────────────────────────────────────────── */}
       <section>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Phone className="h-5 w-5" />
-          Live clients
-          {connected && (
-            <Badge variant="outline" className="font-normal text-muted-foreground">
-              Updates in real time
-            </Badge>
-          )}
+          <Phone className="h-5 w-5" /> Live clients
+          {connected && <Badge variant="outline" className="font-normal text-muted-foreground">Updates in real time</Badge>}
         </h2>
         <Card>
           {clientsLoading && clients.length === 0 ? (
-            <CardContent className="py-8">
-              <Skeleton className="h-32 w-full rounded-lg" />
-            </CardContent>
+            <CardContent className="py-8"><Skeleton className="h-32 w-full rounded-lg" /></CardContent>
           ) : clientsError ? (
-            <CardContent className="py-6 text-center text-muted-foreground">
-              {clientsError}
-            </CardContent>
+            <CardContent className="py-6 text-center text-muted-foreground">{clientsError}</CardContent>
           ) : clients.length === 0 ? (
-            <CardContent className="py-8 text-center text-muted-foreground">
-              No WhatsApp clients are currently running on this server.
-            </CardContent>
+            <CardContent className="py-8 text-center text-muted-foreground">No WhatsApp clients are currently running on this server.</CardContent>
           ) : (
             <Table>
               <TableHeader>
@@ -488,63 +429,27 @@ export default function AdminWhatsAppPage() {
                         <Building2 className="h-4 w-4 text-muted-foreground" />
                         <div>
                           <p className="font-medium">{c.organizationName}</p>
-                          {c.organizationSlug && (
-                            <p className="text-xs text-muted-foreground">{c.organizationSlug}</p>
-                          )}
+                          {c.organizationSlug && <p className="text-xs text-muted-foreground">{c.organizationSlug}</p>}
                         </div>
                       </div>
                     </TableCell>
+                    <TableCell><span className="font-mono text-sm">{c.phoneNumber ? `+${c.phoneNumber}` : "—"}</span></TableCell>
+                    <TableCell><Badge variant={c.status === "CONNECTED" ? "default" : "secondary"}>{c.status}</Badge></TableCell>
                     <TableCell>
-                      <span className="font-mono text-sm">
-                        {c.phoneNumber ? `+${c.phoneNumber}` : "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={c.status === "CONNECTED" ? "default" : "secondary"}>
-                        {c.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant={c.alwaysOn ? "default" : "outline"}
-                        size="sm"
-                        className="gap-1"
+                      <Button variant={c.alwaysOn ? "default" : "outline"} size="sm" className="gap-1"
                         disabled={togglingAlwaysOn === c.organizationId || c.status !== "CONNECTED"}
-                        onClick={() => handleAlwaysOn(c.organizationId, !c.alwaysOn)}
-                        title={c.status !== "CONNECTED" ? "Only available once fully connected" : undefined}
-                      >
-                        {togglingAlwaysOn === c.organizationId ? (
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <InfinityIcon className="h-4 w-4" />
-                        )}
+                        onClick={() => handleAlwaysOn(c.organizationId, !c.alwaysOn)}>
+                        {togglingAlwaysOn === c.organizationId ? <RefreshCw className="h-4 w-4 animate-spin" /> : <InfinityIcon className="h-4 w-4" />}
                         {c.alwaysOn ? "On" : "Off"}
                       </Button>
                     </TableCell>
                     <TableCell>
-                      <span className="flex items-center gap-1 text-muted-foreground">
-                        <Clock className="h-3.5 w-3.5" />
-                        {formatDuration(c.runningSinceMs)}
-                      </span>
+                      <span className="flex items-center gap-1 text-muted-foreground"><Clock className="h-3.5 w-3.5" />{formatDuration(c.runningSinceMs)}</span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {formatRelative(c.lastSeenAt)}
-                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{formatRelative(c.lastSeenAt)}</TableCell>
                     <TableCell>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleShutdown(c.organizationId)}
-                        disabled={shuttingDown === c.organizationId}
-                      >
-                        {shuttingDown === c.organizationId ? (
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <>
-                            <PowerOff className="h-4 w-4 mr-1" />
-                            Shutdown
-                          </>
-                        )}
+                      <Button variant="destructive" size="sm" onClick={() => handleShutdown(c.organizationId)} disabled={shuttingDown === c.organizationId}>
+                        {shuttingDown === c.organizationId ? <RefreshCw className="h-4 w-4 animate-spin" /> : <><PowerOff className="h-4 w-4 mr-1" />Shutdown</>}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -555,29 +460,19 @@ export default function AdminWhatsAppPage() {
         </Card>
       </section>
 
-      {/* Remove all WhatsApp data */}
+      {/* ── Danger zone ───────────────────────────────────────────────────────── */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-destructive">
-          <Trash2 className="h-5 w-5" />
-          Danger zone
-        </h2>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-destructive"><Trash2 className="h-5 w-5" /> Danger zone</h2>
         <Card className="border-destructive/50">
           <CardHeader>
             <CardTitle className="text-base">Remove all WhatsApp data</CardTitle>
-            <CardDescription>
-              Permanently delete every WhatsApp account, chat, and message across all organizations.
-              All clients will be shut down. Use this to fully reset WhatsApp integration.
-            </CardDescription>
+            <CardDescription>Permanently delete every WhatsApp account and cached data across all organizations. All clients will be shut down.</CardDescription>
           </CardHeader>
           <CardContent>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" disabled={removingAll}>
-                  {removingAll ? (
-                    <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Trash2 className="h-4 w-4 mr-2" />
-                  )}
+                  {removingAll ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
                   Remove all WhatsApp data
                 </Button>
               </AlertDialogTrigger>
@@ -585,21 +480,13 @@ export default function AdminWhatsAppPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Remove all WhatsApp data?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will shut down all WhatsApp clients and permanently delete every account,
-                    chat, and message. Organizations will need to connect WhatsApp again and scan a
-                    new QR code. This action cannot be undone.
+                    This will shut down all WhatsApp clients, clear all Redis-cached chats and messages, and delete every account. Organizations will need to connect again.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleRemoveAll}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    {removingAll ? (
-                      <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                    ) : null}
-                    Remove all
+                  <AlertDialogAction onClick={handleRemoveAll} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    {removingAll ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : null}Remove all
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

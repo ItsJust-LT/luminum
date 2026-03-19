@@ -26,8 +26,6 @@ export type {
   nodes,
   websites,
   whatsapp_account,
-  whatsapp_chat,
-  whatsapp_message,
 } from "@prisma/client";
 
 export { WhatsappAccountStatus } from "@prisma/client";

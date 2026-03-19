@@ -248,6 +248,7 @@ model organization {
   websites                                                          websites[]
   email_domain                                                      websites?                 @relation("OrganizationEmailDomain", fields: [email_domain_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   whatsapp_accounts                                                 whatsapp_account[]
+  whatsapp_analytics                                                whatsapp_analytics_daily[]
 
   @@index([payment_provider], map: "idx_organization_payment_provider")
   @@index([email_domain_id], map: "idx_organization_email_domain_id")
@@ -598,56 +599,28 @@ model whatsapp_account {
   created_at        DateTime              @default(now()) @db.Timestamptz(6)
   updated_at        DateTime              @updatedAt @db.Timestamptz(6)
   organization      organization          @relation(fields: [organization_id], references: [id], onDelete: Cascade)
-  chats             whatsapp_chat[]
 
   @@unique([organization_id])
   @@index([organization_id])
   @@index([status])
 }
 
-model whatsapp_chat {
-  id              String           @id @default(cuid())
-  account_id      String
-  contact_id      String           @db.VarChar(50)
-  name            String?          @db.VarChar(255)
-  last_message_at DateTime?        @db.Timestamptz(6)
-  unread_count    Int              @default(0)
-  is_group        Boolean          @default(false)
-  created_at      DateTime         @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime         @updatedAt @db.Timestamptz(6)
-  account         whatsapp_account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  messages        whatsapp_message[]
+// Chat and message data is now stored in Redis only (7-day TTL, in-memory).
+// Analytics aggregates are persisted here for admin reporting.
 
-  @@unique([account_id, contact_id])
-  @@index([account_id])
-  @@index([last_message_at])
-}
+model whatsapp_analytics_daily {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id   String       @db.VarChar(255)
+  day               DateTime     @db.Date
+  messages_sent     Int          @default(0)
+  messages_received Int          @default(0)
+  media_sent        Int          @default(0)
+  media_received    Int          @default(0)
+  created_at        DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime     @default(now()) @updatedAt @db.Timestamptz(6)
+  organization      organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
-model whatsapp_message {
-  id                String        @id @default(cuid())
-  chat_id           String
-  wa_message_id     String?       @db.VarChar(100)
-  client_message_id String?       @db.VarChar(100)
-  from_me           Boolean       @default(false)
-  from_number       String?       @db.VarChar(20)
-  body              String?       @db.Text
-  type              String        @default("text") @db.VarChar(20)
-  media_url         String?       @db.Text
-  mime_type         String?       @db.VarChar(100)
-  media_size        Int?
-  raw_metadata      Json?
-  timestamp         DateTime      @db.Timestamptz(6)
-  ack               Int?          @default(0)
-  ack_updated_at    DateTime?     @db.Timestamptz(6)
-  sent_at           DateTime?     @db.Timestamptz(6)
-  delivered_at      DateTime?     @db.Timestamptz(6)
-  read_at           DateTime?     @db.Timestamptz(6)
-  revoked_at        DateTime?     @db.Timestamptz(6)
-  created_at        DateTime      @default(now()) @db.Timestamptz(6)
-  chat              whatsapp_chat @relation(fields: [chat_id], references: [id], onDelete: Cascade)
-
-  @@unique([chat_id, wa_message_id])
-  @@unique([chat_id, client_message_id])
-  @@index([chat_id])
-  @@index([timestamp])
+  @@unique([organization_id, day])
+  @@index([organization_id])
+  @@index([day])
 }

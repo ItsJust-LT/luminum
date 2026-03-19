@@ -556,8 +556,8 @@ function createApiClient(baseUrl: string = "") {
       post(`/api/whatsapp/contacts/${chatId}/block`, { organizationId }),
     unblockContact: (chatId: string, organizationId: string) =>
       post(`/api/whatsapp/contacts/${chatId}/unblock`, { organizationId }),
-    sendMessage: (chatId: string, body: string, organizationId: string, clientMessageId?: string) =>
-      post(`/api/whatsapp/chats/${chatId}/messages`, { body, organizationId, clientMessageId }),
+    sendMessage: (chatId: string, body: string, organizationId: string, clientMessageId?: string, quotedMessageId?: string) =>
+      post(`/api/whatsapp/chats/${chatId}/messages`, { body, organizationId, clientMessageId, quotedMessageId }),
     sendMediaMessage: (
       chatId: string,
       dataUrl: string,
@@ -571,6 +571,68 @@ function createApiClient(baseUrl: string = "") {
       get("/api/whatsapp/unread-count", { organizationId }),
     getLinkPreview: (organizationId: string, url: string) =>
       get("/api/whatsapp/link-preview", { organizationId, url }),
+
+    // Phase 1: Messaging+
+    forwardMessage: (waMessageId: string, organizationId: string, targetChatIds: string[]) =>
+      post(`/api/whatsapp/messages/${encodeURIComponent(waMessageId)}/forward`, { organizationId, targetChatIds }),
+    starMessage: (waMessageId: string, organizationId: string, starred: boolean) =>
+      post(`/api/whatsapp/messages/${encodeURIComponent(waMessageId)}/star`, { organizationId, starred }),
+    deleteMessage: (waMessageId: string, organizationId: string, everyone: boolean) =>
+      post(`/api/whatsapp/messages/${encodeURIComponent(waMessageId)}/delete`, { organizationId, everyone }),
+    reactToMessage: (waMessageId: string, organizationId: string, emoji: string) =>
+      post(`/api/whatsapp/messages/${encodeURIComponent(waMessageId)}/react`, { organizationId, emoji }),
+    getMessageInfo: (waMessageId: string, organizationId: string) =>
+      get(`/api/whatsapp/messages/${encodeURIComponent(waMessageId)}/info`, { organizationId }),
+
+    // Phase 2: Chat management
+    archiveChat: (chatId: string, organizationId: string, archive: boolean) =>
+      post(`/api/whatsapp/chats/${chatId}/archive`, { organizationId, archive }),
+    pinChat: (chatId: string, organizationId: string, pin: boolean) =>
+      post(`/api/whatsapp/chats/${chatId}/pin`, { organizationId, pin }),
+    muteChat: (chatId: string, organizationId: string, mute: boolean, unmuteDate?: string) =>
+      post(`/api/whatsapp/chats/${chatId}/mute`, { organizationId, mute, unmuteDate }),
+    markChatUnread: (chatId: string, organizationId: string) =>
+      post(`/api/whatsapp/chats/${chatId}/mark-unread`, { organizationId }),
+    sendSeen: (chatId: string, organizationId: string) =>
+      post(`/api/whatsapp/chats/${chatId}/send-seen`, { organizationId }),
+    getChatLabels: (chatId: string, organizationId: string) =>
+      get(`/api/whatsapp/chats/${chatId}/labels`, { organizationId }),
+    updateChatLabels: (chatId: string, organizationId: string, labelIds: string[]) =>
+      post(`/api/whatsapp/chats/${chatId}/labels`, { organizationId, labelIds }),
+    setChatNote: (chatId: string, organizationId: string, note: string) =>
+      post(`/api/whatsapp/chats/${chatId}/note`, { organizationId, note }),
+    sendTyping: (chatId: string, organizationId: string, typing: boolean) =>
+      post(`/api/whatsapp/chats/${chatId}/typing`, { organizationId, typing }),
+
+    // Phase 3: Groups
+    getGroupMetadata: (chatId: string, organizationId: string) =>
+      get(`/api/whatsapp/groups/${chatId}`, { organizationId }),
+    addGroupParticipants: (chatId: string, organizationId: string, participantIds: string[]) =>
+      post(`/api/whatsapp/groups/${chatId}/participants/add`, { organizationId, participantIds }),
+    removeGroupParticipants: (chatId: string, organizationId: string, participantIds: string[]) =>
+      post(`/api/whatsapp/groups/${chatId}/participants/remove`, { organizationId, participantIds }),
+    promoteGroupParticipants: (chatId: string, organizationId: string, participantIds: string[]) =>
+      post(`/api/whatsapp/groups/${chatId}/participants/promote`, { organizationId, participantIds }),
+    demoteGroupParticipants: (chatId: string, organizationId: string, participantIds: string[]) =>
+      post(`/api/whatsapp/groups/${chatId}/participants/demote`, { organizationId, participantIds }),
+    setGroupSubject: (chatId: string, organizationId: string, subject: string) =>
+      post(`/api/whatsapp/groups/${chatId}/subject`, { organizationId, subject }),
+    setGroupDescription: (chatId: string, organizationId: string, description: string) =>
+      post(`/api/whatsapp/groups/${chatId}/description`, { organizationId, description }),
+    setGroupSettings: (chatId: string, organizationId: string, settings: Record<string, boolean>) =>
+      post(`/api/whatsapp/groups/${chatId}/settings`, { organizationId, ...settings }),
+    getGroupInviteCode: (chatId: string, organizationId: string) =>
+      get(`/api/whatsapp/groups/${chatId}/invite`, { organizationId }),
+    revokeGroupInvite: (chatId: string, organizationId: string) =>
+      post(`/api/whatsapp/groups/${chatId}/invite/revoke`, { organizationId }),
+    getGroupMembershipRequests: (chatId: string, organizationId: string) =>
+      get(`/api/whatsapp/groups/${chatId}/membership-requests`, { organizationId }),
+    approveGroupMembershipRequest: (chatId: string, organizationId: string, requesterId: string) =>
+      post(`/api/whatsapp/groups/${chatId}/membership-requests/approve`, { organizationId, requesterId }),
+    rejectGroupMembershipRequest: (chatId: string, organizationId: string, requesterId: string) =>
+      post(`/api/whatsapp/groups/${chatId}/membership-requests/reject`, { organizationId, requesterId }),
+    leaveGroup: (chatId: string, organizationId: string) =>
+      post(`/api/whatsapp/groups/${chatId}/leave`, { organizationId }),
   };
 
   // ─── User Management ─────────────────────────────────────
