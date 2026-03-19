@@ -420,6 +420,7 @@ export default function WhatsAppPage() {
   const [messages, setMessages] = useState<WhatsAppMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [messagesLoading, setMessagesLoading] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [messageInput, setMessageInput] = useState("")
   const [selectedImage, setSelectedImage] = useState<{ dataUrl: string; fileName: string } | null>(null)
@@ -468,7 +469,8 @@ export default function WhatsAppPage() {
 
   const loadMessages = useCallback(async (chatId: string, cursor?: string) => {
     if (!orgId) return
-    setMessagesLoading(true)
+    if (cursor) setLoadingOlder(true)
+    else setMessagesLoading(true)
     try {
       const res = await api.whatsapp.getChat(chatId, orgId, { limit: 100, cursor }) as any
       if (res.success) {
@@ -494,7 +496,8 @@ export default function WhatsAppPage() {
         if (res.chat) setSelectedChat((prev) => (prev ? { ...prev, ...res.chat } : res.chat))
       }
     } catch {} finally {
-      setMessagesLoading(false)
+      if (cursor) setLoadingOlder(false)
+      else setMessagesLoading(false)
     }
   }, [orgId, chatStateById, setChatStateById])
 
@@ -720,7 +723,7 @@ export default function WhatsAppPage() {
   }, [orgId, chats])
 
   const handleMessagesScroll = useCallback(async (e: React.UIEvent<HTMLDivElement>) => {
-    if (!selectedChat || !nextCursor || messagesLoading || loadingOlderRef.current) return
+    if (!selectedChat || !nextCursor || messagesLoading || loadingOlder || loadingOlderRef.current) return
     const el = e.currentTarget
     if (el.scrollTop > 120) return
     loadingOlderRef.current = true
@@ -731,7 +734,7 @@ export default function WhatsAppPage() {
       el.scrollTop = Math.max(0, newHeight - prevHeight + el.scrollTop)
       loadingOlderRef.current = false
     })
-  }, [selectedChat, nextCursor, messagesLoading, loadMessages])
+  }, [selectedChat, nextCursor, messagesLoading, loadingOlder, loadMessages])
 
   const handleSendMessage = async () => {
     if ((!messageInput.trim() && !selectedImage) || !selectedChat || !orgId) return
@@ -992,7 +995,7 @@ export default function WhatsAppPage() {
               className="flex-1 h-full min-h-0 px-4 py-3 overflow-auto"
               onScroll={handleMessagesScroll}
             >
-            {messagesLoading ? (
+            {messagesLoading && messages.length === 0 ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
@@ -1003,6 +1006,14 @@ export default function WhatsAppPage() {
               </div>
             ) : (
               <div className="space-y-1.5 max-w-3xl mx-auto pb-4">
+                {loadingOlder && (
+                  <div className="sticky top-0 z-10 flex justify-center py-2">
+                    <div className="inline-flex items-center gap-2 rounded-full border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm animate-in fade-in">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Loading older messages...
+                    </div>
+                  </div>
+                )}
                 {nextCursor && selectedChat && (
                   <div className="flex justify-center py-2">
                     <Button
