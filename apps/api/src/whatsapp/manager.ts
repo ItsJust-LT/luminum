@@ -1,3 +1,4 @@
+import "./fs-extra-unlink-patch.js";
 import whatsappWeb from "whatsapp-web.js";
 import type WAWebJS from "whatsapp-web.js";
 import type { PrismaClient } from "@luminum/database";
@@ -5,6 +6,8 @@ import { PgRemoteAuthStore } from "./remote-auth-store.js";
 import { mapWaMessageToRedis, mapWaChatToRedis } from "./mappers.js";
 import { logger } from "../lib/logger.js";
 import * as util from "node:util";
+import path from "node:path";
+import fs from "node:fs/promises";
 import {
   upsertChat,
   getChatMeta,
@@ -33,6 +36,10 @@ const AUTH_TIMEOUT_MS = parseInt(process.env.WHATSAPP_AUTH_TIMEOUT_MS || "120000
 const PUPPETEER_PROTOCOL_TIMEOUT_MS = parseInt(process.env.WHATSAPP_PROTOCOL_TIMEOUT_MS || "300000", 10);
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const LEASE_TTL_MS = 90_000;
+const ALWAYS_ON_RECOVERY_COOLDOWN_MS = Math.max(
+  30_000,
+  parseInt(process.env.WHATSAPP_ALWAYS_ON_COOLDOWN_MS || "90000", 10)
+);
 const INIT_RETRY_MAX = Math.max(1, parseInt(process.env.WHATSAPP_INIT_RETRY_MAX || "6", 10));
 const INIT_RETRY_BASE_MS = Math.max(2000, parseInt(process.env.WHATSAPP_INIT_RETRY_BASE_MS || "6000", 10));
 
@@ -103,6 +110,8 @@ let broadcastToOrg: BroadcastFn;
 let broadcastToAdmins: BroadcastToAdminsFn = () => {};
 const clients = new Map<string, ManagedClient>();
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+const lastAlwaysOnRecoveryAttempt = new Map<string, number>();
+let alwaysOnRecoveryRunning = false;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -633,6 +642,9 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     return null;
   }
 
+  const authDataPath = path.resolve(process.env.WHATSAPP_AUTH_DATA_PATH || path.join(process.cwd(), ".wwebjs_auth"));
+  await fs.mkdir(authDataPath, { recursive: true }).catch(() => {});
+
   const store = new PgRemoteAuthStore(prisma);
   const puppeteerExecutablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROMIUM_PATH || "/usr/bin/chromium";
   const minimal = process.env.WHATSAPP_PUPPETEER_MINIMAL === "true";
@@ -667,7 +679,12 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= INIT_RETRY_MAX; attempt++) {
     const client = new Client({
-      authStrategy: new RemoteAuth({ store, clientId: account.id, backupSyncIntervalMs: 60_000 }),
+      authStrategy: new RemoteAuth({
+        store,
+        clientId: account.id,
+        backupSyncIntervalMs: 60_000,
+        dataPath: authDataPath,
+      }),
       authTimeoutMs: AUTH_TIMEOUT_MS,
       takeoverOnConflict: TAKEOVER_ON_CONFLICT,
       puppeteer: puppeteerOptions,
@@ -1090,6 +1107,68 @@ async function destroyClient(organizationId: string) {
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
 
+/**
+ * If an org is marked always-on but no live client is running (disconnect, init failure, crash),
+ * periodically try to start the client again. Does not touch QR_PENDING flows.
+ */
+async function recoverAlwaysOnClients() {
+  if (alwaysOnRecoveryRunning) return;
+  alwaysOnRecoveryRunning = true;
+  try {
+    const accounts = await prisma.whatsapp_account.findMany({
+      where: {
+        organization: { whatsapp_enabled: true, whatsapp_always_on: true } as any,
+      },
+      select: {
+        id: true,
+        organization_id: true,
+        status: true,
+        next_retry_at: true,
+      },
+    });
+
+    const nowMs = Date.now();
+
+    for (const acc of accounts) {
+      const orgId = acc.organization_id;
+
+      const running = clients.get(orgId);
+      if (running && !running.destroying) {
+        continue;
+      }
+
+      if (acc.status === "QR_PENDING") continue;
+
+      if (acc.next_retry_at && acc.next_retry_at.getTime() > nowMs) continue;
+
+      if (clients.size >= MAX_ORG_CLIENTS && !clients.has(orgId)) {
+        logger.warn("WhatsApp always-on recovery skipped: max clients", {
+          orgId,
+          limit: MAX_ORG_CLIENTS,
+        });
+        continue;
+      }
+
+      const last = lastAlwaysOnRecoveryAttempt.get(orgId) ?? 0;
+      if (nowMs - last < ALWAYS_ON_RECOVERY_COOLDOWN_MS) continue;
+
+      lastAlwaysOnRecoveryAttempt.set(orgId, nowMs);
+      logger.info("WhatsApp always-on: attempting client recovery", {
+        orgId,
+        accountId: acc.id,
+        status: acc.status,
+      });
+      await startClientForAccount(orgId).catch((err) => {
+        logger.logError(err, "WhatsApp always-on recovery start failed", { orgId, accountId: acc.id });
+      });
+    }
+  } catch (err) {
+    logger.logError(err, "WhatsApp always-on recovery failed");
+  } finally {
+    alwaysOnRecoveryRunning = false;
+  }
+}
+
 async function runHeartbeat() {
   const now = new Date();
   const leaseExpiry = new Date(now.getTime() + LEASE_TTL_MS);
@@ -1101,6 +1180,7 @@ async function runHeartbeat() {
       });
     } catch (err) { logger.logError(err, "WhatsApp heartbeat failed", { orgId }); }
   }
+  void recoverAlwaysOnClients();
 }
 
 export function shutdownWhatsAppManager() {
