@@ -36,19 +36,19 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { dashboardBlogAssetUrlFromKey } from "@/lib/blog-public-url";
 import { renderBlogSpec, type BlogRenderSpec } from "@luminum/blog-renderer";
 import { dashboardBlogPreviewMap } from "./dashboard-blog-preview-map";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Loader2,
   ArrowLeft,
   Save,
   Send,
-  Eye,
+  ExternalLink,
   ImagePlus,
   Type,
   Heading1,
@@ -63,6 +63,8 @@ import {
   EyeOff,
   Sparkles,
   Paperclip,
+  PenLine,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -81,9 +83,17 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-const FONT_CLASSES = ["text-sm", "text-base", "text-lg"] as const;
+const FONT_CLASSES = ["text-sm", "text-base", "text-lg", "text-xl"] as const;
 
-export function BlogEditor(props: { organizationId: string; orgSlug: string; postId: string }) {
+type EditorMode = "write" | "preview";
+
+export function BlogEditor(props: {
+  organizationId: string;
+  orgSlug: string;
+  postId: string;
+  /** Root URL of the public marketing site (org metadata: publicBaseUrl / baseUrl / siteUrl). */
+  publicSiteBaseUrl?: string | null;
+}) {
   const router = useRouter();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const coverInputRef = React.useRef<HTMLInputElement>(null);
@@ -94,8 +104,11 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
   const [publishing, setPublishing] = React.useState(false);
   const [unpublishing, setUnpublishing] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
-  const [previewLoading, setPreviewLoading] = React.useState(false);
+  const [previewOpening, setPreviewOpening] = React.useState(false);
   const [autoSaveState, setAutoSaveState] = React.useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [editorMode, setEditorMode] = React.useState<EditorMode>("write");
+  const [liveSpec, setLiveSpec] = React.useState<BlogRenderSpec | null>(null);
+  const [previewLoading, setPreviewLoading] = React.useState(false);
 
   const [title, setTitle] = React.useState("");
   const [slug, setSlug] = React.useState("");
@@ -104,8 +117,6 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
   const [seoTitle, setSeoTitle] = React.useState("");
   const [seoDescription, setSeoDescription] = React.useState("");
   const [status, setStatus] = React.useState<string>("draft");
-  const [storedSpec, setStoredSpec] = React.useState<BlogRenderSpec | null>(null);
-  const [liveSpec, setLiveSpec] = React.useState<BlogRenderSpec | null>(null);
   const [allowlist, setAllowlist] = React.useState<AllowComponent[]>([]);
   const [categories, setCategories] = React.useState<string[]>([]);
   const [categoryInput, setCategoryInput] = React.useState("");
@@ -133,8 +144,6 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
         setSeoDescription(String(p.seo_description ?? ""));
         setStatus(String(p.status ?? "draft"));
         setCategories(Array.isArray(p.categories) ? (p.categories as string[]) : []);
-        const spec = p.content_render_spec as BlogRenderSpec | null;
-        setStoredSpec(spec && typeof spec === "object" ? spec : null);
         setAllowlist(compRes.components ?? []);
         setDirty(false);
       } catch (e: unknown) {
@@ -150,12 +159,12 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
   }, [props.postId, props.orgSlug, router]);
 
   const persist = React.useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean }): Promise<boolean> => {
       const silent = opts?.silent;
       if (!silent) setSaving(true);
       else setAutoSaveState("saving");
       try {
-        await api.blog.updatePost(props.postId, {
+        const out = (await api.blog.updatePost(props.postId, {
           title,
           slug,
           content_markdown: content,
@@ -163,18 +172,18 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
           seo_title: seoTitle || null,
           seo_description: seoDescription || null,
           categories,
-        });
+        })) as { post?: Record<string, unknown> };
         if (!silent) toast.success("Saved");
         setAutoSaveState("saved");
         setDirty(false);
-        const refreshed = (await api.blog.getPostById(props.postId)) as { post: Record<string, unknown> };
-        const spec = refreshed.post.content_render_spec as BlogRenderSpec | null;
-        setStoredSpec(spec && typeof spec === "object" ? spec : null);
-        setStatus(String(refreshed.post.status ?? "draft"));
+        const p = out.post;
+        if (p) setStatus(String(p.status ?? "draft"));
+        return true;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Save failed";
         if (!silent) toast.error(msg);
         setAutoSaveState("error");
+        return false;
       } finally {
         if (!silent) setSaving(false);
       }
@@ -206,12 +215,40 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
   }, [props.postId, content]);
 
   React.useEffect(() => {
-    if (loading) return;
+    if (loading || editorMode !== "preview") return;
     const t = window.setTimeout(() => {
       void refreshPreview();
-    }, 400);
+    }, 320);
     return () => window.clearTimeout(t);
-  }, [loading, content, refreshPreview]);
+  }, [loading, editorMode, content, refreshPreview]);
+
+  const openSitePreview = async () => {
+    if (!slug.trim()) {
+      toast.error("Add a URL slug before opening site preview.");
+      return;
+    }
+    const base = props.publicSiteBaseUrl?.trim();
+    if (!base) {
+      toast.error("Set a public site URL on your organization (publicBaseUrl) in Settings.");
+      return;
+    }
+    setPreviewOpening(true);
+    try {
+      if (dirty) {
+        const saved = await persist({ silent: true });
+        if (!saved) return;
+      }
+      const { token } = await api.blog.mintPreviewToken(props.postId);
+      const url = new URL(`${base.replace(/\/$/, "")}/blog/${encodeURIComponent(slug)}`);
+      url.searchParams.set("previewToken", token);
+      url.searchParams.set("organizationId", props.organizationId);
+      window.open(url.toString(), "_blank", "noopener,noreferrer");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not open site preview");
+    } finally {
+      setPreviewOpening(false);
+    }
+  };
 
   const insertAtCursor = (snippet: string) => {
     const el = textareaRef.current;
@@ -321,12 +358,9 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
   const publish = async () => {
     setPublishing(true);
     try {
-      await persist({ silent: true });
-      const res = (await api.blog.publishPost(props.postId)) as {
-        post: Record<string, unknown>;
-        renderSpec: BlogRenderSpec;
-      };
-      setStoredSpec(res.renderSpec);
+      const saved = await persist({ silent: true });
+      if (!saved) return;
+      await api.blog.publishPost(props.postId);
       setStatus("published");
       toast.success("Published");
     } catch (e: unknown) {
@@ -373,27 +407,20 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
             <Skeleton className="h-4 w-32" />
           </div>
         </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="min-h-[320px] w-full rounded-xl" />
-          </div>
-          <Skeleton className="min-h-[400px] w-full rounded-xl" />
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="min-h-[320px] w-full rounded-xl" />
         </div>
       </div>
     );
   }
 
   const previewNodes =
-    liveSpec != null
-      ? renderBlogSpec(liveSpec, dashboardBlogPreviewMap)
-      : storedSpec != null
-        ? renderBlogSpec(storedSpec, dashboardBlogPreviewMap)
-        : [];
+    liveSpec != null ? renderBlogSpec(liveSpec, dashboardBlogPreviewMap) : [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 pb-24 md:p-8">
+    <div className="mx-auto max-w-[1700px] space-y-6 px-4 pb-24 pt-2 md:px-6 lg:px-8">
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -444,6 +471,24 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={previewOpening || saving || publishing}
+            onClick={() => void openSitePreview()}
+            className="gap-1.5"
+            title={
+              !props.publicSiteBaseUrl?.trim()
+                ? "Set publicBaseUrl in organization settings"
+                : !slug.trim()
+                  ? "Add a slug first"
+                  : "Open your live site with a draft preview token"
+            }
+          >
+            {previewOpening ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+            Site preview
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -499,12 +544,12 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
         </div>
       </motion.div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] xl:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="grid gap-8 xl:grid-cols-[1fr_minmax(300px,380px)] xl:items-start">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
-          className="min-w-0 space-y-4"
+          className="min-w-0 space-y-5"
         >
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="pb-3">
@@ -585,32 +630,62 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
             </CardContent>
           </Card>
 
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="pb-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+          <Card className="border-border/80 shadow-md">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                 <div>
-                  <CardTitle className="text-base">Markdown</CardTitle>
-                  <CardDescription>Write content — drafts save automatically</CardDescription>
+                  <CardTitle className="text-lg">Content</CardTitle>
+                  <CardDescription>Write markdown — drafts save automatically</CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Select value={fontClass} onValueChange={(v) => setFontClass(v as (typeof FONT_CLASSES)[number])}>
-                    <SelectTrigger className="h-8 w-[120px] text-xs" size="sm">
-                      <Type className="mr-1 h-3.5 w-3.5" />
-                      <SelectValue placeholder="Size" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="text-sm">Small</SelectItem>
-                      <SelectItem value="text-base">Medium</SelectItem>
-                      <SelectItem value="text-lg">Large</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div
+                    className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-1 shadow-inner"
+                    role="tablist"
+                    aria-label="Editor mode"
+                  >
+                    <Button
+                      type="button"
+                      variant={editorMode === "write" ? "default" : "ghost"}
+                      size="sm"
+                      className="h-8 gap-1.5 px-3"
+                      onClick={() => setEditorMode("write")}
+                    >
+                      <PenLine className="h-3.5 w-3.5" />
+                      Write
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={editorMode === "preview" ? "default" : "ghost"}
+                      size="sm"
+                      className="h-8 gap-1.5 px-3"
+                      onClick={() => setEditorMode("preview")}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Preview
+                    </Button>
+                  </div>
+                  {editorMode === "write" ? (
+                    <Select value={fontClass} onValueChange={(v) => setFontClass(v as (typeof FONT_CLASSES)[number])}>
+                      <SelectTrigger className="h-8 w-[132px] text-xs" size="sm">
+                        <Type className="mr-1 h-3.5 w-3.5" />
+                        <SelectValue placeholder="Size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text-sm">Small</SelectItem>
+                        <SelectItem value="text-base">Medium</SelectItem>
+                        <SelectItem value="text-lg">Large</SelectItem>
+                        <SelectItem value="text-xl">Extra large</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : null}
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onCoverFile(e)} />
               <input ref={inlineImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onInlineImage(e)} />
 
+              {editorMode === "write" ? (
               <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1.5">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -757,6 +832,7 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              ) : null}
 
               <div className="flex flex-wrap items-start gap-4 rounded-lg border border-dashed p-3">
                 <div className="space-y-1">
@@ -779,65 +855,103 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
                 </div>
               </div>
 
-              <Textarea
-                ref={textareaRef}
-                rows={20}
-                className={cn("min-h-[280px] resize-y font-mono leading-relaxed lg:min-h-[420px]", fontClass)}
-                value={content}
-                onChange={(e) => {
-                  setContent(e.target.value);
-                  markDirty();
-                }}
-                placeholder="Write markdown. Use allowlisted components like <Callout … />"
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/80 shadow-sm lg:hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Preview</CardTitle>
-              <CardDescription>How the post will look</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {previewLoading ? (
-                <div className="flex items-center gap-2 py-6 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Building…
-                </div>
-              ) : previewNodes.length ? (
-                <div className="prose prose-sm dark:prose-invert max-w-none space-y-4">{previewNodes}</div>
-              ) : (
-                <p className="py-4 text-sm text-muted-foreground">Nothing to preview yet.</p>
-              )}
+              <div className="relative overflow-hidden rounded-xl border border-border/70 bg-background shadow-inner ring-1 ring-border/40">
+                <AnimatePresence mode="wait">
+                  {editorMode === "write" ? (
+                    <motion.div
+                      key="write"
+                      initial={{ opacity: 0, x: -12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 12 }}
+                      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                      className="min-h-[min(82vh,920px)]"
+                    >
+                      <Textarea
+                        ref={textareaRef}
+                        spellCheck
+                        rows={32}
+                        className={cn(
+                          "min-h-[min(82vh,920px)] w-full resize-y border-0 bg-transparent px-4 py-4 font-mono leading-relaxed shadow-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                          fontClass
+                        )}
+                        value={content}
+                        onChange={(e) => {
+                          setContent(e.target.value);
+                          markDirty();
+                        }}
+                        placeholder="Write markdown. Use allowlisted components like <Callout … />"
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="preview"
+                      initial={{ opacity: 0, x: 12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -12 }}
+                      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                      className="min-h-[min(82vh,920px)]"
+                    >
+                      <ScrollArea className="h-[min(82vh,920px)]">
+                        <div
+                          className={cn(
+                            "prose prose-sm md:prose-base max-w-none p-4 md:p-6",
+                            "prose-headings:font-semibold prose-headings:tracking-tight prose-headings:text-foreground",
+                            "prose-p:leading-[1.7] prose-p:text-foreground prose-p:my-3",
+                            "prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-a:font-medium",
+                            "prose-strong:font-semibold prose-strong:text-foreground",
+                            "prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono prose-code:before:content-none prose-code:after:content-none",
+                            "prose-pre:bg-muted prose-pre:border prose-pre:rounded-xl prose-pre:p-4 prose-pre:my-4",
+                            "prose-img:rounded-xl prose-img:border prose-img:shadow-sm prose-img:my-4",
+                            "prose-hr:border-border prose-hr:my-6"
+                          )}
+                        >
+                          {previewLoading ? (
+                            <div className="space-y-4 py-2">
+                              <Skeleton className="h-9 w-2/3" />
+                              <Skeleton className="h-4 w-full" />
+                              <Skeleton className="h-4 w-5/6" />
+                              <Skeleton className="h-4 w-4/5" />
+                              <Skeleton className="h-32 w-full rounded-lg" />
+                            </div>
+                          ) : previewNodes.length > 0 ? (
+                            previewNodes
+                          ) : (
+                            <p className="text-sm text-muted-foreground">Nothing to preview yet — add some markdown in Write mode.</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        <motion.aside
-          initial={{ opacity: 0, x: 12 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.08 }}
-          className="hidden min-w-0 space-y-4 lg:block lg:sticky lg:top-6 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto lg:pr-1"
-        >
+        <aside className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pb-4">
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Eye className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">Live preview</CardTitle>
-              </div>
-              <CardDescription>Rendered post (updates as you type)</CardDescription>
+              <CardTitle className="text-base">Site preview</CardTitle>
+              <CardDescription>
+                Open your real site in a new tab with a time-limited preview link (
+                <code className="rounded bg-muted px-1">previewToken</code>).
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <ScrollArea className="max-h-[min(52vh,520px)] pr-3">
-                {previewLoading ? (
-                  <div className="flex items-center gap-2 py-8 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Building preview…
-                  </div>
-                ) : previewNodes.length ? (
-                  <div className="prose prose-sm dark:prose-invert max-w-none space-y-4 pb-4">{previewNodes}</div>
-                ) : (
-                  <p className="py-6 text-sm text-muted-foreground">Start writing to see preview.</p>
-                )}
-              </ScrollArea>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Uses <code className="rounded bg-muted px-1">/blog/&lt;slug&gt;</code>. Your Next.js page should read{" "}
+                <code className="rounded bg-muted px-1">previewToken</code> and pass it to{" "}
+                <code className="rounded bg-muted px-1">@luminum/website-kit</code>.
+              </p>
+              {!props.publicSiteBaseUrl?.trim() ? (
+                <p className="text-sm text-muted-foreground">
+                  Add <code className="rounded bg-muted px-1">publicBaseUrl</code> in{" "}
+                  <Link href={`/${props.orgSlug}/settings`} className="font-medium text-primary underline underline-offset-4">
+                    Organization settings
+                  </Link>
+                  .
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -877,40 +991,8 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
               </p>
             </CardContent>
           </Card>
-        </motion.aside>
+        </aside>
       </div>
-
-      {/* Mobile SEO — below fold */}
-      <Card className="border-border/80 shadow-sm lg:hidden">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">SEO</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="seo_title_m">Title override</Label>
-            <Input
-              id="seo_title_m"
-              value={seoTitle}
-              onChange={(e) => {
-                setSeoTitle(e.target.value);
-                markDirty();
-              }}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="seo_description_m">Meta description</Label>
-            <Textarea
-              id="seo_description_m"
-              rows={3}
-              value={seoDescription}
-              onChange={(e) => {
-                setSeoDescription(e.target.value);
-                markDirty();
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>

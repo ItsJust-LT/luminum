@@ -5,6 +5,7 @@ import { useOrganization } from "@/lib/contexts/organization-context";
 import { useParams, useRouter } from "next/navigation";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { BlogEditor } from "@/components/blog/blog-editor";
+import { getPublicSiteBaseFromOrgMetadata } from "@/lib/blog-public-url";
 
 export default function EditBlogPostPage() {
   const { data: session, isPending: sessionPending } = useSession();
@@ -27,5 +28,12 @@ export default function EditBlogPostPage() {
     return null;
   }
 
-  return <BlogEditor organizationId={organization.id} orgSlug={slug} postId={postId} />;
+  return (
+    <BlogEditor
+      organizationId={organization.id}
+      orgSlug={slug}
+      postId={postId}
+      publicSiteBaseUrl={getPublicSiteBaseFromOrgMetadata(organization.metadata)}
+    />
+  );
 }

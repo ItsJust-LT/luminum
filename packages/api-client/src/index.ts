@@ -667,6 +667,9 @@ function createApiClient(baseUrl: string = "") {
       patch(`/api/blog/posts/${encodeURIComponent(id)}`, body),
     deletePost: (id: string) => del(`/api/blog/posts/${encodeURIComponent(id)}`),
     publishPost: (id: string) => post(`/api/blog/posts/${encodeURIComponent(id)}/publish`, {}),
+    /** Time-limited token so the public site can load draft posts/assets (pass as previewToken query param). */
+    mintPreviewToken: (id: string) =>
+      post<{ token: string; expiresAt: string }>(`/api/blog/posts/${encodeURIComponent(id)}/preview-token`, {}),
     previewSpec: (id: string, body?: { content_markdown?: string }) =>
       post(`/api/blog/posts/${encodeURIComponent(id)}/preview-spec`, body ?? {}),
   };

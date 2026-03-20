@@ -20,3 +20,13 @@ export function dashboardBlogAssetUrlFromKey(key: string): string {
   if (!key?.trim()) return "";
   return `/api/blog-asset?key=${encodeURIComponent(key)}`;
 }
+
+/** Public marketing site base URL from org metadata (`publicBaseUrl` | `baseUrl` | `siteUrl`). */
+export function getPublicSiteBaseFromOrgMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const m = metadata as Record<string, unknown>;
+  const raw = m.publicBaseUrl ?? m.baseUrl ?? m.siteUrl;
+  if (!raw || typeof raw !== "string") return null;
+  const t = raw.trim();
+  return t ? t.replace(/\/$/, "") : null;
+}
