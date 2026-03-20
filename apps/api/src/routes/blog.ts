@@ -7,7 +7,7 @@ import { requireAuth, optionalAuth } from "../middleware/require-auth.js";
 import { canAccessOrganization } from "../lib/access.js";
 import { prisma } from "../lib/prisma.js";
 import * as s3 from "../lib/storage/s3.js";
-import { orgBlogAssetKey, isOrgBlogKey } from "../lib/storage/keys.js";
+import { orgBlogAssetKey, isOrgBlogKey, getOrganizationIdFromKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import { cacheGet, cacheSet, cacheDelByPrefix } from "../lib/redis-cache.js";
 import { publicBlogAssetUrl } from "../blog/urls.js";
@@ -68,11 +68,75 @@ async function ensureBlogsEnabled(organizationId: string): Promise<boolean> {
   return !!org?.blogs_enabled;
 }
 
+/** GET /api/blog/asset?key= — stream org blog asset for authenticated members (drafts + published). */
+router.get("/asset", requireAuth, async (req: Request, res: Response) => {
+  const keyRaw = req.query.key;
+  const key =
+    typeof keyRaw === "string"
+      ? keyRaw
+      : Array.isArray(keyRaw) && typeof keyRaw[0] === "string"
+        ? keyRaw[0]
+        : "";
+  if (!key.trim()) {
+    res.status(400).json({ error: "key required" });
+    return;
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(key).replace(/\.\./g, "");
+  } catch {
+    res.status(400).json({ error: "Invalid key" });
+    return;
+  }
+  const orgId = getOrganizationIdFromKey(decoded);
+  if (!orgId || !isOrgBlogKey(orgId, decoded)) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (!(await canAccessOrganization(orgId, req.user!))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
+  if (!(await ensureBlogsEnabled(orgId))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (!s3.isStorageConfigured()) {
+    res.status(503).json({ error: "Storage not configured" });
+    return;
+  }
+  try {
+    const head = await s3.headObject(decoded);
+    if (!head) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const etag = head.etag;
+    if (etag && req.headers["if-none-match"] === `"${etag}"`) {
+      res.status(304).end();
+      return;
+    }
+    const obj = await s3.getObject(decoded);
+    if (!obj) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    res.setHeader("Content-Type", obj.contentType);
+    res.setHeader("Content-Length", obj.contentLength);
+    res.setHeader("Cache-Control", "private, max-age=120, no-store");
+    if (obj.etag) res.setHeader("ETag", `"${obj.etag}"`);
+    res.setHeader("Content-Disposition", "inline");
+    obj.stream.pipe(res);
+  } catch (err) {
+    console.error("Blog member asset error:", err);
+    res.status(500).json({ error: "Failed to serve asset" });
+  }
+});
+
 function postToPublicSummary(p: {
   id: string;
   slug: string;
   title: string;
-  summary: string | null;
   cover_image_key: string;
   published_at: Date | null;
   categories?: unknown;
@@ -82,7 +146,6 @@ function postToPublicSummary(p: {
     id: p.id,
     slug: p.slug,
     title: p.title,
-    summary: p.summary,
     coverImageUrl: publicBlogAssetUrl(p.cover_image_key),
     publishedAt: p.published_at?.toISOString() ?? null,
     categories: cats,
@@ -133,7 +196,6 @@ router.get("/posts", optionalAuth, async (req: Request, res: Response) => {
           id: true,
           slug: true,
           title: true,
-          summary: true,
           cover_image_key: true,
           published_at: true,
           categories: true,
@@ -233,7 +295,6 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
       organizationMetadata: orgRow?.metadata ?? null,
       slug: post.slug,
       title: post.title,
-      summary: post.summary,
       seoTitle: post.seo_title,
       seoDescription: post.seo_description,
       coverImageKey: post.cover_image_key,
@@ -246,7 +307,6 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
         id: post.id,
         slug: post.slug,
         title: post.title,
-        summary: post.summary,
         coverImageUrl: publicBlogAssetUrl(post.cover_image_key),
         publishedAt: post.published_at?.toISOString() ?? null,
         categories: cats,
@@ -284,7 +344,6 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
       organizationMetadata: orgRow?.metadata ?? null,
       slug: post.slug,
       title: post.title,
-      summary: post.summary,
       seoTitle: post.seo_title,
       seoDescription: post.seo_description,
       coverImageKey: post.cover_image_key,
@@ -297,7 +356,6 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
         id: post.id,
         slug: post.slug,
         title: post.title,
-        summary: post.summary,
         coverImageUrl: post.cover_image_key ? publicBlogAssetUrl(post.cover_image_key) : null,
         publishedAt: post.published_at?.toISOString() ?? null,
         categories: cats,
@@ -335,7 +393,6 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
             )?.metadata ?? null,
             slug: post.slug,
             title: post.title,
-            summary: post.summary,
             seoTitle: post.seo_title,
             seoDescription: post.seo_description,
             coverImageKey: post.cover_image_key,
@@ -399,7 +456,7 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
     if (q) {
       (whereBase as any).OR = [
         { title: { contains: q, mode: "insensitive" } },
-        { summary: { contains: q, mode: "insensitive" } },
+        { content_markdown: { contains: q, mode: "insensitive" } },
         { slug: { contains: q, mode: "insensitive" } },
       ];
     }
@@ -415,7 +472,6 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
           id: true,
           slug: true,
           title: true,
-          summary: true,
           cover_image_key: true,
           published_at: true,
           categories: true,
@@ -442,7 +498,7 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
   if (q) {
     (whereBase as any).OR = [
       { title: { contains: q, mode: "insensitive" } },
-      { summary: { contains: q, mode: "insensitive" } },
+      { content_markdown: { contains: q, mode: "insensitive" } },
       { slug: { contains: q, mode: "insensitive" } },
     ];
   }
@@ -454,7 +510,6 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
       id: true,
       slug: true,
       title: true,
-      summary: true,
       cover_image_key: true,
       published_at: true,
       categories: true,
@@ -595,7 +650,6 @@ router.get("/posts/by-category", optionalAuth, async (req: Request, res: Respons
       id: true,
       slug: true,
       title: true,
-      summary: true,
       cover_image_key: true,
       published_at: true,
       categories: true,
@@ -695,11 +749,10 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
 
 /** POST /api/blog/posts — create draft. */
 router.post("/posts", requireAuth, async (req: Request, res: Response) => {
-  const { organizationId, title, slug, summary, content_markdown, cover_image_key, categories } = req.body as {
+  const { organizationId, title, slug, content_markdown, cover_image_key, categories } = req.body as {
     organizationId?: string;
     title?: string;
     slug?: string;
-    summary?: string;
     content_markdown?: string;
     cover_image_key?: string;
     categories?: string[];
@@ -730,7 +783,6 @@ router.post("/posts", requireAuth, async (req: Request, res: Response) => {
       organization_id: organizationId,
       slug: finalSlug,
       title: t,
-      summary: summary ?? null,
       content_markdown: content_markdown ?? "",
       cover_image_key: (cover_image_key ?? "").trim(),
       status: "draft",
@@ -756,7 +808,6 @@ router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
   const body = req.body as {
     title?: string;
     slug?: string;
-    summary?: string | null;
     content_markdown?: string;
     cover_image_key?: string;
     seo_title?: string | null;
@@ -768,7 +819,6 @@ router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
   const data: Record<string, unknown> = {};
 
   if (body.title !== undefined) data.title = String(body.title).trim().slice(0, 500);
-  if (body.summary !== undefined) data.summary = body.summary;
   if (body.content_markdown !== undefined) data.content_markdown = body.content_markdown;
   if (body.cover_image_key !== undefined) data.cover_image_key = String(body.cover_image_key).trim();
   if (body.seo_title !== undefined) data.seo_title = body.seo_title;
@@ -901,7 +951,6 @@ router.post("/posts/:id/publish", requireAuth, async (req: Request, res: Respons
     organizationMetadata: orgRow?.metadata ?? null,
     slug: post.slug,
     title: post.title,
-    summary: post.summary,
     seoTitle: post.seo_title,
     seoDescription: post.seo_description,
     coverImageKey: post.cover_image_key,
@@ -913,6 +962,25 @@ router.post("/posts/:id/publish", requireAuth, async (req: Request, res: Respons
     renderSpec,
     seo,
   });
+});
+
+/** DELETE /api/blog/posts/:id — remove post (member only). */
+router.delete("/posts/:id", requireAuth, async (req: Request, res: Response) => {
+  const id = one(req.params.id);
+  const existing = await prisma.blog_post.findUnique({ where: { id } });
+  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (!(await ensureBlogsEnabled(existing.organization_id))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (existing.status === "published") {
+    await invalidatePublishedBlogCache(existing.organization_id);
+  }
+  await prisma.blog_post.delete({ where: { id } });
+  res.json({ ok: true });
 });
 
 /** POST /api/blog/posts/:id/preview-token — mint an org-scoped preview token (24h expiry). */

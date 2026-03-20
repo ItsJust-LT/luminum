@@ -28,7 +28,6 @@ export function buildBlogSeo(args: {
   organizationMetadata: string | null;
   slug: string;
   title: string;
-  summary: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
   coverImageKey: string;
@@ -38,11 +37,7 @@ export function buildBlogSeo(args: {
   const siteBase = getOrgPublicSiteBase(args.organizationMetadata) ?? config.appUrl.replace(/\/$/, "");
   const canonicalUrl = `${siteBase}/blog/${encodeURIComponent(args.slug)}`;
   const title = (args.seoTitle?.trim() || args.title).trim();
-  const description = (
-    args.seoDescription?.trim() ||
-    args.summary?.trim() ||
-    title
-  ).trim();
+  const description = (args.seoDescription?.trim() || title).trim();
   const ogImageUrl = publicBlogAssetUrl(args.coverImageKey);
   const publishedTime = args.publishedAt?.toISOString();
   const modifiedTime = args.updatedAt.toISOString();

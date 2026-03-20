@@ -7,6 +7,7 @@
 - `GET /api/blog/posts/{slug}?organizationId={id}` — published post with `post`, `renderSpec`, and `seo`.
 - `GET /api/blog/posts/{slug}?websiteId={id}` — same as above, resolving organization from website.
 - `GET /api/public/blog-assets/{key}` — streams an image/file if the key is under `org/{organizationId}/blog/...` and referenced by a **published** post (cover or linked `blog_asset` row).
+- `GET /api/blog/asset?key={key}` — **authenticated** members only; streams any org blog object under `org/{orgId}/blog/...` (covers drafts in the dashboard). Prefer the dashboard Next.js proxy `/api/blog-asset?key=` so cookies work same-origin.
 
 ## Response shapes
 
@@ -19,7 +20,6 @@
       "id": "...",
       "slug": "my-post",
       "title": "...",
-      "summary": "...",
       "coverImageUrl": "https://api.example.com/api/public/blog-assets/org%2F...",
       "publishedAt": "2025-01-01T00:00:00.000Z"
     }
@@ -32,7 +32,7 @@
 
 ### Detail
 
-- `post`: `{ id, slug, title, summary, coverImageUrl, publishedAt }`
+- `post`: `{ id, slug, title, coverImageUrl, publishedAt, categories? }`
 - `renderSpec`: `{ "version": 1, "blocks": [ ... ] }`
 - `seo`: `{ canonicalUrl, title, description, openGraph, twitter, jsonLd? }`
 

@@ -585,7 +585,6 @@ model blog_post {
   organization_id       String
   slug                  String         @db.VarChar(255)
   title                 String         @db.VarChar(500)
-  summary               String?        @db.Text
   content_markdown      String         @db.Text
   content_render_spec   Json?
   cover_image_key       String         @db.Text

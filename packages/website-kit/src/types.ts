@@ -10,7 +10,6 @@ export interface BlogPostSummary {
   id: string;
   slug: string;
   title: string;
-  summary: string | null;
   coverImageUrl: string;
   publishedAt: string | null;
   categories?: string[];

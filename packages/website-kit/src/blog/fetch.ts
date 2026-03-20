@@ -54,7 +54,7 @@ export async function getAllPublishedPosts(
 
 /**
  * Fetch a single published blog post by slug.
- * Returns the post summary, renderSpec for rendering, and SEO payload for metadata.
+ * Returns the post metadata, renderSpec for rendering, and SEO payload for metadata.
  */
 export async function getPublishedPostBySlug(
   opts: BlogFetchOptions & { slug: string }

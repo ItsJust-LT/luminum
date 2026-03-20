@@ -50,7 +50,8 @@ import {
   HelpCircle,
   Users,
   HardDrive,
-  AlertTriangle
+  AlertTriangle,
+  FileText
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
@@ -72,7 +73,11 @@ export default function OrganizationSettingsPage() {
   const [formData, setFormData] = useState<Partial<OrganizationSettings>>({})
   const [canEdit, setCanEdit] = useState(false)
   const [storageBreakdown, setStorageBreakdown] = useState<{
-    byCategory: { images: number; attachments: { support: number; emails: number; forms: number } };
+    byCategory: {
+      images: number;
+      blog: number;
+      attachments: { support: number; emails: number; forms: number };
+    };
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -573,7 +578,7 @@ export default function OrganizationSettingsPage() {
                   )}
                 </CardTitle>
                 <CardDescription>
-                  Current storage usage for emails, images, and attachments
+                  Usage across images, blog media, support, email attachments, and form uploads
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -588,12 +593,12 @@ export default function OrganizationSettingsPage() {
                       {settings.max_storage_bytes / (1024 * 1024 * 1024)} GB
                     </span>
                   </div>
-                  <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+                  <div className="w-full bg-muted rounded-full h-3 overflow-hidden flex">
                     <div
                       className={`h-full transition-all ${
                         settings.storage_warning
-                          ? 'bg-gradient-to-r from-amber-500 to-amber-600'
-                          : 'bg-gradient-to-r from-primary to-primary/80'
+                          ? "bg-gradient-to-r from-amber-500 to-amber-600"
+                          : "bg-gradient-to-r from-primary to-primary/80"
                       }`}
                       style={{
                         width: `${Math.min(settings.storage_usage_percent || 0, 100)}%`,
@@ -608,23 +613,51 @@ export default function OrganizationSettingsPage() {
                       </span>
                     </div>
                   )}
-                  {storageBreakdown && (
-                    <div className="pt-3 border-t border-border/50">
-                      <div className="text-xs font-medium text-muted-foreground mb-2">Usage by category</div>
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                        <span className="flex items-center gap-1.5">
-                          <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                          Images: <strong className="font-mono">{(storageBreakdown.byCategory.images / (1024 * 1024)).toFixed(2)} MB</strong>
-                        </span>
-                        <span>Support attachments: <strong className="font-mono">{(storageBreakdown.byCategory.attachments.support / (1024 * 1024)).toFixed(2)} MB</strong></span>
-                        <span className="flex items-center gap-1.5">
-                          <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                          Email attachments: <strong className="font-mono">{(storageBreakdown.byCategory.attachments.emails / (1024 * 1024)).toFixed(2)} MB</strong>
-                        </span>
-                        <span>Form uploads: <strong className="font-mono">{(storageBreakdown.byCategory.attachments.forms / (1024 * 1024)).toFixed(2)} MB</strong></span>
+                  {storageBreakdown && (() => {
+                    const b = storageBreakdown.byCategory
+                    const blogBytes = b.blog ?? 0
+                    const parts = [
+                      { key: "images", label: "Images & logos", bytes: b.images, color: "bg-sky-500" },
+                      { key: "blog", label: "Blog media", bytes: blogBytes, color: "bg-violet-500" },
+                      { key: "support", label: "Support", bytes: b.attachments.support, color: "bg-emerald-500" },
+                      { key: "emails", label: "Emails", bytes: b.attachments.emails, color: "bg-amber-500" },
+                      { key: "forms", label: "Forms", bytes: b.attachments.forms, color: "bg-rose-500" },
+                    ]
+                    const sumParts = parts.reduce((a, p) => a + p.bytes, 0) || 1
+                    const fmt = (n: number) =>
+                      n / (1024 * 1024) < 1 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(2)} MB`
+                    return (
+                      <div className="pt-4 border-t border-border/50 space-y-4">
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground mb-2">Storage mix</div>
+                          <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted ring-1 ring-border/40">
+                            {parts.map((p) => (
+                              <div
+                                key={p.key}
+                                className={`${p.color} transition-all`}
+                                style={{ width: `${Math.max(0.5, (p.bytes / sumParts) * 100)}%` }}
+                                title={`${p.label}: ${fmt(p.bytes)}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2 text-sm">
+                          {parts.map((p) => (
+                            <div key={p.key} className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                              <span className="flex items-center gap-2 text-muted-foreground">
+                                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${p.color}`} />
+                                {p.key === "blog" ? <FileText className="h-3.5 w-3.5" /> : null}
+                                {p.key === "images" ? <ImageIcon className="h-3.5 w-3.5" /> : null}
+                                {p.key === "emails" ? <Mail className="h-3.5 w-3.5" /> : null}
+                                <span className="truncate">{p.label}</span>
+                              </span>
+                              <strong className="font-mono text-xs tabular-nums">{fmt(p.bytes)}</strong>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                 </div>
               </CardContent>
             </Card>

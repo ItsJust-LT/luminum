@@ -232,6 +232,7 @@ export interface OrganizationStorageBreakdown {
   total: number;
   byCategory: {
     images: number;
+    blog: number;
     attachments: {
       support: number;
       emails: number;
@@ -242,7 +243,7 @@ export interface OrganizationStorageBreakdown {
 
 /**
  * Get storage usage for an organization by listing objects under org/{organizationId}/.
- * Categorizes by path: images/logos, attachments/support, attachments/emails, attachments/forms.
+ * Categorizes by path: images/logos, blog/*, attachments/support, attachments/emails, attachments/forms.
  */
 export async function getOrganizationStorageBreakdown(
   organizationId: string
@@ -251,6 +252,7 @@ export async function getOrganizationStorageBreakdown(
   const objects = await listObjectsByPrefix(prefix);
   const byCategory: OrganizationStorageBreakdown["byCategory"] = {
     images: 0,
+    blog: 0,
     attachments: { support: 0, emails: 0, forms: 0 },
   };
   let total = 0;
@@ -260,6 +262,8 @@ export async function getOrganizationStorageBreakdown(
     const segments = rest.split("/");
     if (segments[0] === "images") {
       byCategory.images += size;
+    } else if (segments[0] === "blog") {
+      byCategory.blog += size;
     } else if (segments[0] === "attachments" && segments[1]) {
       if (segments[1] === "support") byCategory.attachments.support += size;
       else if (segments[1] === "emails") byCategory.attachments.emails += size;

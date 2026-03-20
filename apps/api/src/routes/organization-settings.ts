@@ -84,6 +84,7 @@ router.get("/storage", async (req: Request, res: Response) => {
               total: breakdown.total,
               byCategory: {
                 images: breakdown.byCategory.images,
+                blog: breakdown.byCategory.blog,
                 attachments: breakdown.byCategory.attachments,
               },
             }

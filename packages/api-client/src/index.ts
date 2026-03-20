@@ -660,12 +660,12 @@ function createApiClient(baseUrl: string = "") {
       organizationId: string;
       title: string;
       slug?: string;
-      summary?: string;
       content_markdown?: string;
       cover_image_key?: string;
     }) => post("/api/blog/posts", body),
     updatePost: (id: string, body: Record<string, unknown>) =>
       patch(`/api/blog/posts/${encodeURIComponent(id)}`, body),
+    deletePost: (id: string) => del(`/api/blog/posts/${encodeURIComponent(id)}`),
     publishPost: (id: string) => post(`/api/blog/posts/${encodeURIComponent(id)}/publish`, {}),
     previewSpec: (id: string, body?: { content_markdown?: string }) =>
       post(`/api/blog/posts/${encodeURIComponent(id)}/preview-spec`, body ?? {}),
