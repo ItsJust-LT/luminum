@@ -25,6 +25,7 @@ import {
   Monitor,
   Smartphone,
   Tablet,
+  BookOpen,
 } from "lucide-react"
 import { formatNumber } from "@/lib/utils"
 import { api } from "@/lib/api"
@@ -105,6 +106,8 @@ export default function AdminAnalyticsPage() {
     { title: "Unique Sessions", value: overview?.uniqueSessions ?? 0, icon: Users, color: "from-green-500 to-green-600" },
     { title: "Form Submissions", value: overview?.formSubmissions ?? 0, icon: FileText, color: "from-orange-500 to-orange-600" },
     { title: "Emails", value: overview?.emails ?? 0, icon: Mail, color: "from-purple-500 to-purple-600" },
+    { title: "Blog Category Views", value: overview?.blogCategoryViews ?? 0, icon: BookOpen, color: "from-indigo-500 to-indigo-600" },
+    { title: "Published Blog Posts", value: overview?.blogPublishedPosts ?? 0, icon: BookOpen, color: "from-sky-500 to-sky-600" },
   ]
 
   return (

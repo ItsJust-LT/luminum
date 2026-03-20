@@ -33,6 +33,19 @@ router.get("/analytics-enabled", async (req: Request, res: Response) => {
   } catch { res.json({ enabled: false }); }
 });
 
+// GET /api/organization-settings/blogs-enabled?organizationId=...
+router.get("/blogs-enabled", async (req: Request, res: Response) => {
+  try {
+    const org = await prisma.organization.findUnique({
+      where: { id: req.query.organizationId as string },
+      select: { blogs_enabled: true },
+    });
+    res.json({ enabled: org?.blogs_enabled || false });
+  } catch {
+    res.json({ enabled: false });
+  }
+});
+
 // GET /api/organization-settings/storage?organizationId=... — storage usage and breakdown by category
 router.get("/storage", async (req: Request, res: Response) => {
   try {

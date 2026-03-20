@@ -238,6 +238,7 @@ model organization {
   whatsapp_enabled                                                  Boolean                   @default(false)
   whatsapp_always_on                                                Boolean                   @default(false)
   analytics_enabled                                                 Boolean                   @default(false)
+  blogs_enabled                                                    Boolean                   @default(false)
   emails                                                            email[]
   images                                                            images[]
   invitations                                                       invitation[]
@@ -249,6 +250,9 @@ model organization {
   email_domain                                                      websites?                 @relation("OrganizationEmailDomain", fields: [email_domain_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   whatsapp_accounts                                                 whatsapp_account[]
   whatsapp_analytics                                                whatsapp_analytics_daily[]
+  blog_posts                                                        blog_post[]
+  blog_assets                                                       blog_asset[]
+  blog_preview_tokens                                               blog_preview_token[]
 
   @@index([payment_provider], map: "idx_organization_payment_provider")
   @@index([email_domain_id], map: "idx_organization_email_domain_id")
@@ -567,6 +571,71 @@ model websites {
   @@index([metadata], map: "idx_websites_metadata_gin", type: Gin)
   @@index([organization_id], map: "idx_websites_organization_id")
   @@index([website_id], map: "idx_websites_website_id")
+}
+
+// ── Blog (per-organization posts, MDX-like content, private assets) ─────
+
+enum BlogPostStatus {
+  draft
+  published
+}
+
+model blog_post {
+  id                    String         @id @default(cuid())
+  organization_id       String
+  slug                  String         @db.VarChar(255)
+  title                 String         @db.VarChar(500)
+  summary               String?        @db.Text
+  content_markdown      String         @db.Text
+  content_render_spec   Json?
+  cover_image_key       String         @db.Text
+  status                BlogPostStatus @default(draft)
+  published_at          DateTime?      @db.Timestamptz(6)
+  seo_title             String?        @db.VarChar(500)
+  seo_description       String?        @db.Text
+  categories            Json?          @db.JsonB
+  created_at            DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime       @updatedAt @db.Timestamptz(6)
+  organization          organization   @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  blog_assets           blog_asset[]
+
+  @@unique([organization_id, slug])
+  @@index([organization_id])
+  @@index([organization_id, status])
+  @@index([published_at])
+  @@index([categories], type: Gin)
+}
+
+model blog_asset {
+  id                 String       @id @default(cuid())
+  organization_id    String
+  blog_post_id       String?
+  type               String       @db.VarChar(20)
+  s3_key             String       @db.Text
+  mime               String       @db.VarChar(255)
+  size_bytes         Int          @default(0)
+  original_filename  String       @db.VarChar(500)
+  created_at         DateTime     @default(now()) @db.Timestamptz(6)
+  organization       organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  blog_post          blog_post?   @relation(fields: [blog_post_id], references: [id], onDelete: SetNull)
+
+  @@unique([organization_id, s3_key])
+  @@index([organization_id])
+  @@index([s3_key])
+  @@index([blog_post_id])
+}
+
+model blog_preview_token {
+  id              String    @id @default(cuid())
+  organization_id String
+  token           String    @unique @default(cuid())
+  expires_at      DateTime  @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  organization    organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id])
+  @@index([token])
+  @@index([expires_at])
 }
 
 // ── WhatsApp Integration ────────────────────────────────────────────────

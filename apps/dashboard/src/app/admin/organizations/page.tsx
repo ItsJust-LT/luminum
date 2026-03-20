@@ -42,6 +42,7 @@ import {
   FileText,
   MessageCircle,
   BarChart3,
+  BookOpen,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-organization-creator-dialog"
@@ -89,7 +90,7 @@ export default function AdminOrganizationsPage() {
     return <Badge variant="secondary" className="text-xs">{sub.status}</Badge>
   }
 
-  const toggleFeature = async (org: any, feature: "analytics" | "email" | "whatsapp", enable: boolean) => {
+  const toggleFeature = async (org: any, feature: "analytics" | "email" | "whatsapp" | "blogs", enable: boolean) => {
     const key = `${org.id}-${feature}`
     setTogglingFeature(key)
     try {
@@ -97,10 +98,16 @@ export default function AdminOrganizationsPage() {
         await (enable ? api.admin.enableAnalytics(org.id) : api.admin.disableAnalytics(org.id))
       } else if (feature === "email") {
         await (enable ? api.admin.enableEmailAccess(org.id) : api.admin.disableEmail(org.id))
+      } else if (feature === "blogs") {
+        await (enable ? api.admin.enableBlogs(org.id) : api.admin.disableBlogs(org.id))
       } else {
         await (enable ? api.admin.enableWhatsapp(org.id) : api.admin.disableWhatsapp(org.id))
       }
-      toast.success(enable ? `${feature === "analytics" ? "Analytics" : feature === "email" ? "Email" : "WhatsApp"} enabled` : `${feature === "analytics" ? "Analytics" : feature === "email" ? "Email" : "WhatsApp"} disabled`)
+      toast.success(
+        enable
+          ? `${feature === "analytics" ? "Analytics" : feature === "email" ? "Email" : feature === "blogs" ? "Blogs" : "WhatsApp"} enabled`
+          : `${feature === "analytics" ? "Analytics" : feature === "email" ? "Email" : feature === "blogs" ? "Blogs" : "WhatsApp"} disabled`
+      )
       fetchOrganizations()
     } catch (err: any) {
       toast.error(err?.message || "Failed to update")
@@ -301,6 +308,9 @@ export default function AdminOrganizationsPage() {
                         <Badge variant={org.whatsapp_enabled ? "default" : "secondary"} className="text-xs gap-0.5">
                           <MessageCircle className="h-3 w-3" /> {org.whatsapp_enabled ? "On" : "Off"}
                         </Badge>
+                        <Badge variant={org.blogs_enabled ? "default" : "secondary"} className="text-xs gap-0.5">
+                          <BookOpen className="h-3 w-3" /> {org.blogs_enabled ? "On" : "Off"}
+                        </Badge>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
@@ -339,6 +349,15 @@ export default function AdminOrganizationsPage() {
                           ) : (
                             <DropdownMenuItem onClick={() => toggleFeature(org, "whatsapp", false)} disabled={!!togglingFeature}>
                               <MessageCircle className="h-4 w-4 mr-2" /> Disable WhatsApp
+                            </DropdownMenuItem>
+                          )}
+                          {!org.blogs_enabled ? (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "blogs", true)} disabled={!!togglingFeature}>
+                              <BookOpen className="h-4 w-4 mr-2" /> Enable Blogs
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => toggleFeature(org, "blogs", false)} disabled={!!togglingFeature}>
+                              <BookOpen className="h-4 w-4 mr-2" /> Disable Blogs
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />

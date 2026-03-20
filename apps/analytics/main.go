@@ -96,7 +96,6 @@ func main() {
 	// Tracking and forms
 	r.Post("/track", trackHandler)
 	r.Get("/script.js", serveTrackingScript)
-	r.Get("/form-script.js", serveFormScript)
 	r.Post("/form", formSubmissionHandler)
 	r.Get("/stats/live", LiveViewerCountHandler)
 

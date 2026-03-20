@@ -165,6 +165,7 @@ export function OrganizationDashboard() {
           websiteId={website.id}
           organizationSlug={organization.slug}
           analyticsEnabled={website.analytics ?? false}
+          blogsEnabled={organization.blogs_enabled ?? false}
         />
       ) : (
         <div className="app-card border border-dashed border-muted-foreground/25 bg-card/50 overflow-hidden">

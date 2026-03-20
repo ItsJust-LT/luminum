@@ -142,7 +142,8 @@ router.get("/overview", async (req: Request, res: Response) => {
     const endDate = new Date(end);
 
     const websiteIds = websiteIdFilter(website);
-    const [eventsAgg, sessionGroups, formCount] = await Promise.all([
+    const [eventsAgg, sessionGroups, formCount, blogCategoryViews, blogCategorySessions, blogPublishedPosts] =
+      await Promise.all([
       prisma.events.aggregate({
         where: { website_id: websiteIds, created_at: { gte: startDate, lte: endDate } },
         _count: { id: true },
@@ -155,6 +156,27 @@ router.get("/overview", async (req: Request, res: Response) => {
       prisma.form_submissions.count({
         where: { website_id: websiteIds, submitted_at: { gte: startDate, lte: endDate } },
       }),
+      // Blog analytics: category pages are canonical + predictable (/blog/category/:slug).
+      prisma.events.count({
+        where: {
+          website_id: websiteIds,
+          created_at: { gte: startDate, lte: endDate },
+          url: { contains: "/blog/category/" },
+        },
+      }),
+      prisma.events.groupBy({
+        by: ["session_id"],
+        where: {
+          website_id: websiteIds,
+          created_at: { gte: startDate, lte: endDate },
+          url: { contains: "/blog/category/" },
+          session_id: { not: null },
+        },
+      }),
+      // Published blog post count for the organization (not time-windowed).
+      prisma.blog_post.count({
+        where: { organization_id: website.organization_id, status: "published" },
+      }),
     ]);
 
     const payload = {
@@ -164,6 +186,9 @@ router.get("/overview", async (req: Request, res: Response) => {
       uniqueSessions: sessionGroups.length,
       avgDuration: Math.round(eventsAgg._avg.duration ?? 0) || 0,
       formSubmissions: formCount,
+      blogCategoryViews,
+      blogCategoryUniqueSessions: blogCategorySessions.length,
+      blogPublishedPosts,
     };
     await cacheSet(cacheKey, payload, 60);
     res.json(payload);

@@ -365,4 +365,34 @@ router.post("/disable-organization-analytics", adminOnly, async (req: Request, r
   }
 });
 
+// POST /api/admin/enable-organization-blogs
+router.post("/enable-organization-blogs", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { blogs_enabled: true },
+    });
+    res.json({ success: true, message: "Blogs enabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/disable-organization-blogs
+router.post("/disable-organization-blogs", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { blogs_enabled: false },
+    });
+    res.json({ success: true, message: "Blogs disabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
 export { router as adminRouter };

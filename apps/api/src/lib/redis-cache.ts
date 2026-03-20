@@ -34,6 +34,34 @@ export async function cacheSet(
   }
 }
 
+/** Remove a single cache entry. */
+export async function cacheDel(key: string): Promise<void> {
+  const redis = await getRedisClient();
+  if (!redis) return;
+  try {
+    await redis.del(PREFIX + key);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Delete all keys with Redis prefix luminum:cache:{prefix}.
+ * Uses SCAN (safe for large keyspaces vs KEYS *).
+ */
+export async function cacheDelByPrefix(prefix: string): Promise<void> {
+  const redis = await getRedisClient();
+  if (!redis) return;
+  const match = `${PREFIX}${prefix}*`;
+  try {
+    for await (const fullKey of redis.scanIterator({ MATCH: match, COUNT: 200 })) {
+      await redis.del(fullKey);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 const ANALYTICS_DIRTY_PREFIX = "analytics:dirty:";
 const ANALYTICS_DIRTY_TTL_SEC = 15;
 

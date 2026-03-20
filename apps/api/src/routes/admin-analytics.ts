@@ -20,7 +20,17 @@ router.get("/overview", async (req: Request, res: Response) => {
     const startDate = new Date(start);
     const endDate = new Date(end);
 
-    const [pageViews, sessionGroups, formCount, emailCount, activeSubscriptions, totalRevenue] = await Promise.all([
+    const [
+      pageViews,
+      sessionGroups,
+      formCount,
+      emailCount,
+      activeSubscriptions,
+      totalRevenue,
+      blogCategoryViews,
+      blogCategorySessions,
+      blogPublishedPosts,
+    ] = await Promise.all([
       prisma.events.count({ where: { created_at: { gte: startDate, lte: endDate } } }),
       prisma.events.groupBy({
         by: ["session_id"],
@@ -33,6 +43,19 @@ router.get("/overview", async (req: Request, res: Response) => {
         where: { status: "active" },
         _sum: { amount: true },
       }),
+      // Blog analytics: category pages (/blog/category/:slug)
+      prisma.events.count({
+        where: { created_at: { gte: startDate, lte: endDate }, url: { contains: "/blog/category/" } },
+      }),
+      prisma.events.groupBy({
+        by: ["session_id"],
+        where: {
+          created_at: { gte: startDate, lte: endDate },
+          url: { contains: "/blog/category/" },
+          session_id: { not: null },
+        },
+      }),
+      prisma.blog_post.count({ where: { status: "published" } }),
     ]);
 
     const avgDuration = await prisma.events.aggregate({
@@ -50,6 +73,9 @@ router.get("/overview", async (req: Request, res: Response) => {
         emails: emailCount,
         activeSubscriptions,
         totalRevenue: totalRevenue._sum.amount ?? 0,
+        blogCategoryViews,
+        blogCategoryUniqueSessions: blogCategorySessions.length,
+        blogPublishedPosts,
       },
     });
   } catch (error: any) {

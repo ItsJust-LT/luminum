@@ -13,6 +13,7 @@ interface Organization {
   emails_enabled?: boolean
   whatsapp_enabled?: boolean
   analytics_enabled?: boolean
+  blogs_enabled?: boolean
 }
 
 interface SessionUser {
@@ -30,6 +31,7 @@ interface OrganizationSidebarWrapperProps {
   initialEmailsEnabled?: boolean
   initialWhatsappEnabled?: boolean
   initialAnalyticsEnabled?: boolean
+  initialBlogsEnabled?: boolean
 }
 
 export function OrganizationSidebarWrapper({
@@ -42,6 +44,7 @@ export function OrganizationSidebarWrapper({
   initialEmailsEnabled = false,
   initialWhatsappEnabled = false,
   initialAnalyticsEnabled = false,
+  initialBlogsEnabled = false,
 }: OrganizationSidebarWrapperProps) {
   const [unseenFormsCount, setUnseenFormsCount] = useState(initialUnseenFormsCount)
   const [unreadEmailsCount, setUnreadEmailsCount] = useState(initialUnreadEmailsCount)
@@ -104,6 +107,8 @@ export function OrganizationSidebarWrapper({
       initialUnreadWhatsappCount={unreadWhatsappCount}
       initialEmailsEnabled={initialEmailsEnabled}
       initialWhatsappEnabled={initialWhatsappEnabled}
+      initialAnalyticsEnabled={initialAnalyticsEnabled}
+      initialBlogsEnabled={initialBlogsEnabled}
       isLoading={false}
     />
   )

@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle } from "lucide-react"
+import { BookOpen, Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -35,6 +35,7 @@ interface Organization {
   emails_enabled?: boolean
   whatsapp_enabled?: boolean
   analytics_enabled?: boolean
+  blogs_enabled?: boolean
 }
 
 interface Website {
@@ -55,6 +56,7 @@ export function OrganizationSidebar({
   initialEmailsEnabled = false,
   initialWhatsappEnabled = false,
   initialAnalyticsEnabled = false,
+  initialBlogsEnabled = false,
   isLoading: externalIsLoading = false,
 }: {
   organization: Organization
@@ -66,6 +68,7 @@ export function OrganizationSidebar({
   initialEmailsEnabled?: boolean
   initialWhatsappEnabled?: boolean
   initialAnalyticsEnabled?: boolean
+  initialBlogsEnabled?: boolean
   isLoading?: boolean
 }) {
   const router = useRouter()
@@ -76,6 +79,7 @@ export function OrganizationSidebar({
   const [emailsEnabled, setEmailsEnabled] = useState(initialEmailsEnabled)
   const [whatsappEnabled, setWhatsappEnabled] = useState(initialWhatsappEnabled)
   const [analyticsEnabled, setAnalyticsEnabled] = useState(initialAnalyticsEnabled)
+  const [blogsEnabled, setBlogsEnabled] = useState(initialBlogsEnabled ?? false)
   const [isLoading, setIsLoading] = useState(externalIsLoading)
   
   // Update state when props change
@@ -86,8 +90,9 @@ export function OrganizationSidebar({
     setEmailsEnabled(initialEmailsEnabled)
     setWhatsappEnabled(initialWhatsappEnabled)
     setAnalyticsEnabled(initialAnalyticsEnabled)
+    setBlogsEnabled(initialBlogsEnabled ?? false)
     setIsLoading(externalIsLoading)
-  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, initialAnalyticsEnabled, externalIsLoading])
+  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, initialAnalyticsEnabled, initialBlogsEnabled, externalIsLoading])
 
   // Extract slug from current path or use organization id as fallback
   const pathSegments = pathname?.split('/').filter(Boolean) || []
@@ -102,6 +107,7 @@ export function OrganizationSidebar({
       href: `/${slug}/forms`,
       badge: unseenFormsCount > 0 ? unseenFormsCount : undefined
     },
+    ...(blogsEnabled ? [{ title: "Blog", icon: BookOpen, href: `/${slug}/blogs` }] : []),
     ...(emailsEnabled ? [{
       title: "Emails",
       icon: Mail,

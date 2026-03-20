@@ -125,6 +125,8 @@ function createApiClient(baseUrl: string = "") {
       get("/api/organization-settings/emails-enabled", { organizationId }),
     getAnalyticsEnabled: (organizationId: string) =>
       get("/api/organization-settings/analytics-enabled", { organizationId }),
+    getBlogsEnabled: (organizationId: string) =>
+      get("/api/organization-settings/blogs-enabled", { organizationId }),
     get: (organizationId: string) =>
       get("/api/organization-settings", { organizationId }),
     update: (organizationId: string, updates: any) =>
@@ -259,6 +261,10 @@ function createApiClient(baseUrl: string = "") {
       post("/api/admin/enable-organization-analytics", { organizationId }),
     disableAnalytics: (organizationId: string) =>
       post("/api/admin/disable-organization-analytics", { organizationId }),
+    enableBlogs: (organizationId: string) =>
+      post("/api/admin/enable-organization-blogs", { organizationId }),
+    disableBlogs: (organizationId: string) =>
+      post("/api/admin/disable-organization-blogs", { organizationId }),
     getDatabaseTables: () => get("/api/admin/database/tables"),
     getDatabaseStats: () => get("/api/admin/database/stats"),
     getDatabaseTableSchema: (tableName: string) =>
@@ -635,6 +641,36 @@ function createApiClient(baseUrl: string = "") {
       post(`/api/whatsapp/groups/${chatId}/leave`, { organizationId }),
   };
 
+  // ─── Blog (per-organization) ───────────────────────────────
+  const blog = {
+    listPosts: (organizationId: string, page = 1, limit = 20) =>
+      get("/api/blog/posts", { organizationId, page, limit }),
+    getPostById: (postId: string) => get(`/api/blog/posts/id/${encodeURIComponent(postId)}`),
+    getPostBySlug: (organizationId: string, slug: string) =>
+      get(`/api/blog/posts/${encodeURIComponent(slug)}`, { organizationId }),
+    getComponents: () => get("/api/blog/components"),
+    upload: (body: {
+      organizationId: string;
+      postId?: string | null;
+      fileBase64: string;
+      contentType: string;
+      originalFilename: string;
+    }) => post("/api/blog/upload", body),
+    createPost: (body: {
+      organizationId: string;
+      title: string;
+      slug?: string;
+      summary?: string;
+      content_markdown?: string;
+      cover_image_key?: string;
+    }) => post("/api/blog/posts", body),
+    updatePost: (id: string, body: Record<string, unknown>) =>
+      patch(`/api/blog/posts/${encodeURIComponent(id)}`, body),
+    publishPost: (id: string) => post(`/api/blog/posts/${encodeURIComponent(id)}/publish`, {}),
+    previewSpec: (id: string, body?: { content_markdown?: string }) =>
+      post(`/api/blog/posts/${encodeURIComponent(id)}/preview-spec`, body ?? {}),
+  };
+
   // ─── User Management ─────────────────────────────────────
   const userManagement = {
     getUsers: () => get("/api/user-management/users"),
@@ -670,6 +706,7 @@ function createApiClient(baseUrl: string = "") {
     subscriptions,
     userManagement,
     whatsapp,
+    blog,
     /** Low-level API methods for endpoints not covered by the above. Use in client components. */
     get: <T = any>(path: string, params?: Record<string, any>) => get<T>(path, params),
     post: <T = any>(path: string, body?: any) => post<T>(path, body),

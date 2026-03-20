@@ -23,6 +23,7 @@ const ORG_ATTACHMENTS = "attachments";
 const ORG_ATTACHMENTS_SUPPORT = "support";
 const ORG_ATTACHMENTS_EMAILS = "emails";
 const ORG_ATTACHMENTS_FORMS = "forms";
+const ORG_BLOG = "blog";
 
 /** Prefix for all keys belonging to an organization (e.g. "org/abc123"). */
 export function orgPrefix(organizationId: string): string {
@@ -66,6 +67,30 @@ export function orgAttachmentsFormsKey(
 ): string {
   const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
   return `${orgPrefix(organizationId)}/${ORG_ATTACHMENTS}/${ORG_ATTACHMENTS_FORMS}/${formId}/${Date.now()}-${safe}`;
+}
+
+/**
+ * Blog asset (cover or in-post): org/{orgId}/blog/{scope}/{timestamp}-{filename}
+ * scope = post id for attached assets, or "draft" for pre-publish uploads.
+ */
+export function orgBlogAssetKey(
+  organizationId: string,
+  scope: string,
+  filename: string
+): string {
+  const safeScope = (scope || "draft").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+  return `${orgPrefix(organizationId)}/${ORG_BLOG}/${safeScope}/${Date.now()}-${safe}`;
+}
+
+/** Prefix for org blog assets: org/{orgId}/blog/ */
+export function orgBlogKeyPrefix(organizationId: string): string {
+  return `${orgPrefix(organizationId)}/${ORG_BLOG}/`;
+}
+
+/** Whether key is under org blog namespace (org/{id}/blog/...). */
+export function isOrgBlogKey(organizationId: string, key: string): boolean {
+  return key.startsWith(orgBlogKeyPrefix(organizationId));
 }
 
 /** Whether a key is under the org-scoped prefix (org/{id}/...). */

@@ -15,6 +15,7 @@ import {
   Monitor,
   ArrowRight,
   LayoutDashboard,
+  BookOpen,
 } from "lucide-react"
 import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
 import type { MetricCount } from "@/lib/types/analytics"
@@ -28,6 +29,7 @@ interface DashboardOverviewProps {
   websiteId: string
   organizationSlug: string
   analyticsEnabled: boolean
+  blogsEnabled: boolean
 }
 
 interface OverviewData {
@@ -35,12 +37,15 @@ interface OverviewData {
   uniqueVisitors: number
   avgSessionDuration: number
   formSubmissions: number
+  blogCategoryViews: number
+  blogPublishedPosts: number
 }
 
 export function DashboardOverview({
   websiteId,
   organizationSlug,
   analyticsEnabled,
+  blogsEnabled,
 }: DashboardOverviewProps) {
   const { organization } = useOrganization()
   const [overview, setOverview] = useState<OverviewData | null>(null)
@@ -75,6 +80,8 @@ export function DashboardOverview({
           uniqueVisitors: overviewRes.uniqueSessions || 0,
           avgSessionDuration: overviewRes.avgDuration || 0,
           formSubmissions: overviewRes.formSubmissions || 0,
+          blogCategoryViews: overviewRes.blogCategoryViews ?? 0,
+          blogPublishedPosts: overviewRes.blogPublishedPosts ?? 0,
         })
       }
       setApiLiveViewers(realtimeRes?.activeVisitors ?? 0)
@@ -232,6 +239,32 @@ export function DashboardOverview({
               <div className="text-sm text-cyan-700 dark:text-cyan-300 font-medium">Form submissions</div>
             </CardContent>
           </Card>
+          {blogsEnabled ? (
+            <>
+              <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-indigo-50/50 to-indigo-100/30 dark:from-indigo-950/30 dark:to-indigo-900/20 app-card overflow-hidden">
+                <CardContent className="p-4 sm:p-5 md:p-6 text-center">
+                  <div className="p-2.5 sm:p-3 bg-indigo-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
+                    <BookOpen className="h-6 w-6 sm:h-8 sm:w-8 text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-indigo-900 dark:text-indigo-100 tabular-nums">
+                    {(overview?.blogCategoryViews ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">Blog category views</div>
+                </CardContent>
+              </Card>
+              <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-sky-50/50 to-sky-100/30 dark:from-sky-950/30 dark:to-sky-900/20 app-card overflow-hidden">
+                <CardContent className="p-4 sm:p-5 md:p-6 text-center">
+                  <div className="p-2.5 sm:p-3 bg-sky-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
+                    <BookOpen className="h-6 w-6 sm:h-8 sm:w-8 text-sky-600 dark:text-sky-400" />
+                  </div>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-sky-900 dark:text-sky-100 tabular-nums">
+                    {(overview?.blogPublishedPosts ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-sm text-sky-700 dark:text-sky-300 font-medium">Published posts</div>
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
         </div>
       </div>
 

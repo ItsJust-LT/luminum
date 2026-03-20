@@ -62,6 +62,11 @@ history.replaceState=function(){_origReplace.apply(history,arguments);onNav();};
 window.addEventListener("popstate",onNav);
 window.addEventListener("hashchange",onNav);
 trackPage(location.href,document.referrer);
+window.__luminum={
+getSessionId:function(){return getOrCreateSid();},
+getWebsiteId:function(){return wid;},
+getApiUrl:function(){return api;}
+};
 })();`, fmt.Sprintf(sessionJS, SessionCookieName, SessionCookieName, SessionCookieMaxAgeDays), websiteId, origin, wsOrigin)
 
 	m := minify.New()
@@ -74,39 +79,6 @@ trackPage(location.href,document.referrer);
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Expires", time.Now().Add(1*time.Hour).Format(http.TimeFormat))
-	fmt.Fprint(w, minified)
-}
-
-func serveFormScript(w http.ResponseWriter, r *http.Request) {
-	websiteId := r.URL.Query().Get("websiteId")
-	if websiteId == "" {
-		http.Error(w, "Missing websiteId", http.StatusBadRequest)
-		return
-	}
-
-	origin := getServerOrigin(r)
-
-	rawJS := fmt.Sprintf(`(function(){
-var d=document,w=window;
-%s
-var wid="%s",api="%s";
-function collect(form){var data={};var els=form.querySelectorAll("input,select,textarea");for(var i=0;i<els.length;i++){var el=els[i];var name=el.name||el.id;if(!name)continue;if(el.type==="radio"||el.type==="checkbox"){if(el.checked)data[name]=el.value||"on";}else data[name]=el.value||"";}return data;}
-function submit(data,formName){var payload={websiteId:wid,sessionId:getOrCreateSid(),formName:formName||"Form"};if(data)for(var k in data)if(data.hasOwnProperty(k))payload[k]=data[k];try{var x=new XMLHttpRequest();x.open("POST",api+"/form",true);x.setRequestHeader("Content-Type","application/json");x.send(JSON.stringify(payload));}catch(e){}}
-function attach(){var forms=d.querySelectorAll("form[data-luminum-capture],form.luminum-capture");for(var i=0;i<forms.length;i++){(function(f){if(f._lum)return;f._lum=true;f.addEventListener("submit",function(ev){submit(collect(f),f.getAttribute("name")||f.getAttribute("id")||f.getAttribute("data-form-name")||"Form");if(f.getAttribute("data-luminum-only")!==null)ev.preventDefault();});})(forms[i]);}}
-if(d.readyState==="complete")attach();else w.addEventListener("load",attach);
-w.addEventListener("DOMContentLoaded",attach);
-w.__luminumForms={submit:submit,collect:function(f){return f?collect(f):{};},sid:getOrCreateSid};
-})();`, fmt.Sprintf(sessionJS, SessionCookieName, SessionCookieName, SessionCookieMaxAgeDays), websiteId, origin)
-
-	m := minify.New()
-	m.AddFunc("text/javascript", js.Minify)
-	minified, err := m.String("text/javascript", rawJS)
-	if err != nil {
-		minified = rawJS
-	}
-
-	w.Header().Set("Content-Type", "application/javascript")
-	w.Header().Set("Cache-Control", "public, max-age=300")
 	fmt.Fprint(w, minified)
 }
 

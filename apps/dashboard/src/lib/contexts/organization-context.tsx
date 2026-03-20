@@ -15,6 +15,10 @@ interface Organization {
   role?: string
   primary_subscription_id?: string
   subscription_status?: string
+  emails_enabled?: boolean
+  whatsapp_enabled?: boolean
+  analytics_enabled?: boolean
+  blogs_enabled?: boolean
 }
 
 interface SubscriptionInfo extends SubscriptionData {
