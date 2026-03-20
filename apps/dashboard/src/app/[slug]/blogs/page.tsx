@@ -42,6 +42,7 @@ import {
   Search,
   Trash2,
   Filter,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -104,6 +105,17 @@ export default function OrgBlogsListPage() {
     return list;
   }, [posts, query, statusFilter]);
 
+  const stats = useMemo(() => {
+    const published = posts.filter((p) => p.status === "published").length;
+    const draft = posts.filter((p) => p.status === "draft").length;
+    return { published, draft, total: posts.length };
+  }, [posts]);
+
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+  };
+
   const removePost = async () => {
     if (!deleteId) return;
     setDeleting(true);
@@ -163,6 +175,16 @@ export default function OrgBlogsListPage() {
             <p className="mt-1 max-w-xl text-sm text-muted-foreground">
               Draft, publish, and manage posts for your public site. Drafts auto-save in the editor.
             </p>
+            {!loading && stats.total > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{stats.total}</span>{" "}
+                {stats.total === 1 ? "post" : "posts"}
+                <span className="mx-1.5 text-border">·</span>
+                <span>{stats.published} published</span>
+                <span className="mx-1.5 text-border">·</span>
+                <span>{stats.draft} draft</span>
+              </p>
+            )}
           </div>
         </div>
         <Button asChild className="gap-2 shadow-sm">
@@ -173,19 +195,37 @@ export default function OrgBlogsListPage() {
         </Button>
       </motion.div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        role="search"
+        aria-label="Filter blog posts"
+      >
         <div className="relative max-w-md flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className="pl-9"
+            className="pl-9 pr-9"
             placeholder="Search by title or slug…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setQuery("");
+            }}
+            aria-label="Search posts"
           />
+          {query ? (
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by status">
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Filter className="h-3.5 w-3.5" />
+            <Filter className="h-3.5 w-3.5" aria-hidden />
             Status
           </span>
           {(["all", "published", "draft"] as const).map((f) => (
@@ -194,14 +234,26 @@ export default function OrgBlogsListPage() {
               type="button"
               variant={statusFilter === f ? "secondary" : "ghost"}
               size="sm"
-              className={cn("h-8 rounded-full text-xs capitalize", statusFilter === f && "ring-1 ring-border")}
+              className={cn(
+                "h-8 rounded-full text-xs capitalize",
+                statusFilter === f && "ring-1 ring-border ring-offset-2 ring-offset-background"
+              )}
               onClick={() => setStatusFilter(f)}
+              aria-pressed={statusFilter === f}
             >
               {f}
             </Button>
           ))}
         </div>
       </div>
+
+      {!loading && stats.total > 0 && (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          Showing <span className="font-medium text-foreground">{filtered.length}</span>
+          {filtered.length !== stats.total ? ` of ${stats.total}` : ""}{" "}
+          {filtered.length === 1 ? "post" : "posts"}
+        </p>
+      )}
 
       {loading ? (
         <div className="space-y-3">
@@ -227,9 +279,13 @@ export default function OrgBlogsListPage() {
           <p className="text-muted-foreground">
             {posts.length === 0 ? "No posts yet — create your first one." : "No posts match your filters."}
           </p>
-          {posts.length === 0 && (
+          {posts.length === 0 ? (
             <Button asChild className="mt-4">
               <Link href={`/${slug}/blogs/new`}>Create post</Link>
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" className="mt-4" onClick={clearFilters}>
+              Clear search &amp; filters
             </Button>
           )}
         </motion.div>
@@ -245,7 +301,7 @@ export default function OrgBlogsListPage() {
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ delay: idx * 0.03 }}
               >
-                <Card className="overflow-hidden border-border/60 bg-card/40 shadow-sm transition-shadow hover:shadow-md">
+                <Card className="overflow-hidden border-border/60 bg-card/40 shadow-sm transition-shadow hover:shadow-md focus-within:ring-2 focus-within:ring-ring/40">
                   <CardContent className="flex flex-wrap items-center gap-4 p-4">
                     {p.cover_image_key ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -260,7 +316,12 @@ export default function OrgBlogsListPage() {
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold leading-snug">{p.title}</p>
+                      <Link
+                        href={`/${slug}/blogs/${p.id}/edit`}
+                        className="font-semibold leading-snug text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+                      >
+                        {p.title}
+                      </Link>
                       <p className="truncate text-xs text-muted-foreground">/{p.slug}</p>
                       {p.updated_at && (
                         <p className="mt-1 text-[10px] text-muted-foreground/80">
@@ -277,7 +338,7 @@ export default function OrgBlogsListPage() {
                       </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`More actions for ${p.title}`}>
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>

@@ -406,8 +406,13 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Blog editor</h1>
+            {title.trim() ? (
+              <p className="mt-0.5 truncate text-sm font-medium text-foreground/90" title={title}>
+                {title}
+              </p>
+            ) : null}
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <Badge variant={status === "published" ? "default" : "secondary"}>{status}</Badge>
               <AnimatePresence mode="wait">
@@ -456,6 +461,7 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
             disabled={publishing || !coverKey.trim()}
             onClick={() => void publish()}
             className="gap-1.5"
+            title={!coverKey.trim() ? "Add a cover image in the Markdown section before publishing" : undefined}
           >
             {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Publish
@@ -541,11 +547,12 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
                       {cat}
                       <button
                         type="button"
-                        className="ml-0.5 text-primary/60 hover:text-primary"
+                        className="ml-0.5 rounded-sm text-primary/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => {
                           setCategories((prev) => prev.filter((_, j) => j !== i));
                           markDirty();
                         }}
+                        aria-label={`Remove category ${cat}`}
                       >
                         &times;
                       </button>
@@ -607,7 +614,13 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
               <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1.5">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="ghost" size="sm" className="h-8 gap-1 text-xs">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1 text-xs"
+                      title="Insert heading"
+                    >
                       <Heading1 className="h-3.5 w-3.5" />
                       Headings
                     </Button>
@@ -638,22 +651,64 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
                 >
                   <span className="text-xs italic">I</span>
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => insertAtCursor("[label](url)")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => insertAtCursor("[label](url)")}
+                  title="Insert link"
+                >
                   <Link2 className="h-3.5 w-3.5" />
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => insertAtCursor("\n- ")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => insertAtCursor("\n- ")}
+                  title="Bullet list"
+                >
                   <List className="h-3.5 w-3.5" />
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => insertAtCursor("\n1. ")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => insertAtCursor("\n1. ")}
+                  title="Numbered list"
+                >
                   <ListOrdered className="h-3.5 w-3.5" />
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => insertAtCursor("\n> ")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => insertAtCursor("\n> ")}
+                  title="Blockquote"
+                >
                   <Quote className="h-3.5 w-3.5" />
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => insertAtCursor("\n```\n\n```\n")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => insertAtCursor("\n```\n\n```\n")}
+                  title="Code block"
+                >
                   <Code className="h-3.5 w-3.5" />
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => insertAtCursor("\n---\n")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => insertAtCursor("\n---\n")}
+                  title="Horizontal rule"
+                >
                   <Minus className="h-3.5 w-3.5" />
                 </Button>
                 <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
@@ -663,6 +718,7 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
                   size="sm"
                   className="h-8 gap-1 text-xs"
                   onClick={() => coverInputRef.current?.click()}
+                  title="Upload cover image"
                 >
                   <ImagePlus className="h-3.5 w-3.5" />
                   Cover
@@ -673,13 +729,20 @@ export function BlogEditor(props: { organizationId: string; orgSlug: string; pos
                   size="sm"
                   className="h-8 gap-1 text-xs"
                   onClick={() => inlineImageInputRef.current?.click()}
+                  title="Upload image and insert markdown"
                 >
                   <Paperclip className="h-3.5 w-3.5" />
                   Image
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="secondary" size="sm" className="h-8 gap-1 text-xs">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 gap-1 text-xs"
+                      title="Insert allowlisted component"
+                    >
                       <Sparkles className="h-3.5 w-3.5" />
                       Block
                     </Button>

@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +23,11 @@ export default function NewBlogPostPage() {
   const slug = params.slug as string;
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
 
   const create = async () => {
     if (!organization?.id) return;
@@ -90,12 +95,15 @@ export default function NewBlogPostPage() {
             <div className="space-y-2">
               <Label htmlFor="title">Title</Label>
               <Input
+                ref={titleRef}
                 id="title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Announcing our spring launch"
-                onKeyDown={(e) => e.key === "Enter" && void create()}
+                onKeyDown={(e) => e.key === "Enter" && !busy && void create()}
+                autoComplete="off"
               />
+              <p className="text-xs text-muted-foreground">Press Enter or use the button below to continue.</p>
             </div>
             <Button type="button" disabled={busy} onClick={() => void create()} className="w-full gap-2 sm:w-auto">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
