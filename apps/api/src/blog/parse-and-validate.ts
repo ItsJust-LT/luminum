@@ -265,9 +265,10 @@ function validateHtmlImageSrcs(html: string, organizationId: string, ctx: string
     const url = m[1]!;
     if (!/^https?:\/\//i.test(url) && !url.startsWith("/")) continue;
     const key = extractBlogAssetKeyFromPublicUrl(url);
-    if (!key || !isOrgBlogKey(organizationId, key)) {
+    if (key && !isOrgBlogKey(organizationId, key)) {
       throw new Error(`${ctx}: embedded images must use organization blog asset URLs`);
     }
+    // External http(s) or unrecognized paths: allowed
   }
 }
 
@@ -285,16 +286,17 @@ async function markdownToSafeHtml(
 }
 
 /**
- * Validate that every http(s) URL in raw markdown that appears in an image is a blog-asset URL for this org.
+ * Validate markdown image URLs: org blog-asset URLs must belong to this org.
+ * External image URLs are allowed.
  */
 export function validateMarkdownImageUrls(markdown: string, organizationId: string): void {
   const re = /!\[[^\]]*\]\(\s*([^)\s]+)\s*\)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(markdown)) !== null) {
     const url = m[1]!;
-    if (!/^https?:\/\//i.test(url)) continue;
+    if (!/^https?:\/\//i.test(url) && !url.startsWith("/")) continue;
     const key = extractBlogAssetKeyFromPublicUrl(url);
-    if (!key || !isOrgBlogKey(organizationId, key)) {
+    if (key && !isOrgBlogKey(organizationId, key)) {
       throw new Error(
         "Markdown image URLs must use the organization blog asset URL from the dashboard uploader"
       );
@@ -311,7 +313,7 @@ function validateSrcProp(
   if (typeof src !== "string") return;
   if (!/^https?:\/\//i.test(src) && !src.startsWith("/")) return;
   const key = extractBlogAssetKeyFromPublicUrl(src);
-  if (!key || !isOrgBlogKey(organizationId, key)) {
+  if (key && !isOrgBlogKey(organizationId, key)) {
     throw new Error(`${ctx}: image src must be an organization blog asset URL`);
   }
 }
@@ -322,7 +324,11 @@ function validateSrcProp(
  */
 function validateJsonPropUrls(value: unknown, organizationId: string, ctx: string): void {
   if (typeof value === "string") {
-    if (/^https?:\/\//i.test(value) || value.startsWith("/api/public/blog-assets/")) {
+    if (
+      /^https?:\/\//i.test(value) ||
+      value.startsWith("/api/public/blog-assets/") ||
+      value.startsWith("/api/blog-asset")
+    ) {
       const key = extractBlogAssetKeyFromPublicUrl(value);
       if (key && !isOrgBlogKey(organizationId, key)) {
         throw new Error(`${ctx}: URL must be an organization blog asset URL`);

@@ -57,6 +57,15 @@ export function collectReferencedBlogKeys(
     }
   }
 
+  const dashboardProxy = /\/api\/blog-asset\?key=([^)\s"'<>]+)/gi;
+  while ((m = dashboardProxy.exec(markdown)) !== null) {
+    try {
+      keys.add(decodeURIComponent(m[1]!));
+    } catch {
+      /* ignore */
+    }
+  }
+
   walkComponents(spec.blocks, keys);
 
   return keys;

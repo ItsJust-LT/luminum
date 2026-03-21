@@ -21,7 +21,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -34,6 +33,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +72,7 @@ import {
   Paperclip,
   PenLine,
   Eye,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -123,6 +131,9 @@ export function BlogEditor(props: {
   const [fontClass, setFontClass] = React.useState<(typeof FONT_CLASSES)[number]>("text-sm");
   const [dirty, setDirty] = React.useState(false);
   const [showDelete, setShowDelete] = React.useState(false);
+  const [imageUrlDialogOpen, setImageUrlDialogOpen] = React.useState(false);
+  const [imageUrlDraft, setImageUrlDraft] = React.useState("");
+  const [imageAltDraft, setImageAltDraft] = React.useState("Image");
 
   const markDirty = React.useCallback(() => setDirty(true), []);
 
@@ -309,6 +320,24 @@ export function BlogEditor(props: {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     }
     e.target.value = "";
+  };
+
+  const insertMarkdownImageFromUrl = () => {
+    const url = imageUrlDraft.trim();
+    if (!url) {
+      toast.error("Enter an image URL");
+      return;
+    }
+    if (!/^(https?:\/\/|\/)/i.test(url)) {
+      toast.error("Use an https URL or a path starting with /");
+      return;
+    }
+    const alt = imageAltDraft.trim() || "Image";
+    const altEscaped = alt.replace(/[\[\]]/g, "");
+    insertAtCursor(`![${altEscaped}](${url})`);
+    setImageUrlDialogOpen(false);
+    setImageUrlDraft("");
+    toast.success("Image inserted");
   };
 
   const insertComponentSnippet = (componentName?: string) => {
@@ -798,17 +827,35 @@ export function BlogEditor(props: {
                   <ImagePlus className="h-3.5 w-3.5" />
                   Cover
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 gap-1 text-xs"
-                  onClick={() => inlineImageInputRef.current?.click()}
-                  title="Upload image and insert markdown"
-                >
-                  <Paperclip className="h-3.5 w-3.5" />
-                  Image
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 gap-1 text-xs"
+                      title="Insert image — upload or paste URL"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                      Image
+                      <ChevronDown className="h-3 w-3 opacity-70" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52">
+                    <DropdownMenuItem
+                      onClick={() => inlineImageInputRef.current?.click()}
+                      className="cursor-pointer"
+                    >
+                      Upload from device…
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setImageUrlDialogOpen(true)}
+                      className="cursor-pointer"
+                    >
+                      Insert image URL…
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -993,6 +1040,59 @@ export function BlogEditor(props: {
           </Card>
         </aside>
       </div>
+
+      <Dialog
+        open={imageUrlDialogOpen}
+        onOpenChange={(open) => {
+          setImageUrlDialogOpen(open);
+          if (!open) setImageUrlDraft("");
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Insert image from URL</DialogTitle>
+            <DialogDescription>
+              Paste a full <code className="rounded bg-muted px-1">https://…</code> link to any image, or a site path
+              starting with <code className="rounded bg-muted px-1">/</code>. For files in your org library, prefer{" "}
+              <strong>Upload from device</strong> in the Image menu.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="blog_img_alt">Alt text</Label>
+              <Input
+                id="blog_img_alt"
+                value={imageAltDraft}
+                onChange={(e) => setImageAltDraft(e.target.value)}
+                placeholder="Describe the image"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="blog_img_url">Image URL</Label>
+              <Input
+                id="blog_img_url"
+                value={imageUrlDraft}
+                onChange={(e) => setImageUrlDraft(e.target.value)}
+                placeholder="https://… or /path/to/image.png"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    insertMarkdownImageFromUrl();
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setImageUrlDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => insertMarkdownImageFromUrl()}>
+              Insert markdown
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>

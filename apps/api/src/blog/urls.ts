@@ -29,5 +29,19 @@ export function extractBlogAssetKeyFromPublicUrl(url: string): string | null {
       return null;
     }
   }
+
+  // Dashboard Next.js proxy (editor / drafts): /api/blog-asset?key=<storage key>
+  // or absolute URL to the dashboard host with the same path.
+  try {
+    const parsed = new URL(u, "https://placeholder.invalid");
+    const pathname = parsed.pathname.replace(/\/$/, "") || "/";
+    if (pathname === "/api/blog-asset") {
+      const key = parsed.searchParams.get("key");
+      if (key?.trim()) return key.trim();
+    }
+  } catch {
+    /* ignore */
+  }
+
   return null;
 }
