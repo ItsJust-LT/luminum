@@ -649,6 +649,9 @@ function createApiClient(baseUrl: string = "") {
     getPostBySlug: (organizationId: string, slug: string) =>
       get(`/api/blog/posts/${encodeURIComponent(slug)}`, { organizationId }),
     getComponents: () => get("/api/blog/components"),
+    /** Distinct category names used across posts in the org (drafts + published for members). */
+    getCategories: (organizationId: string) =>
+      get<{ categories: { name: string; slug: string }[] }>("/api/blog/categories", { organizationId }),
     upload: (body: {
       organizationId: string;
       postId?: string | null;

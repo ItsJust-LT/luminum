@@ -39,7 +39,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { dashboardBlogAssetUrlFromKey, getHostnameLabelForSiteBase } from "@/lib/blog-public-url";
+import { slugifyFromTitle } from "@/lib/blog-slug";
 import { BlogRichEditor, type BlogRichEditorHandle } from "./blog-rich-editor";
+import { BlogCategoryCombobox } from "./blog-category-combobox";
 import {
   Loader2,
   ArrowLeft,
@@ -55,6 +57,8 @@ import {
   Eye,
   ChevronDown,
   FileCode2,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 
 type AllowComponent = { name: string; props: Record<string, { type: string; required?: boolean }> };
@@ -104,7 +108,8 @@ export function BlogEditor(props: {
   const [status, setStatus] = React.useState<string>("draft");
   const [allowlist, setAllowlist] = React.useState<AllowComponent[]>([]);
   const [categories, setCategories] = React.useState<string[]>([]);
-  const [categoryInput, setCategoryInput] = React.useState("");
+  const [categorySuggestions, setCategorySuggestions] = React.useState<{ name: string; slug: string }[]>([]);
+  const [historyTick, setHistoryTick] = React.useState(0);
   const [dirty, setDirty] = React.useState(false);
   const [showDelete, setShowDelete] = React.useState(false);
   const [imageUrlDialogOpen, setImageUrlDialogOpen] = React.useState(false);
@@ -124,7 +129,6 @@ export function BlogEditor(props: {
         if (cancelled) return;
         const p = postRes.post;
         setTitle(String(p.title ?? ""));
-        setSlug(String(p.slug ?? ""));
         const md = String(p.content_markdown ?? "");
         setContent(md);
         setCoverKey(String(p.cover_image_key ?? ""));
@@ -145,6 +149,29 @@ export function BlogEditor(props: {
       cancelled = true;
     };
   }, [props.postId, props.orgSlug, router]);
+
+  React.useEffect(() => {
+    if (loading) return;
+    setSlug(slugifyFromTitle(title));
+  }, [title, loading]);
+
+  React.useEffect(() => {
+    if (!props.organizationId) return;
+    let c = false;
+    void (async () => {
+      try {
+        const res = (await api.blog.getCategories(props.organizationId)) as {
+          categories?: { name: string; slug: string }[];
+        };
+        if (!c) setCategorySuggestions(res.categories ?? []);
+      } catch {
+        if (!c) setCategorySuggestions([]);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, [props.organizationId]);
 
   const persist = React.useCallback(
     async (opts?: { silent?: boolean }): Promise<boolean> => {
@@ -169,6 +196,33 @@ export function BlogEditor(props: {
         return true;
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Save failed";
+        const slugTaken = msg.includes("Slug already") || (/slug/i.test(msg) && /in use|taken|already/i.test(msg));
+        if (slugTaken) {
+          const bumped = `${slug}-2`;
+          setSlug(bumped);
+          try {
+            const out2 = (await api.blog.updatePost(props.postId, {
+              title,
+              slug: bumped,
+              content_markdown: content,
+              cover_image_key: coverKey,
+              seo_title: seoTitle || null,
+              seo_description: seoDescription || null,
+              categories,
+            })) as { post?: Record<string, unknown> };
+            if (!silent) toast.success("Saved (slug adjusted — another post used that URL)");
+            setAutoSaveState("saved");
+            setDirty(false);
+            const p = out2.post;
+            if (p) setStatus(String(p.status ?? "draft"));
+            return true;
+          } catch (e2: unknown) {
+            const m2 = e2 instanceof Error ? e2.message : "Save failed";
+            if (!silent) toast.error(m2);
+            setAutoSaveState("error");
+            return false;
+          }
+        }
         if (!silent) toast.error(msg);
         setAutoSaveState("error");
         return false;
@@ -468,6 +522,42 @@ export function BlogEditor(props: {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {!useAdvancedMarkdown ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-primary/30 bg-primary/5 font-medium"
+                data-hist={historyTick}
+                disabled={!(richEditorRef.current?.canUndo?.() ?? false)}
+                onClick={() => {
+                  richEditorRef.current?.undo();
+                  setHistoryTick((n) => n + 1);
+                }}
+                title="Undo (Ctrl+Z)"
+              >
+                <Undo2 className="h-4 w-4" />
+                Undo
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-primary/30 bg-primary/5 font-medium"
+                data-hist={historyTick}
+                disabled={!(richEditorRef.current?.canRedo?.() ?? false)}
+                onClick={() => {
+                  richEditorRef.current?.redo();
+                  setHistoryTick((n) => n + 1);
+                }}
+                title="Redo (Ctrl+Y)"
+              >
+                <Redo2 className="h-4 w-4" />
+                Redo
+              </Button>
+            </>
+          ) : null}
           <Button
             type="button"
             variant="secondary"
@@ -479,7 +569,7 @@ export function BlogEditor(props: {
               !hasLiveSite
                 ? "Add your website in Organization settings"
                 : !slug.trim()
-                  ? "Add a URL slug first"
+                  ? "Add a title to generate a URL slug"
                   : `Open draft preview on ${siteHostname || "your site"}`
             }
           >
@@ -593,75 +683,36 @@ export function BlogEditor(props: {
                   )}
                 </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="title">Title</Label>
-                  <Input
-                    id="title"
-                    value={title}
-                    onChange={(e) => {
-                      setTitle(e.target.value);
-                      markDirty();
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="slug">Slug</Label>
-                  <Input
-                    id="slug"
-                    value={slug}
-                    onChange={(e) => {
-                      setSlug(e.target.value);
-                      markDirty();
-                    }}
-                  />
+              <div className="space-y-2">
+                <Label htmlFor="title">Title</Label>
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    markDirty();
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>URL slug</Label>
+                <p className="text-xs text-muted-foreground">
+                  Generated from the title automatically. Changing the title updates the slug (save to apply).
+                </p>
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 font-mono text-sm">
+                  <span className="min-w-0 break-all text-foreground">{slug || "…"}</span>
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Categories</Label>
-                <div className="flex flex-wrap items-center gap-2">
-                  {categories.map((cat, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
-                    >
-                      {cat}
-                      <button
-                        type="button"
-                        className="ml-0.5 rounded-sm text-primary/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => {
-                          setCategories((prev) => prev.filter((_, j) => j !== i));
-                          markDirty();
-                        }}
-                        aria-label={`Remove category ${cat}`}
-                      >
-                        &times;
-                      </button>
-                    </span>
-                  ))}
-                  <form
-                    className="flex items-center gap-1"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const v = categoryInput.trim();
-                      if (v && !categories.includes(v)) {
-                        setCategories((prev) => [...prev, v]);
-                        markDirty();
-                      }
-                      setCategoryInput("");
-                    }}
-                  >
-                    <Input
-                      className="h-8 w-36 text-xs"
-                      placeholder="Add…"
-                      value={categoryInput}
-                      onChange={(e) => setCategoryInput(e.target.value)}
-                    />
-                    <Button type="submit" variant="secondary" size="sm" className="h-8 px-2 text-xs">
-                      Add
-                    </Button>
-                  </form>
-                </div>
+                <BlogCategoryCombobox
+                  selected={categories}
+                  onChange={(next) => {
+                    setCategories(next);
+                    markDirty();
+                  }}
+                  suggestions={categorySuggestions}
+                />
               </div>
             </CardContent>
           </Card>
@@ -774,6 +825,7 @@ export function BlogEditor(props: {
                     markDirty();
                   }}
                   onInsertImageClick={() => inlineImageInputRef.current?.click()}
+                  onHistoryChange={() => setHistoryTick((n) => n + 1)}
                 />
               )}
             </CardContent>

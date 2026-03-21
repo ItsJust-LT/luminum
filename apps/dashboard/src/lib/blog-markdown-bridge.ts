@@ -12,7 +12,7 @@ const turndown = new TurndownService({
 });
 turndown.use(gfm);
 
-/** JSX-style blog blocks (Callout, Gallery, …) — used for optional raw-Markdown mode hints only. */
+/** JSX-style blog blocks (Callout, Gallery, …) — optional detection. */
 export function hasAdvancedBlogBlocks(markdown: string): boolean {
   return /<[A-Z][a-zA-Z0-9]*(\s|\/>|>)/.test(markdown);
 }
@@ -20,18 +20,54 @@ export function hasAdvancedBlogBlocks(markdown: string): boolean {
 /** Wrap JSX-style components so marked outputs stable HTML for TipTap (blogComponent node). */
 export function preprocessMarkdownJsxToComponentBlocks(markdown: string): string {
   let s = markdown;
-  // Self-closing custom components, e.g. <Image ... />
   s = s.replace(/<([A-Z][a-zA-Z0-9]*)\s[^>]*\/>/g, (full) => {
     if (full.includes('data-type="blog-component"')) return full;
     return `<div data-type="blog-component" data-source="${encodeURIComponent(full)}"></div>`;
   });
-  // Paired tags, e.g. <Callout>...</Callout> (non-greedy; nested same-name tags are a known limitation)
   s = s.replace(/<([A-Z][a-zA-Z0-9]*)\b[^>]*>([\s\S]*?)<\/\1>/g, (full) => {
     if (full.includes('data-type="blog-component"')) return full;
     return `<div data-type="blog-component" data-source="${encodeURIComponent(full)}"></div>`;
   });
   return s;
 }
+
+function hasTextAlignStyle(el: HTMLElement): boolean {
+  const style = el.getAttribute("style") || "";
+  return /text-align\s*:\s*(left|center|right|justify)/i.test(style);
+}
+
+/** Preserve TipTap text-align (inline style) — turndown strips it by default. */
+turndown.addRule("preserveTextAlignBlock", {
+  filter(node) {
+    if (node.nodeType !== 1) return false;
+    const el = node as HTMLElement;
+    const tag = el.nodeName;
+    if (!["P", "H1", "H2", "H3", "H4", "H5", "H6"].includes(tag)) return false;
+    return hasTextAlignStyle(el);
+  },
+  replacement(_content, node) {
+    return "\n\n" + (node as HTMLElement).outerHTML + "\n\n";
+  },
+});
+
+/** Preserve images with dimensions (attrs or inline style from TipTap resize). */
+turndown.addRule("preserveSizedImage", {
+  filter(node) {
+    if (node.nodeName !== "IMG") return false;
+    const el = node as HTMLImageElement;
+    const st = el.getAttribute("style") || "";
+    return !!(
+      el.getAttribute("width") ||
+      el.getAttribute("height") ||
+      el.style?.width ||
+      el.style?.height ||
+      /width\s*:|height\s*:/i.test(st)
+    );
+  },
+  replacement(_content, node) {
+    return "\n\n" + (node as HTMLElement).outerHTML + "\n\n";
+  },
+});
 
 turndown.addRule("blogComponentBlock", {
   filter(node) {
