@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { runEmailDnsVerification } from "../lib/cron-verify-email-dns.js";
 import { runAnalyticsScriptVerification } from "../lib/cron-verify-analytics-script.js";
+import { runScheduledSiteAudits } from "../lib/cron-scheduled-site-audits.js";
 
 const router = Router();
 
@@ -41,6 +42,17 @@ router.post("/verify-analytics-script", cronSecretAuth, async (_req: Request, re
       failed: result.failed,
       errors: result.errors,
     });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+/** Daily mobile homepage Lighthouse audit per website (requires Redis + audit worker). */
+router.post("/run-site-audits", cronSecretAuth, async (_req: Request, res: Response) => {
+  try {
+    const result = await runScheduledSiteAudits();
+    res.json({ success: true, ...result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     res.status(500).json({ success: false, error: message });

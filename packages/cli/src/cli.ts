@@ -59,6 +59,7 @@ import { dbResetCommand } from "./commands/db-reset.js";
 
 // Cron
 import { cronVerifyEmailDnsCommand } from "./commands/cron-verify-email-dns.js";
+import { cronRunSiteAuditsCommand } from "./commands/cron-run-site-audits.js";
 import { cronListCommand } from "./commands/cron-list.js";
 
 // System
@@ -142,6 +143,7 @@ db.addCommand(dbResetCommand());
 // ─── cron ──────────────────────────────────────────────────────────────────
 const cron = program.command("cron").description("Run scheduled jobs manually");
 cron.addCommand(cronVerifyEmailDnsCommand());
+cron.addCommand(cronRunSiteAuditsCommand());
 cron.addCommand(cronListCommand());
 
 // ─── system (top-level) ────────────────────────────────────────────────────

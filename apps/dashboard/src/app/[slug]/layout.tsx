@@ -36,6 +36,7 @@ import {
   Menu,
   Mail,
   MessageCircle,
+  Gauge,
 } from "lucide-react"
 import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
@@ -385,6 +386,7 @@ export default function SlugLayout({
                       href: `/${slug}/dashboard`,
                     },
                     ...((state.organization as any)?.analytics_enabled ? [{ title: "Analytics", icon: Globe, href: `/${slug}/analytics` }] : []),
+                    { title: "Site Audits", icon: Gauge, href: `/${slug}/audits` },
                     { title: "Forms", icon: FileText, href: `/${slug}/forms` },
                     ...((state.organization as any)?.blogs_enabled ? [{ title: "Blog", icon: BookOpen, href: `/${slug}/blogs` }] : []),
                     ...((state.organization as any)?.emails_enabled ? [{ title: "Emails", icon: Mail, href: `/${slug}/emails` }] : []),

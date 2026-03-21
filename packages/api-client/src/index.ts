@@ -232,6 +232,10 @@ function createApiClient(baseUrl: string = "") {
     getAdminWebsites: (params?: Record<string, any>) =>
       get("/api/admin/websites", params),
     getAdminWebsiteStats: () => get("/api/admin/websites/stats"),
+    runWebsiteAudit: (
+      websiteId: string,
+      body?: { path?: string; formFactor?: "mobile" | "desktop" },
+    ) => post(`/api/admin/websites/${encodeURIComponent(websiteId)}/run-audit`, body ?? {}),
     getAdminFormSubmissions: (params?: Record<string, any>) =>
       get("/api/admin/forms/submissions", params),
     getAdminFormStats: () => get("/api/admin/forms/stats"),
@@ -692,6 +696,18 @@ function createApiClient(baseUrl: string = "") {
       get("/api/user-management/paystack-payments", { userId }),
   };
 
+  // ─── Website Audits ──────────────────────────────────────
+  const websiteAudits = {
+    create: (websiteId: string, opts?: { path?: string; formFactor?: "mobile" | "desktop" }) =>
+      post("/api/website-audits", { websiteId, ...opts }),
+    bootstrap: (websiteId: string) =>
+      post("/api/website-audits/bootstrap", { websiteId }),
+    list: (params: { websiteId?: string; organizationId?: string; page?: number; limit?: number }) =>
+      get("/api/website-audits", params as Record<string, any>),
+    getById: (id: string) => get(`/api/website-audits/${id}`),
+    retry: (id: string) => post(`/api/website-audits/${id}/retry`),
+  };
+
   return {
     session,
     emails,
@@ -713,6 +729,7 @@ function createApiClient(baseUrl: string = "") {
     userManagement,
     whatsapp,
     blog,
+    websiteAudits,
     /** Low-level API methods for endpoints not covered by the above. Use in client components. */
     get: <T = any>(path: string, params?: Record<string, any>) => get<T>(path, params),
     post: <T = any>(path: string, body?: any) => post<T>(path, body),

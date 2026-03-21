@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { pathParam } from "../lib/req-params.js";
+import { createAndEnqueueWebsiteAudit } from "../site-audit/create-audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -10,6 +12,34 @@ function adminOnly(req: any, res: any, next: any) {
   next();
 }
 router.use(adminOnly);
+
+// POST /api/admin/websites/:websiteId/run-audit — platform admin manual Lighthouse run
+router.post("/:websiteId/run-audit", async (req: Request, res: Response) => {
+  try {
+    const websiteId = pathParam(req, "websiteId")!;
+    const { path: urlPath, formFactor } = (req.body ?? {}) as { path?: string; formFactor?: string };
+
+    const website = await prisma.websites.findUnique({
+      where: { id: websiteId },
+      select: { id: true, domain: true, organization_id: true },
+    });
+    if (!website) return res.status(404).json({ success: false, error: "Website not found" });
+
+    const factor = formFactor === "desktop" ? "desktop" : "mobile";
+    const audit = await createAndEnqueueWebsiteAudit(prisma, {
+      websiteId: website.id,
+      organizationId: website.organization_id,
+      domain: website.domain,
+      path: urlPath && typeof urlPath === "string" ? urlPath : "/",
+      formFactor: factor,
+      triggerSource: "manual",
+    });
+
+    res.json({ success: true, auditId: audit.id, status: audit.status });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message ?? "Failed to enqueue audit" });
+  }
+});
 
 // GET /api/admin/websites?organizationId=...&analytics=...&limit=50&offset=0
 router.get("/", async (req: Request, res: Response) => {

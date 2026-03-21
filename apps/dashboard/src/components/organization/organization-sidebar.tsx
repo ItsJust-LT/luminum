@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle } from "lucide-react"
+import { BookOpen, Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle, Gauge } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -101,6 +101,7 @@ export function OrganizationSidebar({
   const sidebarItems = [
     { title: "Dashboard", icon: LayoutDashboard, href: `/${slug}/dashboard` },
     ...(analyticsEnabled ? [{ title: "Analytics", icon: Globe, href: `/${slug}/analytics` }] : []),
+    { title: "Site Audits", icon: Gauge, href: `/${slug}/audits` },
     { 
       title: "Forms", 
       icon: FileText, 

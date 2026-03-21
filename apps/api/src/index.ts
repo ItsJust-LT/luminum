@@ -46,6 +46,7 @@ import { cronRouter } from "./routes/cron.js";
 import { whatsappRouter } from "./routes/whatsapp.js";
 import { blogPublicAssetsRouter } from "./routes/blog-public-assets.js";
 import { blogRouter } from "./routes/blog.js";
+import { websiteAuditsRouter } from "./routes/website-audits.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
 
 const app = express();
@@ -138,6 +139,7 @@ app.use("/api/user-management", userManagementRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/blog", blogRouter);
+app.use("/api/website-audits", websiteAuditsRouter);
 
 // ─── Global error handler (must be last) ───────────────────────────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: () => void) => {

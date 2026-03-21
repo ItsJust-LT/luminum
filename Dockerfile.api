@@ -40,7 +40,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY packages ./packages
 COPY apps/api ./apps/api
 COPY docker/entrypoint-api.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY docker/entrypoint-audit-worker.sh /app/docker/entrypoint-audit-worker.sh
+RUN chmod +x /entrypoint.sh /app/docker/entrypoint-audit-worker.sh
 
 RUN pnpm install --frozen-lockfile
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build

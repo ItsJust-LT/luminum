@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Select,
   SelectContent,
@@ -24,6 +25,8 @@ import {
   Building2,
   BarChart3,
   ExternalLink,
+  Gauge,
+  Loader2,
 } from "lucide-react"
 import { formatNumber, formatDate } from "@/lib/utils"
 import { api } from "@/lib/api"
@@ -37,7 +40,24 @@ export default function AdminWebsitesPage() {
   const [analyticsFilter, setAnalyticsFilter] = useState<string>("all")
   const [search, setSearch] = useState("")
   const [offset, setOffset] = useState(0)
+  const [auditRunningId, setAuditRunningId] = useState<string | null>(null)
   const limit = 25
+
+  const runAdminAudit = async (websiteId: string) => {
+    setAuditRunningId(websiteId)
+    setError(null)
+    try {
+      const res = await api.admin.runWebsiteAudit(websiteId, { formFactor: "mobile" }) as {
+        success?: boolean
+        error?: string
+      }
+      if (!res?.success) setError(res?.error || "Failed to enqueue audit")
+    } catch (err: any) {
+      setError(err.message || "Failed to enqueue audit")
+    } finally {
+      setAuditRunningId(null)
+    }
+  }
 
   const fetchData = async () => {
     setLoading(true)
@@ -73,6 +93,7 @@ export default function AdminWebsitesPage() {
   }
 
   return (
+    <TooltipProvider>
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -168,7 +189,7 @@ export default function AdminWebsitesPage() {
                     <TableHead>Organization</TableHead>
                     <TableHead>Analytics</TableHead>
                     <TableHead>Created</TableHead>
-                    <TableHead className="w-[50px]" />
+                    <TableHead className="text-right w-[100px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -205,13 +226,53 @@ export default function AdminWebsitesPage() {
                         {website.created_at ? formatDate(website.created_at, { relative: true }) : "-"}
                       </TableCell>
                       <TableCell>
-                        {website.organization?.slug && (
-                          <Link href={`/${website.organization.slug}/analytics`}>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <BarChart3 className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                disabled={auditRunningId === website.id}
+                                onClick={() => void runAdminAudit(website.id)}
+                                aria-label="Run site audit"
+                              >
+                                {auditRunningId === website.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Gauge className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Run Lighthouse audit (mobile homepage) for this website
+                            </TooltipContent>
+                          </Tooltip>
+                          {website.organization?.slug && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Link href={`/${website.organization.slug}/audits`}>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Org audits">
+                                    <Globe className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              </TooltipTrigger>
+                              <TooltipContent>Open organization Site Audits</TooltipContent>
+                            </Tooltip>
+                          )}
+                          {website.organization?.slug && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Link href={`/${website.organization.slug}/analytics`}>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label="Analytics">
+                                    <BarChart3 className="h-4 w-4" />
+                                  </Button>
+                                </Link>
+                              </TooltipTrigger>
+                              <TooltipContent>Analytics</TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -241,5 +302,6 @@ export default function AdminWebsitesPage() {
         </CardContent>
       </Card>
     </div>
+    </TooltipProvider>
   )
 }

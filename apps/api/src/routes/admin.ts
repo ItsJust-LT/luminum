@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { auth } from "../auth/config.js";
 import { jsonStringifySafe } from "../lib/json-safe.js";
 import { notifyAdminsOrganizationCreated } from "../lib/notifications/helpers.js";
+import { computeAuditAdminStats } from "../site-audit/admin-stats.js";
 import { sendOwnerInvitationEmail, sendInvitationEmail } from "../lib/email.js";
 import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 
@@ -45,10 +46,12 @@ router.get("/dashboard-stats", adminOnly, async (_req: Request, res: Response) =
       orderBy: { createdAt: "desc" }, take: 5,
       select: { id: true, name: true, slug: true, logo: true, createdAt: true, _count: { select: { members: true } } },
     });
+    const auditStats = await computeAuditAdminStats(prisma, totalWebsites, thirtyDaysAgo);
     res.json({ success: true, stats: {
       totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions,
       newUsersThisMonth, newOrgsThisMonth, bannedUsers, openTickets, totalPageViews, unseenForms,
       recentUsers, recentOrgs,
+      auditStats,
     }});
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });

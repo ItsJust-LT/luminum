@@ -11,6 +11,11 @@ const CRON_JOBS = [
     description: "Check that tracking script (script.js?websiteId=...) is present on each website with analytics enabled. Updates script_last_verified_at / script_last_error.",
     usage: "POST /api/cron/verify-analytics-script (X-Cron-Secret)",
   },
+  {
+    name: "run-site-audits",
+    description: "Enqueue one mobile homepage Lighthouse audit per website per UTC day (skipped if already scheduled today). Requires Redis, BullMQ queue, and audit-worker process.",
+    usage: "POST /api/cron/run-site-audits (X-Cron-Secret) or pnpm run cli -- cron run-site-audits",
+  },
 ];
 
 export function cronListCommand() {

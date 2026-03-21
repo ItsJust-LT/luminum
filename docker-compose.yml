@@ -81,6 +81,25 @@ services:
     ports:
       - "${API_PORT:-4000}:4000"
 
+  audit-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    shm_size: "1gb"
+    entrypoint: ["/bin/sh", "/app/docker/entrypoint-audit-worker.sh"]
+    command: []
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      AUDIT_WORKER_CONCURRENCY: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-luminum}:${POSTGRES_PASSWORD:-luminum_secret}@postgres:5432/${POSTGRES_DB:-luminum}
+      REDIS_URL: redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
+    env_file: .env
+
   dashboard:
     build:
       context: .
