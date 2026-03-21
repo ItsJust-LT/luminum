@@ -41,6 +41,7 @@ import { toast } from "sonner";
 import { dashboardBlogAssetUrlFromKey, getHostnameLabelForSiteBase } from "@/lib/blog-public-url";
 import { slugifyFromTitle } from "@/lib/blog-slug";
 import { BlogRichEditor, type BlogRichEditorHandle } from "./blog-rich-editor";
+import { BlogAssetUploadContext } from "./blog-upload-context";
 import { BlogCategoryCombobox } from "./blog-category-combobox";
 import {
   Loader2,
@@ -117,6 +118,21 @@ export function BlogEditor(props: {
   const [imageAltDraft, setImageAltDraft] = React.useState("Image");
 
   const markDirty = React.useCallback(() => setDirty(true), []);
+
+  const uploadBlogAsset = React.useCallback(
+    async (file: File) => {
+      const b64 = await fileToBase64(file);
+      const res = (await api.blog.upload({
+        organizationId: props.organizationId,
+        postId: props.postId,
+        fileBase64: b64,
+        contentType: file.type || "application/octet-stream",
+        originalFilename: file.name,
+      })) as { key: string };
+      return dashboardBlogAssetUrlFromKey(res.key);
+    },
+    [props.organizationId, props.postId]
+  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -402,8 +418,8 @@ export function BlogEditor(props: {
     if (useAdvancedMarkdown) {
       insertAtCursor(snippet);
     } else {
-      richEditorRef.current?.insertBlogComponent(snippet);
-      toast.success("Block inserted — stays in visual editor");
+      richEditorRef.current?.insertBlogWidget(def.name);
+      toast.success(`${def.name} inserted — edit fields in the editor`);
     }
   };
 
@@ -816,17 +832,19 @@ export function BlogEditor(props: {
                   />
                 </div>
               ) : (
-                <BlogRichEditor
-                  key={`${props.postId}-${useAdvancedMarkdown ? "md" : "vis"}`}
-                  ref={richEditorRef}
-                  initialMarkdown={content}
-                  onChange={(md) => {
-                    setContent(md);
-                    markDirty();
-                  }}
-                  onInsertImageClick={() => inlineImageInputRef.current?.click()}
-                  onHistoryChange={() => setHistoryTick((n) => n + 1)}
-                />
+                <BlogAssetUploadContext.Provider value={uploadBlogAsset}>
+                  <BlogRichEditor
+                    key={`${props.postId}-${useAdvancedMarkdown ? "md" : "vis"}`}
+                    ref={richEditorRef}
+                    initialMarkdown={content}
+                    onChange={(md) => {
+                      setContent(md);
+                      markDirty();
+                    }}
+                    onInsertImageClick={() => inlineImageInputRef.current?.click()}
+                    onHistoryChange={() => setHistoryTick((n) => n + 1)}
+                  />
+                </BlogAssetUploadContext.Provider>
               )}
             </CardContent>
           </Card>

@@ -62,14 +62,19 @@ import {
   Table as TableIcon,
   Rows,
   Trash,
+  Columns2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { htmlToMarkdown, markdownToHtml } from "@/lib/blog-markdown-bridge";
+import { defaultWidgetData } from "@/lib/blog-widget-serializer";
 import { BlogComponentBlock } from "./blog-component-extension";
+import { BlogWidget } from "./blog-widget-extension";
 
 export type BlogRichEditorHandle = {
   insertImageAtCursor: (url: string, alt?: string) => void;
   insertBlogComponent: (source: string) => void;
+  /** Insert allowlisted block with structured UI (Gallery, Accordion, …). */
+  insertBlogWidget: (componentName: string) => void;
   /** Replace full document from markdown (e.g. after inserting a custom block). */
   setMarkdown: (markdown: string) => void;
   focus: () => void;
@@ -83,6 +88,74 @@ type ToolbarProps = {
   editor: Editor | null;
   onInsertImageClick: () => void;
 };
+
+const TABLE_GRID_MAX = 10;
+
+function TableInsertGrid({ editor }: { editor: Editor }) {
+  const [open, setOpen] = React.useState(false);
+  const [size, setSize] = React.useState<{ rows: number; cols: number } | null>(null);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (o) setSize(null);
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant={editor.isActive("table") ? "secondary" : "ghost"}
+          size="sm"
+          className="h-8 w-8 px-0"
+          title="Insert table — pick size"
+        >
+          <TableIcon className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto space-y-2 p-3" align="start">
+        <p className="text-xs font-medium text-muted-foreground">Insert table</p>
+        <p className="text-[11px] text-muted-foreground">Hover cells, click to insert (header row on).</p>
+        <div className="inline-flex flex-col gap-0.5 rounded-lg border border-border/60 bg-muted/20 p-1.5">
+          {Array.from({ length: TABLE_GRID_MAX }, (_, ri) => (
+            <div key={ri} className="flex gap-0.5">
+              {Array.from({ length: TABLE_GRID_MAX }, (_, ci) => {
+                const r = ri + 1;
+                const c = ci + 1;
+                const active = size != null && r <= size.rows && c <= size.cols;
+                return (
+                  <button
+                    key={ci}
+                    type="button"
+                    className={cn(
+                      "h-3.5 w-3.5 rounded-sm border transition-colors",
+                      active ? "border-primary bg-primary/80" : "border-border/80 bg-background/90"
+                    )}
+                    onMouseEnter={() => setSize({ rows: r, cols: c })}
+                    onClick={() => {
+                      const rows = size?.rows ?? r;
+                      const cols = size?.cols ?? c;
+                      editor
+                        .chain()
+                        .focus()
+                        .insertTable({ rows, cols, withHeaderRow: true })
+                        .run();
+                      setOpen(false);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <p className="text-center text-xs tabular-nums text-muted-foreground">
+          {size ? `${size.rows} × ${size.cols}` : "Hover to choose size"}
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function Toolbar({ editor, onInsertImageClick }: ToolbarProps) {
   const [linkOpen, setLinkOpen] = React.useState(false);
@@ -356,18 +429,7 @@ function Toolbar({ editor, onInsertImageClick }: ToolbarProps) {
       >
         <ImageIcon className="h-4 w-4" />
       </Button>
-      <Button
-        type="button"
-        variant={editor.isActive("table") ? "secondary" : "ghost"}
-        size="sm"
-        className="h-8 w-8 px-0"
-        onClick={() =>
-          editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-        }
-        title="Insert table (3×3, header row)"
-      >
-        <TableIcon className="h-4 w-4" />
-      </Button>
+      <TableInsertGrid editor={editor} />
       <Button
         type="button"
         variant="ghost"
@@ -444,9 +506,38 @@ function findBlockContextAtClick(
         "listItem",
         "table",
         "blogComponent",
+        "blogWidget",
       ].includes(name)
     ) {
       return { pos: $pos.before(d), name };
+    }
+  }
+  return null;
+}
+
+function findBlogWidgetAtClick(
+  editor: Editor,
+  clientX: number,
+  clientY: number
+): { pos: number; name: string } | null {
+  const coords = editor.view.posAtCoords({ left: clientX, top: clientY });
+  if (coords == null) return null;
+  const $pos = editor.state.doc.resolve(coords.pos);
+  const nodeAfter = $pos.nodeAfter;
+  if (nodeAfter?.type.name === "blogWidget") {
+    return { pos: coords.pos, name: String(nodeAfter.attrs.name ?? "") };
+  }
+  const nodeBefore = $pos.nodeBefore;
+  if (nodeBefore?.type.name === "blogWidget") {
+    return {
+      pos: coords.pos - nodeBefore.nodeSize,
+      name: String(nodeBefore.attrs.name ?? ""),
+    };
+  }
+  for (let d = $pos.depth; d > 0; d--) {
+    const n = $pos.node(d);
+    if (n.type.name === "blogWidget") {
+      return { pos: $pos.before(d), name: String(n.attrs.name ?? "") };
     }
   }
   return null;
@@ -505,6 +596,7 @@ export const BlogRichEditor = React.forwardRef<
     height: string | null;
   } | null>(null);
   const [ctxBlog, setCtxBlog] = React.useState<{ pos: number; source: string } | null>(null);
+  const [ctxWidget, setCtxWidget] = React.useState<{ pos: number; name: string } | null>(null);
   const [ctxBlock, setCtxBlock] = React.useState<{ pos: number; name: string } | null>(null);
   const [imageEditOpen, setImageEditOpen] = React.useState(false);
   const [imageEditSrc, setImageEditSrc] = React.useState("");
@@ -555,6 +647,7 @@ export const BlogRichEditor = React.forwardRef<
         multicolor: false,
       }),
       BlogComponentBlock,
+      BlogWidget,
       Placeholder.configure({
         placeholder:
           "Start writing — headings, lists, and quotes show live. Right‑click an image to edit or remove.",
@@ -575,7 +668,7 @@ export const BlogRichEditor = React.forwardRef<
           "prose-pre:bg-muted/80 prose-pre:border prose-pre:rounded-xl prose-pre:p-4 prose-pre:shadow-inner",
           "prose-img:rounded-xl prose-img:border prose-img:shadow-md prose-img:my-6 prose-img:mx-auto prose-img:block",
           "prose-blockquote:border-l-primary prose-blockquote:bg-muted/25 prose-blockquote:py-2 prose-blockquote:px-3 prose-blockquote:rounded-r-xl prose-blockquote:not-italic",
-          "prose-table:block prose-table:w-full prose-table:overflow-x-auto prose-table:my-4 prose-th:border prose-td:border prose-th:bg-muted/50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-table:text-sm",
+          "prose-table:table prose-table:w-full prose-table:border-collapse prose-table:my-4 prose-th:border prose-td:border prose-th:bg-muted/50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-table:text-sm [&_.tableWrapper]:my-4 [&_.tableWrapper]:max-w-full [&_.tableWrapper]:overflow-x-auto",
           "dark:prose-invert",
           editorClassName
         ),
@@ -613,6 +706,21 @@ export const BlogRichEditor = React.forwardRef<
           .focus()
           .insertContent([
             { type: "blogComponent", attrs: { source } },
+            { type: "paragraph" },
+          ])
+          .run();
+      },
+      insertBlogWidget: (componentName: string) => {
+        if (!editor) return;
+        const payload = defaultWidgetData(componentName);
+        editor
+          .chain()
+          .focus()
+          .insertContent([
+            {
+              type: "blogWidget",
+              attrs: { name: componentName, data: JSON.stringify(payload) },
+            },
             { type: "paragraph" },
           ])
           .run();
@@ -704,6 +812,15 @@ export const BlogRichEditor = React.forwardRef<
     onChange(md);
   };
 
+  const deleteBlogWidget = () => {
+    if (!editor || !ctxWidget) return;
+    editor.chain().focus().setNodeSelection(ctxWidget.pos).deleteSelection().run();
+    setCtxWidget(null);
+    const md = htmlToMarkdown(editor.getHTML());
+    lastEmitted.current = md;
+    onChange(md);
+  };
+
   const removeCtxImage = () => {
     if (!editor || !ctxImage) return;
     editor.chain().focus().setNodeSelection(ctxImage.pos).deleteSelection().run();
@@ -721,6 +838,7 @@ export const BlogRichEditor = React.forwardRef<
           if (!open) {
             setCtxImage(null);
             setCtxBlog(null);
+            setCtxWidget(null);
             setCtxBlock(null);
           }
         }}
@@ -731,11 +849,13 @@ export const BlogRichEditor = React.forwardRef<
             onContextMenu={(e) => {
               if (!editor) return;
               const img = findImageAtClick(editor, e.clientX, e.clientY);
-              const comp = findBlogComponentAtClick(editor, e.clientX, e.clientY);
+              const wid = img ? null : findBlogWidgetAtClick(editor, e.clientX, e.clientY);
+              const comp = img || wid ? null : findBlogComponentAtClick(editor, e.clientX, e.clientY);
               const blk = findBlockContextAtClick(editor, e.clientX, e.clientY);
               setCtxImage(img);
+              setCtxWidget(wid);
               setCtxBlog(comp);
-              setCtxBlock(img || comp ? null : blk);
+              setCtxBlock(img || wid || comp ? null : blk);
             }}
           >
             <EditorContent
@@ -759,6 +879,25 @@ export const BlogRichEditor = React.forwardRef<
               <ContextMenuSeparator />
             </>
           ) : null}
+          {ctxWidget ? (
+            <>
+              <ContextMenuLabel>Block — {ctxWidget.name}</ContextMenuLabel>
+              <ContextMenuItem
+                onClick={() => {
+                  if (!editor) return;
+                  editor.chain().focus().setNodeSelection(ctxWidget.pos).run();
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                Select / edit in place
+              </ContextMenuItem>
+              <ContextMenuItem variant="destructive" onClick={() => deleteBlogWidget()}>
+                <Trash className="h-4 w-4" />
+                Remove block
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          ) : null}
           {ctxBlog ? (
             <>
               <ContextMenuLabel>Custom block</ContextMenuLabel>
@@ -776,6 +915,19 @@ export const BlogRichEditor = React.forwardRef<
           {editor?.isActive("table") ? (
             <>
               <ContextMenuLabel>Table</ContextMenuLabel>
+              <ContextMenuItem onClick={() => editor.chain().focus().addColumnBefore().run()}>
+                <Columns2 className="h-4 w-4" />
+                Column before
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => editor.chain().focus().addColumnAfter().run()}>
+                <Columns2 className="h-4 w-4" />
+                Column after
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => editor.chain().focus().deleteColumn().run()}>
+                <Columns2 className="h-4 w-4" />
+                Remove column
+              </ContextMenuItem>
+              <ContextMenuSeparator />
               <ContextMenuItem onClick={() => editor.chain().focus().addRowBefore().run()}>
                 <Rows className="h-4 w-4" />
                 Row before
@@ -784,6 +936,10 @@ export const BlogRichEditor = React.forwardRef<
                 <Rows className="h-4 w-4" />
                 Row after
               </ContextMenuItem>
+              <ContextMenuItem onClick={() => editor.chain().focus().deleteRow().run()}>
+                <Rows className="h-4 w-4" />
+                Remove row
+              </ContextMenuItem>
               <ContextMenuItem variant="destructive" onClick={() => editor.chain().focus().deleteTable().run()}>
                 <Trash className="h-4 w-4" />
                 Delete table
@@ -791,7 +947,7 @@ export const BlogRichEditor = React.forwardRef<
               <ContextMenuSeparator />
             </>
           ) : null}
-          {ctxBlock && !ctxImage && !ctxBlog && editor ? (
+          {ctxBlock && !ctxImage && !ctxBlog && !ctxWidget && editor ? (
             <>
               <ContextMenuLabel>Block</ContextMenuLabel>
               <ContextMenuItem
