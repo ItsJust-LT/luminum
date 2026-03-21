@@ -46,7 +46,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { dashboardBlogAssetUrlFromKey } from "@/lib/blog-public-url";
+import { dashboardBlogAssetUrlFromKey, getHostnameLabelForSiteBase } from "@/lib/blog-public-url";
 import { renderBlogSpec, type BlogRenderSpec } from "@luminum/blog-renderer";
 import { dashboardBlogPreviewMap } from "./dashboard-blog-preview-map";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -240,7 +240,7 @@ export function BlogEditor(props: {
     }
     const base = props.publicSiteBaseUrl?.trim();
     if (!base) {
-      toast.error("Set a public site URL on your organization (publicBaseUrl) in Settings.");
+      toast.error("Add your website address in Organization settings.");
       return;
     }
     setPreviewOpening(true);
@@ -428,18 +428,17 @@ export function BlogEditor(props: {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-8">
-        <div className="flex items-center gap-3">
+      <div className="flex min-h-[100dvh] flex-col bg-background">
+        <div className="flex shrink-0 items-center gap-3 border-b px-4 py-4 md:px-6">
           <Skeleton className="h-9 w-9 rounded-lg" />
           <div className="space-y-2">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-7 w-40" />
+            <Skeleton className="h-4 w-28" />
           </div>
         </div>
-        <div className="space-y-4">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="min-h-[320px] w-full rounded-xl" />
+        <div className="mx-auto w-full max-w-4xl flex-1 space-y-6 p-4 md:p-8">
+          <Skeleton className="h-40 w-full rounded-2xl" />
+          <Skeleton className="min-h-[max(24rem,calc(100dvh-19rem))] w-full rounded-2xl" />
         </div>
       </div>
     );
@@ -448,13 +447,16 @@ export function BlogEditor(props: {
   const previewNodes =
     liveSpec != null ? renderBlogSpec(liveSpec, dashboardBlogPreviewMap) : [];
 
+  const siteHostname = getHostnameLabelForSiteBase(props.publicSiteBaseUrl ?? null);
+  const hasLiveSite = Boolean(props.publicSiteBaseUrl?.trim());
+
   return (
-    <div className="mx-auto max-w-[1700px] space-y-6 px-4 pb-24 pt-2 md:px-6 lg:px-8">
-      <motion.div
+    <div className="flex min-h-[100dvh] flex-col bg-background">
+      <motion.header
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between"
+        className="sticky top-0 z-20 flex shrink-0 flex-col gap-4 border-b border-border/50 bg-background/90 px-4 py-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-6"
       >
         <div className="flex items-start gap-3">
           <Button variant="outline" size="icon" className="shrink-0 rounded-lg" asChild>
@@ -463,7 +465,7 @@ export function BlogEditor(props: {
             </Link>
           </Button>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">Blog editor</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Edit post</h1>
             {title.trim() ? (
               <p className="mt-0.5 truncate text-sm font-medium text-foreground/90" title={title}>
                 {title}
@@ -508,15 +510,15 @@ export function BlogEditor(props: {
             onClick={() => void openSitePreview()}
             className="gap-1.5"
             title={
-              !props.publicSiteBaseUrl?.trim()
-                ? "Set publicBaseUrl in organization settings"
+              !hasLiveSite
+                ? "Add your website in Organization settings"
                 : !slug.trim()
-                  ? "Add a slug first"
-                  : "Open your live site with a draft preview token"
+                  ? "Add a URL slug first"
+                  : `Open draft preview on ${siteHostname || "your site"}`
             }
           >
             {previewOpening ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-            Site preview
+            View on site
           </Button>
           <Button
             type="button"
@@ -571,16 +573,15 @@ export function BlogEditor(props: {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </motion.div>
+      </motion.header>
 
-      <div className="grid gap-8 xl:grid-cols-[1fr_minmax(300px,380px)] xl:items-start">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="min-w-0 space-y-5"
-        >
-          <Card className="border-border/80 shadow-sm">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8"
+      >
+          <Card className="shrink-0 border-border/60 shadow-sm sm:rounded-2xl">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Post details</CardTitle>
               <CardDescription>Title, URL slug, and categories</CardDescription>
@@ -659,8 +660,8 @@ export function BlogEditor(props: {
             </CardContent>
           </Card>
 
-          <Card className="border-border/80 shadow-md">
-            <CardHeader className="pb-3">
+          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/80 shadow-md sm:rounded-2xl">
+            <CardHeader className="shrink-0 space-y-0 pb-3">
               <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                 <div>
                   <CardTitle className="text-lg">Content</CardTitle>
@@ -710,7 +711,7 @@ export function BlogEditor(props: {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4 pt-0 sm:p-6 sm:pt-0">
               <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onCoverFile(e)} />
               <input ref={inlineImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onInlineImage(e)} />
 
@@ -902,7 +903,7 @@ export function BlogEditor(props: {
                 </div>
               </div>
 
-              <div className="relative overflow-hidden rounded-xl border border-border/70 bg-background shadow-inner ring-1 ring-border/40">
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-muted/25 shadow-inner ring-1 ring-border/30">
                 <AnimatePresence mode="wait">
                   {editorMode === "write" ? (
                     <motion.div
@@ -911,14 +912,14 @@ export function BlogEditor(props: {
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 12 }}
                       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                      className="min-h-[min(82vh,920px)]"
+                      className="flex min-h-[max(24rem,calc(100dvh-19rem))] flex-1 flex-col"
                     >
                       <Textarea
                         ref={textareaRef}
                         spellCheck
                         rows={32}
                         className={cn(
-                          "min-h-[min(82vh,920px)] w-full resize-y border-0 bg-transparent px-4 py-4 font-mono leading-relaxed shadow-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                          "min-h-[max(24rem,calc(100dvh-19rem))] w-full flex-1 resize-y border-0 bg-background/80 px-4 py-4 font-mono leading-relaxed shadow-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-background/40",
                           fontClass
                         )}
                         value={content}
@@ -936,9 +937,9 @@ export function BlogEditor(props: {
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -12 }}
                       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                      className="min-h-[min(82vh,920px)]"
+                      className="min-h-[max(24rem,calc(100dvh-19rem))] flex-1"
                     >
-                      <ScrollArea className="h-[min(82vh,920px)]">
+                      <ScrollArea className="h-[max(24rem,calc(100dvh-19rem))]">
                         <div
                           className={cn(
                             "prose prose-sm md:prose-base max-w-none p-4 md:p-6",
@@ -973,41 +974,13 @@ export function BlogEditor(props: {
               </div>
             </CardContent>
           </Card>
-        </motion.div>
 
-        <aside className="min-w-0 space-y-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pb-4">
-          <Card className="border-border/80 shadow-sm">
+          <Card className="shrink-0 border-border/60 bg-muted/15 shadow-sm sm:rounded-2xl">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Site preview</CardTitle>
-              <CardDescription>
-                Open your real site in a new tab with a time-limited preview link (
-                <code className="rounded bg-muted px-1">previewToken</code>).
-              </CardDescription>
+              <CardTitle className="text-base">Search appearance</CardTitle>
+              <CardDescription>Optional — how this post may look in Google and social shares</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                Uses <code className="rounded bg-muted px-1">/blog/&lt;slug&gt;</code>. Your Next.js page should read{" "}
-                <code className="rounded bg-muted px-1">previewToken</code> and pass it to{" "}
-                <code className="rounded bg-muted px-1">@luminum/website-kit</code>.
-              </p>
-              {!props.publicSiteBaseUrl?.trim() ? (
-                <p className="text-sm text-muted-foreground">
-                  Add <code className="rounded bg-muted px-1">publicBaseUrl</code> in{" "}
-                  <Link href={`/${props.orgSlug}/settings`} className="font-medium text-primary underline underline-offset-4">
-                    Organization settings
-                  </Link>
-                  .
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/80 shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">SEO</CardTitle>
-              <CardDescription>Search & social snippets (optional)</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="seo_title">Title override</Label>
                 <Input
@@ -1024,7 +997,7 @@ export function BlogEditor(props: {
                 <Label htmlFor="seo_description">Meta description</Label>
                 <Textarea
                   id="seo_description"
-                  rows={4}
+                  rows={3}
                   value={seoDescription}
                   onChange={(e) => {
                     setSeoDescription(e.target.value);
@@ -1033,13 +1006,9 @@ export function BlogEditor(props: {
                   placeholder="Short description for search results"
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Set <code className="rounded bg-muted px-1">publicBaseUrl</code> in organization metadata for canonical URLs on the public site.
-              </p>
             </CardContent>
           </Card>
-        </aside>
-      </div>
+      </motion.div>
 
       <Dialog
         open={imageUrlDialogOpen}

@@ -21,12 +21,53 @@ export function dashboardBlogAssetUrlFromKey(key: string): string {
   return `/api/blog-asset?key=${encodeURIComponent(key)}`;
 }
 
-/** Public marketing site base URL from org metadata (`publicBaseUrl` | `baseUrl` | `siteUrl`). */
+/**
+ * Normalize user-entered website (full URL or bare domain) to `https://host` with no trailing slash.
+ */
+export function normalizePublicSiteInput(input: string): string {
+  const t = input.trim().replace(/\/$/, "");
+  if (!t) return "";
+  if (/^https?:\/\//i.test(t)) return t;
+  // Bare domain e.g. example.com or www.example.com
+  if (/^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}/.test(t)) {
+    return `https://${t}`;
+  }
+  return t;
+}
+
+/**
+ * Public marketing site base URL from org metadata or linked website domain.
+ * Checks `website`, `websiteUrl`, `domain`, then legacy `publicBaseUrl` / `baseUrl` / `siteUrl`.
+ */
 export function getPublicSiteBaseFromOrgMetadata(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== "object") return null;
   const m = metadata as Record<string, unknown>;
-  const raw = m.publicBaseUrl ?? m.baseUrl ?? m.siteUrl;
-  if (!raw || typeof raw !== "string") return null;
-  const t = raw.trim();
-  return t ? t.replace(/\/$/, "") : null;
+  const keys = [
+    "website",
+    "websiteUrl",
+    "websiteDomain",
+    "domain",
+    "publicBaseUrl",
+    "baseUrl",
+    "siteUrl",
+  ] as const;
+  for (const k of keys) {
+    const raw = m[k];
+    if (typeof raw === "string" && raw.trim()) {
+      const n = normalizePublicSiteInput(raw);
+      if (n) return n;
+    }
+  }
+  return null;
+}
+
+/** Short label for UI, e.g. `example.com` from `https://example.com/blog`. */
+export function getHostnameLabelForSiteBase(url: string | null | undefined): string {
+  if (!url?.trim()) return "";
+  try {
+    const u = new URL(url.includes("://") ? url : `https://${url}`);
+    return u.hostname;
+  } catch {
+    return url.replace(/^https?:\/\//i, "").split("/")[0] ?? url;
+  }
 }
