@@ -10,13 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -42,14 +35,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { dashboardBlogAssetUrlFromKey, getHostnameLabelForSiteBase } from "@/lib/blog-public-url";
-import { renderBlogSpec, type BlogRenderSpec } from "@luminum/blog-renderer";
-import { dashboardBlogPreviewMap } from "./dashboard-blog-preview-map";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { hasAdvancedBlogBlocks } from "@/lib/blog-markdown-bridge";
+import { BlogRichEditor, type BlogRichEditorHandle } from "./blog-rich-editor";
 import {
   Loader2,
   ArrowLeft,
@@ -57,24 +48,15 @@ import {
   Send,
   ExternalLink,
   ImagePlus,
-  Type,
-  Heading1,
-  List,
-  ListOrdered,
-  Link2,
-  Quote,
-  Code,
-  Minus,
   MoreHorizontal,
   Trash2,
   EyeOff,
   Sparkles,
   Paperclip,
-  PenLine,
   Eye,
   ChevronDown,
+  FileCode2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 type AllowComponent = { name: string; props: Record<string, { type: string; required?: boolean }> };
 
@@ -91,10 +73,6 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-const FONT_CLASSES = ["text-sm", "text-base", "text-lg", "text-xl"] as const;
-
-type EditorMode = "write" | "preview";
-
 export function BlogEditor(props: {
   organizationId: string;
   orgSlug: string;
@@ -103,7 +81,8 @@ export function BlogEditor(props: {
   publicSiteBaseUrl?: string | null;
 }) {
   const router = useRouter();
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const advancedTextareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const richEditorRef = React.useRef<BlogRichEditorHandle>(null);
   const coverInputRef = React.useRef<HTMLInputElement>(null);
   const inlineImageInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -114,9 +93,8 @@ export function BlogEditor(props: {
   const [deleting, setDeleting] = React.useState(false);
   const [previewOpening, setPreviewOpening] = React.useState(false);
   const [autoSaveState, setAutoSaveState] = React.useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [editorMode, setEditorMode] = React.useState<EditorMode>("write");
-  const [liveSpec, setLiveSpec] = React.useState<BlogRenderSpec | null>(null);
-  const [previewLoading, setPreviewLoading] = React.useState(false);
+  /** Raw Markdown mode for posts with custom blocks (Callout, etc.). */
+  const [useAdvancedMarkdown, setUseAdvancedMarkdown] = React.useState(false);
 
   const [title, setTitle] = React.useState("");
   const [slug, setSlug] = React.useState("");
@@ -128,7 +106,6 @@ export function BlogEditor(props: {
   const [allowlist, setAllowlist] = React.useState<AllowComponent[]>([]);
   const [categories, setCategories] = React.useState<string[]>([]);
   const [categoryInput, setCategoryInput] = React.useState("");
-  const [fontClass, setFontClass] = React.useState<(typeof FONT_CLASSES)[number]>("text-sm");
   const [dirty, setDirty] = React.useState(false);
   const [showDelete, setShowDelete] = React.useState(false);
   const [imageUrlDialogOpen, setImageUrlDialogOpen] = React.useState(false);
@@ -149,7 +126,9 @@ export function BlogEditor(props: {
         const p = postRes.post;
         setTitle(String(p.title ?? ""));
         setSlug(String(p.slug ?? ""));
-        setContent(String(p.content_markdown ?? ""));
+        const md = String(p.content_markdown ?? "");
+        setContent(md);
+        setUseAdvancedMarkdown(hasAdvancedBlogBlocks(md));
         setCoverKey(String(p.cover_image_key ?? ""));
         setSeoTitle(String(p.seo_title ?? ""));
         setSeoDescription(String(p.seo_description ?? ""));
@@ -210,29 +189,6 @@ export function BlogEditor(props: {
     return () => window.clearTimeout(t);
   }, [loading, dirty, title, slug, content, coverKey, seoTitle, seoDescription, categories, persist]);
 
-  const refreshPreview = React.useCallback(async () => {
-    setPreviewLoading(true);
-    try {
-      const res = (await api.blog.previewSpec(props.postId, {
-        content_markdown: content,
-      })) as { renderSpec: BlogRenderSpec };
-      setLiveSpec(res.renderSpec);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Preview failed");
-      setLiveSpec(null);
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, [props.postId, content]);
-
-  React.useEffect(() => {
-    if (loading || editorMode !== "preview") return;
-    const t = window.setTimeout(() => {
-      void refreshPreview();
-    }, 320);
-    return () => window.clearTimeout(t);
-  }, [loading, editorMode, content, refreshPreview]);
-
   const openSitePreview = async () => {
     if (!slug.trim()) {
       toast.error("Add a URL slug before opening site preview.");
@@ -262,7 +218,7 @@ export function BlogEditor(props: {
   };
 
   const insertAtCursor = (snippet: string) => {
-    const el = textareaRef.current;
+    const el = advancedTextareaRef.current;
     markDirty();
     if (!el) {
       setContent((c) => (c ? `${c}\n\n${snippet}` : snippet));
@@ -314,7 +270,12 @@ export function BlogEditor(props: {
         originalFilename: file.name,
       })) as { key: string };
       const url = dashboardBlogAssetUrlFromKey(res.key);
-      insertAtCursor(`![${file.name.replace(/[\[\]]/g, "")}](${url})`);
+      const alt = file.name.replace(/[\[\]]/g, "");
+      if (useAdvancedMarkdown) {
+        insertAtCursor(`![${alt}](${url})`);
+      } else {
+        richEditorRef.current?.insertImageAtCursor(url, alt);
+      }
       toast.success("Image inserted");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
@@ -334,7 +295,11 @@ export function BlogEditor(props: {
     }
     const alt = imageAltDraft.trim() || "Image";
     const altEscaped = alt.replace(/[\[\]]/g, "");
-    insertAtCursor(`![${altEscaped}](${url})`);
+    if (useAdvancedMarkdown) {
+      insertAtCursor(`![${altEscaped}](${url})`);
+    } else {
+      richEditorRef.current?.insertImageAtCursor(url, altEscaped);
+    }
     setImageUrlDialogOpen(false);
     setImageUrlDraft("");
     toast.success("Image inserted");
@@ -381,7 +346,16 @@ export function BlogEditor(props: {
       default:
         lines.push(`<${def.name} />`);
     }
-    insertAtCursor(lines.join("\n"));
+    const snippet = lines.join("\n");
+    if (useAdvancedMarkdown) {
+      insertAtCursor(snippet);
+    } else {
+      const next = content.trim() ? `${content.trim()}\n\n${snippet}` : snippet;
+      setUseAdvancedMarkdown(true);
+      setContent(next);
+      markDirty();
+      toast.message("Switched to Markdown — custom blocks are edited as source.");
+    }
   };
 
   const publish = async () => {
@@ -443,9 +417,6 @@ export function BlogEditor(props: {
       </div>
     );
   }
-
-  const previewNodes =
-    liveSpec != null ? renderBlogSpec(liveSpec, dashboardBlogPreviewMap) : [];
 
   const siteHostname = getHostnameLabelForSiteBase(props.publicSiteBaseUrl ?? null);
   const hasLiveSite = Boolean(props.publicSiteBaseUrl?.trim());
@@ -662,216 +633,75 @@ export function BlogEditor(props: {
 
           <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/80 shadow-md sm:rounded-2xl">
             <CardHeader className="shrink-0 space-y-0 pb-3">
-              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle className="text-lg">Content</CardTitle>
-                  <CardDescription>Write markdown — drafts save automatically</CardDescription>
+                  <CardDescription>
+                    What you see is what you get — select text and use the toolbar (like Word). Drafts save automatically.
+                  </CardDescription>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div
-                    className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-1 shadow-inner"
-                    role="tablist"
-                    aria-label="Editor mode"
+                {useAdvancedMarkdown ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                    onClick={() => {
+                      setUseAdvancedMarkdown(false);
+                      toast.message("Switched to visual editor");
+                    }}
                   >
-                    <Button
-                      type="button"
-                      variant={editorMode === "write" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-8 gap-1.5 px-3"
-                      onClick={() => setEditorMode("write")}
-                    >
-                      <PenLine className="h-3.5 w-3.5" />
-                      Write
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={editorMode === "preview" ? "default" : "ghost"}
-                      size="sm"
-                      className="h-8 gap-1.5 px-3"
-                      onClick={() => setEditorMode("preview")}
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                      Preview
-                    </Button>
-                  </div>
-                  {editorMode === "write" ? (
-                    <Select value={fontClass} onValueChange={(v) => setFontClass(v as (typeof FONT_CLASSES)[number])}>
-                      <SelectTrigger className="h-8 w-[132px] text-xs" size="sm">
-                        <Type className="mr-1 h-3.5 w-3.5" />
-                        <SelectValue placeholder="Size" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="text-sm">Small</SelectItem>
-                        <SelectItem value="text-base">Medium</SelectItem>
-                        <SelectItem value="text-lg">Large</SelectItem>
-                        <SelectItem value="text-xl">Extra large</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : null}
-                </div>
+                    <Eye className="h-3.5 w-3.5" />
+                    Visual editor
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                    onClick={() => {
+                      setUseAdvancedMarkdown(true);
+                      toast.message("Raw Markdown — for custom blocks");
+                    }}
+                  >
+                    <FileCode2 className="h-3.5 w-3.5" />
+                    Markdown
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4 pt-0 sm:p-6 sm:pt-0">
               <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onCoverFile(e)} />
               <input ref={inlineImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onInlineImage(e)} />
 
-              {editorMode === "write" ? (
-              <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1.5">
+              <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/50 bg-muted/30 p-2">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1 text-xs"
-                      title="Insert heading"
-                    >
-                      <Heading1 className="h-3.5 w-3.5" />
-                      Headings
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => insertAtCursor("# ")}>H1</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => insertAtCursor("## ")}>H2</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => insertAtCursor("### ")}>H3</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("**bold**")}
-                  title="Bold"
-                >
-                  <span className="text-xs font-bold">B</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("*italic*")}
-                  title="Italic"
-                >
-                  <span className="text-xs italic">I</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("[label](url)")}
-                  title="Insert link"
-                >
-                  <Link2 className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("\n- ")}
-                  title="Bullet list"
-                >
-                  <List className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("\n1. ")}
-                  title="Numbered list"
-                >
-                  <ListOrdered className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("\n> ")}
-                  title="Blockquote"
-                >
-                  <Quote className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("\n```\n\n```\n")}
-                  title="Code block"
-                >
-                  <Code className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2"
-                  onClick={() => insertAtCursor("\n---\n")}
-                  title="Horizontal rule"
-                >
-                  <Minus className="h-3.5 w-3.5" />
-                </Button>
-                <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 gap-1 text-xs"
-                  onClick={() => coverInputRef.current?.click()}
-                  title="Upload cover image"
-                >
-                  <ImagePlus className="h-3.5 w-3.5" />
-                  Cover
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-8 gap-1 text-xs"
-                      title="Insert image — upload or paste URL"
-                    >
+                    <Button type="button" variant="secondary" size="sm" className="h-8 gap-1 text-xs">
                       <Paperclip className="h-3.5 w-3.5" />
                       Image
                       <ChevronDown className="h-3 w-3 opacity-70" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-52">
-                    <DropdownMenuItem
-                      onClick={() => inlineImageInputRef.current?.click()}
-                      className="cursor-pointer"
-                    >
+                    <DropdownMenuItem onClick={() => inlineImageInputRef.current?.click()} className="cursor-pointer">
                       Upload from device…
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setImageUrlDialogOpen(true)}
-                      className="cursor-pointer"
-                    >
-                      Insert image URL…
+                    <DropdownMenuItem onClick={() => setImageUrlDialogOpen(true)} className="cursor-pointer">
+                      Paste image link…
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-8 gap-1 text-xs"
-                      title="Insert allowlisted component"
-                    >
+                    <Button type="button" variant="secondary" size="sm" className="h-8 gap-1 text-xs">
                       <Sparkles className="h-3.5 w-3.5" />
                       Block
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent className="w-56">
-                    <DropdownMenuLabel>Pick component</DropdownMenuLabel>
+                    <DropdownMenuLabel>Special block</DropdownMenuLabel>
                     {allowlist.map((c) => (
                       <DropdownMenuItem key={c.name} onClick={() => insertComponentSnippet(c.name)}>
                         {c.name}
@@ -880,14 +710,13 @@ export function BlogEditor(props: {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              ) : null}
 
-              <div className="flex flex-wrap items-start gap-4 rounded-lg border border-dashed p-3">
+              <div className="flex flex-wrap items-start gap-4 rounded-xl border border-dashed border-border/60 bg-muted/15 p-3">
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">Cover (required to publish)</p>
+                  <p className="text-xs font-medium text-muted-foreground">Cover image (required to publish)</p>
                   <div className="flex items-center gap-3">
                     <Button type="button" variant="outline" size="sm" onClick={() => coverInputRef.current?.click()}>
-                      Upload
+                      Upload cover
                     </Button>
                     {coverKey ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -897,81 +726,43 @@ export function BlogEditor(props: {
                         className="h-20 w-32 rounded-md border object-cover"
                       />
                     ) : (
-                      <span className="text-xs text-muted-foreground">No cover</span>
+                      <span className="text-xs text-muted-foreground">No cover yet</span>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-muted/25 shadow-inner ring-1 ring-border/30">
-                <AnimatePresence mode="wait">
-                  {editorMode === "write" ? (
-                    <motion.div
-                      key="write"
-                      initial={{ opacity: 0, x: -12 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 12 }}
-                      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                      className="flex min-h-[max(24rem,calc(100dvh-19rem))] flex-1 flex-col"
-                    >
-                      <Textarea
-                        ref={textareaRef}
-                        spellCheck
-                        rows={32}
-                        className={cn(
-                          "min-h-[max(24rem,calc(100dvh-19rem))] w-full flex-1 resize-y border-0 bg-background/80 px-4 py-4 font-mono leading-relaxed shadow-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-background/40",
-                          fontClass
-                        )}
-                        value={content}
-                        onChange={(e) => {
-                          setContent(e.target.value);
-                          markDirty();
-                        }}
-                        placeholder="Write markdown. Use allowlisted components like <Callout … />"
-                      />
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="preview"
-                      initial={{ opacity: 0, x: 12 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -12 }}
-                      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                      className="min-h-[max(24rem,calc(100dvh-19rem))] flex-1"
-                    >
-                      <ScrollArea className="h-[max(24rem,calc(100dvh-19rem))]">
-                        <div
-                          className={cn(
-                            "prose prose-sm md:prose-base max-w-none p-4 md:p-6",
-                            "prose-headings:font-semibold prose-headings:tracking-tight prose-headings:text-foreground",
-                            "prose-p:leading-[1.7] prose-p:text-foreground prose-p:my-3",
-                            "prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-a:font-medium",
-                            "prose-strong:font-semibold prose-strong:text-foreground",
-                            "prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono prose-code:before:content-none prose-code:after:content-none",
-                            "prose-pre:bg-muted prose-pre:border prose-pre:rounded-xl prose-pre:p-4 prose-pre:my-4",
-                            "prose-img:rounded-xl prose-img:border prose-img:shadow-sm prose-img:my-4",
-                            "prose-hr:border-border prose-hr:my-6"
-                          )}
-                        >
-                          {previewLoading ? (
-                            <div className="space-y-4 py-2">
-                              <Skeleton className="h-9 w-2/3" />
-                              <Skeleton className="h-4 w-full" />
-                              <Skeleton className="h-4 w-5/6" />
-                              <Skeleton className="h-4 w-4/5" />
-                              <Skeleton className="h-32 w-full rounded-lg" />
-                            </div>
-                          ) : previewNodes.length > 0 ? (
-                            previewNodes
-                          ) : (
-                            <p className="text-sm text-muted-foreground">Nothing to preview yet — add some markdown in Write mode.</p>
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              {useAdvancedMarkdown ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Markdown mode</strong> — for posts with custom blocks (Callout, Gallery, …). Use{" "}
+                    <strong>Visual editor</strong> above for normal writing.
+                  </p>
+                  <Textarea
+                    ref={advancedTextareaRef}
+                    spellCheck
+                    rows={24}
+                    className="min-h-[max(24rem,calc(100dvh-19rem))] w-full resize-y font-mono text-sm leading-relaxed"
+                    value={content}
+                    onChange={(e) => {
+                      setContent(e.target.value);
+                      markDirty();
+                    }}
+                    placeholder="Markdown source…"
+                  />
+                </div>
+              ) : (
+                <BlogRichEditor
+                  key={`${props.postId}-${useAdvancedMarkdown ? "md" : "vis"}`}
+                  ref={richEditorRef}
+                  initialMarkdown={content}
+                  onChange={(md) => {
+                    setContent(md);
+                    markDirty();
+                  }}
+                  onInsertImageClick={() => inlineImageInputRef.current?.click()}
+                />
+              )}
             </CardContent>
           </Card>
 
