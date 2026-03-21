@@ -34,7 +34,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft,
   BookOpen,
   Loader2,
   MoreHorizontal,
@@ -155,18 +154,13 @@ export default function OrgBlogsListPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 p-4 pb-16 md:p-8">
+    <div className="mx-auto max-w-7xl space-y-8 p-4 pb-16 md:p-8">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
       >
         <div className="flex items-start gap-3">
-          <Button variant="outline" size="icon" className="shrink-0 rounded-lg" asChild>
-            <Link href={`/${slug}/dashboard`} aria-label="Back">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
           <div>
             <div className="flex items-center gap-2">
               <BookOpen className="h-6 w-6 text-primary" />
@@ -260,7 +254,7 @@ export default function OrgBlogsListPage() {
           {[1, 2, 3, 4].map((i) => (
             <Card key={i} className="overflow-hidden border-border/60">
               <CardContent className="flex gap-4 p-4">
-                <Skeleton className="h-16 w-28 shrink-0 rounded-lg" />
+                <Skeleton className="h-20 w-36 shrink-0 rounded-xl" />
                 <div className="flex flex-1 flex-col gap-2">
                   <Skeleton className="h-5 w-2/3" />
                   <Skeleton className="h-3 w-1/3" />
@@ -308,10 +302,10 @@ export default function OrgBlogsListPage() {
                       <img
                         src={dashboardBlogAssetUrlFromKey(p.cover_image_key)}
                         alt=""
-                        className="h-16 w-28 rounded-lg border border-border/50 object-cover"
+                        className="h-20 w-36 rounded-xl border border-border/50 object-cover shadow-sm"
                       />
                     ) : (
-                      <div className="flex h-16 w-28 items-center justify-center rounded-lg bg-muted text-[10px] text-muted-foreground">
+                      <div className="flex h-20 w-36 items-center justify-center rounded-xl bg-muted text-[10px] text-muted-foreground">
                         No cover
                       </div>
                     )}

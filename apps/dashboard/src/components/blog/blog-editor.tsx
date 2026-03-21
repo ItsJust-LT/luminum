@@ -39,7 +39,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { dashboardBlogAssetUrlFromKey, getHostnameLabelForSiteBase } from "@/lib/blog-public-url";
-import { hasAdvancedBlogBlocks } from "@/lib/blog-markdown-bridge";
 import { BlogRichEditor, type BlogRichEditorHandle } from "./blog-rich-editor";
 import {
   Loader2,
@@ -128,7 +127,6 @@ export function BlogEditor(props: {
         setSlug(String(p.slug ?? ""));
         const md = String(p.content_markdown ?? "");
         setContent(md);
-        setUseAdvancedMarkdown(hasAdvancedBlogBlocks(md));
         setCoverKey(String(p.cover_image_key ?? ""));
         setSeoTitle(String(p.seo_title ?? ""));
         setSeoDescription(String(p.seo_description ?? ""));
@@ -350,11 +348,8 @@ export function BlogEditor(props: {
     if (useAdvancedMarkdown) {
       insertAtCursor(snippet);
     } else {
-      const next = content.trim() ? `${content.trim()}\n\n${snippet}` : snippet;
-      setUseAdvancedMarkdown(true);
-      setContent(next);
-      markDirty();
-      toast.message("Switched to Markdown — custom blocks are edited as source.");
+      richEditorRef.current?.insertBlogComponent(snippet);
+      toast.success("Block inserted — stays in visual editor");
     }
   };
 
@@ -410,7 +405,7 @@ export function BlogEditor(props: {
             <Skeleton className="h-4 w-28" />
           </div>
         </div>
-        <div className="mx-auto w-full max-w-4xl flex-1 space-y-6 p-4 md:p-8">
+        <div className="mx-auto w-full max-w-7xl flex-1 space-y-6 p-4 md:p-8">
           <Skeleton className="h-40 w-full rounded-2xl" />
           <Skeleton className="min-h-[max(24rem,calc(100dvh-19rem))] w-full rounded-2xl" />
         </div>
@@ -508,7 +503,7 @@ export function BlogEditor(props: {
             disabled={publishing || !coverKey.trim()}
             onClick={() => void publish()}
             className="gap-1.5"
-            title={!coverKey.trim() ? "Add a cover image in the Markdown section before publishing" : undefined}
+            title={!coverKey.trim() ? "Add a cover image in Post details before publishing" : undefined}
           >
             {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Publish
@@ -550,14 +545,54 @@ export function BlogEditor(props: {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05 }}
-        className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8"
+        className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8"
       >
           <Card className="shrink-0 border-border/60 shadow-sm sm:rounded-2xl">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Post details</CardTitle>
-              <CardDescription>Title, URL slug, and categories</CardDescription>
+              <CardDescription>Title, URL slug, cover image, and categories</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => void onCoverFile(e)}
+              />
+              <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 p-4">
+                <p className="text-xs font-medium text-muted-foreground">Cover image (required to publish)</p>
+                <div className="mt-3 flex flex-wrap items-center gap-4">
+                  <Button type="button" variant="outline" size="sm" onClick={() => coverInputRef.current?.click()}>
+                    <ImagePlus className="mr-2 h-4 w-4" />
+                    Upload cover
+                  </Button>
+                  {coverKey ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={dashboardBlogAssetUrlFromKey(coverKey)}
+                        alt="Cover preview"
+                        className="h-24 max-w-[min(100%,20rem)] rounded-lg border object-cover shadow-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => {
+                          setCoverKey("");
+                          markDirty();
+                        }}
+                      >
+                        Remove cover
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No cover yet — add one before publishing.</span>
+                  )}
+                </div>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="title">Title</Label>
@@ -672,7 +707,6 @@ export function BlogEditor(props: {
               </div>
             </CardHeader>
             <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4 pt-0 sm:p-6 sm:pt-0">
-              <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onCoverFile(e)} />
               <input ref={inlineImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onInlineImage(e)} />
 
               <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/50 bg-muted/30 p-2">
@@ -709,27 +743,6 @@ export function BlogEditor(props: {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </div>
-
-              <div className="flex flex-wrap items-start gap-4 rounded-xl border border-dashed border-border/60 bg-muted/15 p-3">
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">Cover image (required to publish)</p>
-                  <div className="flex items-center gap-3">
-                    <Button type="button" variant="outline" size="sm" onClick={() => coverInputRef.current?.click()}>
-                      Upload cover
-                    </Button>
-                    {coverKey ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={dashboardBlogAssetUrlFromKey(coverKey)}
-                        alt="Cover"
-                        className="h-20 w-32 rounded-md border object-cover"
-                      />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">No cover yet</span>
-                    )}
-                  </div>
-                </div>
               </div>
 
               {useAdvancedMarkdown ? (

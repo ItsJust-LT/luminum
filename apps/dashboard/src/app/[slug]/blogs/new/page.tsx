@@ -69,7 +69,7 @@ export default function NewBlogPostPage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-8 p-4 md:p-8">
+    <div className="mx-auto max-w-3xl space-y-8 p-4 md:p-8">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-3">
         <Button variant="outline" size="icon" className="shrink-0 rounded-lg" asChild>
           <Link href={`/${slug}/blogs`} aria-label="Back to blog posts">

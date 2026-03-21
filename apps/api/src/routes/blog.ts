@@ -13,6 +13,11 @@ import { cacheGet, cacheSet, cacheDelByPrefix } from "../lib/redis-cache.js";
 import { publicBlogAssetUrl } from "../blog/urls.js";
 import { buildRenderSpecForPublish } from "../blog/parse-and-validate.js";
 import { collectReferencedBlogKeys, syncBlogAssetsToPost } from "../blog/sync-assets.js";
+import {
+  collectKeysForPost,
+  deleteBlogAssetsForKeys,
+  reconcilePostAssetsAfterEdit,
+} from "../blog/blog-asset-cleanup.js";
 import { buildBlogSeo } from "../blog/seo.js";
 import { listAllowlistedComponents } from "../blog/allowlist.js";
 
@@ -844,10 +849,19 @@ router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
     data.content_render_spec = null;
   }
 
+  const shouldReconcileAssets =
+    body.content_markdown !== undefined || body.cover_image_key !== undefined;
+  const oldKeys = shouldReconcileAssets ? await collectKeysForPost(existing) : null;
+
   const updated = await prisma.blog_post.update({
     where: { id },
     data: data as object,
   });
+
+  if (shouldReconcileAssets && oldKeys) {
+    const newKeys = await collectKeysForPost(updated);
+    await reconcilePostAssetsAfterEdit(existing.organization_id, oldKeys, newKeys);
+  }
 
   if (existing.status === "published") {
     await invalidatePublishedBlogCache(existing.organization_id);
@@ -979,7 +993,9 @@ router.delete("/posts/:id", requireAuth, async (req: Request, res: Response) => 
   if (existing.status === "published") {
     await invalidatePublishedBlogCache(existing.organization_id);
   }
+  const keys = await collectKeysForPost(existing);
   await prisma.blog_post.delete({ where: { id } });
+  await deleteBlogAssetsForKeys(existing.organization_id, keys);
   res.json({ ok: true });
 });
 
