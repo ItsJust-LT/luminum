@@ -26,12 +26,35 @@ export const auditQueue = connection
   ? new Queue<AuditJobPayload>(QUEUE_NAME, { connection })
   : null;
 
+const jobOpts = {
+  removeOnComplete: 100,
+  removeOnFail: 200,
+} as const;
+
 export async function enqueueAudit(payload: AuditJobPayload): Promise<string | null> {
   if (!auditQueue) return null;
   const job = await auditQueue.add("run-audit", payload, {
     jobId: `audit-${payload.auditId}`,
-    removeOnComplete: 100,
-    removeOnFail: 200,
+    ...jobOpts,
+  });
+  return job.id ?? null;
+}
+
+/** Removes an existing job with the same id (stuck active / duplicate) then enqueues. */
+export async function enqueueAuditReplacing(payload: AuditJobPayload): Promise<string | null> {
+  if (!auditQueue) return null;
+  const jobId = `audit-${payload.auditId}`;
+  const prev = await auditQueue.getJob(jobId);
+  if (prev) {
+    try {
+      await prev.remove();
+    } catch {
+      /* stale lock / already gone */
+    }
+  }
+  const job = await auditQueue.add("run-audit", payload, {
+    jobId,
+    ...jobOpts,
   });
   return job.id ?? null;
 }

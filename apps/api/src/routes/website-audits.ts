@@ -5,6 +5,7 @@ import { canAccessOrganization } from "../lib/access.js";
 import { getQueryParam, getPathParam } from "../lib/req-params.js";
 import { rateLimitAudit, rateLimitAuditBootstrap } from "../middleware/rate-limit.js";
 import { createAndEnqueueWebsiteAudit } from "../site-audit/create-audit.js";
+import { enqueueAuditReplacing } from "../site-audit/queue.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -220,6 +221,25 @@ router.post("/:id/retry", rateLimitAudit, async (req: Request, res: Response) =>
       select: { domain: true },
     });
     if (!website) return res.status(404).json({ data: null, error: "Website not found" });
+
+    if (existing.status === "queued") {
+      const jobId = await enqueueAuditReplacing({
+        auditId: existing.id,
+        websiteId: existing.website_id,
+        targetUrl: existing.target_url,
+        formFactor: existing.form_factor === "desktop" ? "desktop" : "mobile",
+      });
+      if (!jobId) {
+        return res.status(503).json({
+          data: null,
+          error: "Audit queue unavailable (REDIS_URL or audit-worker).",
+        });
+      }
+      return res.json({
+        data: { auditId: existing.id, status: existing.status, requeued: true as const },
+        error: null,
+      });
+    }
 
     const audit = await createAndEnqueueWebsiteAudit(prisma, {
       websiteId: existing.website_id,
