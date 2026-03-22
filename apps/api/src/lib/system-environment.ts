@@ -79,28 +79,44 @@ export interface AdminEnvDerived {
   corsOriginsEnvSet: boolean;
 }
 
+function entryForKey(key: string): AdminEnvEntry {
+  const raw = process.env[key];
+  const sensitive = isSensitiveKey(key);
+  if (sensitive && raw !== undefined && raw !== "") {
+    const m = maskValue(raw);
+    return { key, value: m.display, masked: m.masked };
+  }
+  return {
+    key,
+    value: raw === undefined || raw === "" ? "(not set)" : raw,
+    masked: false,
+  };
+}
+
+const ADDITIONAL_ENV_MAX = 200;
+
 export function getAdminSystemEnvironmentSnapshot(): {
   entries: AdminEnvEntry[];
+  additionalEntries: AdminEnvEntry[];
+  additionalTruncated: boolean;
   sourceNote: string;
+  githubDeployNote: string;
   derived: AdminEnvDerived;
 } {
-  const entries: AdminEnvEntry[] = [];
-  for (const key of DEPLOY_KEYS_ORDERED) {
-    const raw = process.env[key];
-    const sensitive = isSensitiveKey(key);
-    if (sensitive && raw !== undefined && raw !== "") {
-      const m = maskValue(raw);
-      entries.push({ key, value: m.display, masked: m.masked });
-    } else {
-      entries.push({
-        key,
-        value: raw === undefined || raw === "" ? "(not set)" : raw,
-        masked: false,
-      });
-    }
-  }
+  const entries: AdminEnvEntry[] = DEPLOY_KEYS_ORDERED.map((key) => entryForKey(key));
+
+  const known = new Set(DEPLOY_KEYS_ORDERED);
+  const extraKeys = Object.keys(process.env)
+    .filter((k) => !known.has(k) && !k.startsWith("npm_") && k !== "PATH")
+    .sort((a, b) => a.localeCompare(b));
+  const additionalTruncated = extraKeys.length > ADDITIONAL_ENV_MAX;
+  const additionalEntries = extraKeys.slice(0, ADDITIONAL_ENV_MAX).map((key) => entryForKey(key));
+
   const sourceNote =
     "Values are from the API process environment at runtime (typically docker-compose .env on the server, often generated from GitHub Actions secrets and variables during deploy). Editing is not supported here. Some rows show “(not set)” but the app still applies defaults (see Effective configuration below).";
+
+  const githubDeployNote =
+    "GitHub Repository secrets/variables are often named with a PROD_ prefix (e.g. PROD_API_BETTER_AUTH_SECRET). The deploy workflow maps them to different names in the server .env (e.g. BETTER_AUTH_SECRET). The dashboard shows runtime names only. A secret will not appear unless (1) it is referenced in the deploy workflow step that writes .env, and (2) that variable is passed into the API container (e.g. via docker-compose env_file / environment).";
 
   const corsEnv = process.env.CORS_ORIGINS?.trim();
   const derived: AdminEnvDerived = {
@@ -111,5 +127,5 @@ export function getAdminSystemEnvironmentSnapshot(): {
     corsOriginsEnvSet: Boolean(corsEnv),
   };
 
-  return { entries, sourceNote, derived };
+  return { entries, additionalEntries, additionalTruncated, sourceNote, githubDeployNote, derived };
 }

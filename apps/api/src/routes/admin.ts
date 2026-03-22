@@ -232,8 +232,8 @@ router.post("/check-email-dns", adminOnly, async (req: Request, res: Response) =
 // GET /api/admin/system-environment — read-only env snapshot (secrets masked) for operators
 router.get("/system-environment", adminOnly, async (_req: Request, res: Response) => {
   try {
-    const { entries, sourceNote, derived } = getAdminSystemEnvironmentSnapshot();
-    res.json({ success: true, entries, sourceNote, derived });
+    const snapshot = getAdminSystemEnvironmentSnapshot();
+    res.json({ success: true, ...snapshot });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error?.message ?? "Failed" });
   }

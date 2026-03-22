@@ -19,6 +19,9 @@ export default function AdminEnvironmentPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [entries, setEntries] = useState<EnvEntry[]>([])
+  const [additionalEntries, setAdditionalEntries] = useState<EnvEntry[]>([])
+  const [additionalTruncated, setAdditionalTruncated] = useState(false)
+  const [githubDeployNote, setGithubDeployNote] = useState("")
   const [sourceNote, setSourceNote] = useState("")
   const [derived, setDerived] = useState<{
     corsOriginsEffective: string[]
@@ -35,6 +38,9 @@ export default function AdminEnvironmentPage() {
         api.admin.getSystemEnvironment() as Promise<{
           success?: boolean
           entries?: EnvEntry[]
+          additionalEntries?: EnvEntry[]
+          additionalTruncated?: boolean
+          githubDeployNote?: string
           sourceNote?: string
           derived?: {
             corsOriginsEffective?: string[]
@@ -47,6 +53,9 @@ export default function AdminEnvironmentPage() {
       ])
       if (envRes.success && envRes.entries) {
         setEntries(envRes.entries)
+        setAdditionalEntries(Array.isArray(envRes.additionalEntries) ? envRes.additionalEntries : [])
+        setAdditionalTruncated(!!envRes.additionalTruncated)
+        setGithubDeployNote(envRes.githubDeployNote || "")
         setSourceNote(envRes.sourceNote || "")
         if (envRes.derived?.corsOriginsEffective) {
           setDerived({
@@ -154,9 +163,18 @@ export default function AdminEnvironmentPage() {
         </Card>
       )}
 
+      {githubDeployNote && (
+        <Card className="bg-muted/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">GitHub Actions vs runtime names</CardTitle>
+            <CardDescription className="text-sm leading-relaxed">{githubDeployNote}</CardDescription>
+          </CardHeader>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Variables</CardTitle>
+          <CardTitle className="text-lg">Primary variables</CardTitle>
           <CardDescription>{sourceNote || "Secrets are masked."}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -194,6 +212,45 @@ export default function AdminEnvironmentPage() {
           )}
         </CardContent>
       </Card>
+
+      {!loading && additionalEntries.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Other variables in this process</CardTitle>
+            <CardDescription>
+              Keys present in <code className="text-xs bg-muted px-1 rounded">process.env</code> but not in the primary
+              list (e.g. Docker-injected or manual server .env).{" "}
+              {additionalTruncated && "List truncated at 200 keys."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[240px] font-mono text-xs">Name</TableHead>
+                    <TableHead className="font-mono text-xs">Value</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {additionalEntries.map((row) => (
+                    <TableRow key={row.key}>
+                      <TableCell className="font-mono text-xs align-top py-2">{row.key}</TableCell>
+                      <TableCell className="font-mono text-xs align-top py-2 break-all">
+                        {row.masked ? (
+                          <span className="text-muted-foreground">{row.value}</span>
+                        ) : (
+                          row.value
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
