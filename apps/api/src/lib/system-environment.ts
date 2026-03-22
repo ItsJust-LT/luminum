@@ -3,6 +3,8 @@
  * Secrets are masked; keys mirror what production deploy writes from GitHub Actions + optional host .env.
  */
 
+import { config } from "../config.js";
+
 const DEPLOY_KEYS_ORDERED: string[] = [
   "NODE_ENV",
   "PORT",
@@ -68,9 +70,19 @@ export interface AdminEnvEntry {
   masked: boolean;
 }
 
+export interface AdminEnvDerived {
+  /** Origins the API actually allows (see config.corsOrigin). */
+  corsOriginsEffective: string[];
+  /** How CORS was resolved — env var vs fallback. */
+  corsOriginsResolvedFrom: string;
+  /** True if CORS_ORIGINS was non-empty in process.env. */
+  corsOriginsEnvSet: boolean;
+}
+
 export function getAdminSystemEnvironmentSnapshot(): {
   entries: AdminEnvEntry[];
   sourceNote: string;
+  derived: AdminEnvDerived;
 } {
   const entries: AdminEnvEntry[] = [];
   for (const key of DEPLOY_KEYS_ORDERED) {
@@ -88,6 +100,16 @@ export function getAdminSystemEnvironmentSnapshot(): {
     }
   }
   const sourceNote =
-    "Values are from the API process environment at runtime (typically docker-compose .env on the server, often generated from GitHub Actions secrets and variables during deploy). Editing is not supported here.";
-  return { entries, sourceNote };
+    "Values are from the API process environment at runtime (typically docker-compose .env on the server, often generated from GitHub Actions secrets and variables during deploy). Editing is not supported here. Some rows show “(not set)” but the app still applies defaults (see Effective configuration below).";
+
+  const corsEnv = process.env.CORS_ORIGINS?.trim();
+  const derived: AdminEnvDerived = {
+    corsOriginsEffective: [...config.corsOrigin],
+    corsOriginsResolvedFrom: corsEnv
+      ? "CORS_ORIGINS"
+      : "APP_URL and/or NEXT_PUBLIC_APP_URL (CORS_ORIGINS was unset — same logic as config.ts)",
+    corsOriginsEnvSet: Boolean(corsEnv),
+  };
+
+  return { entries, sourceNote, derived };
 }

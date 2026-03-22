@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Terminal, RefreshCw, Mail, AlertTriangle } from "lucide-react"
+import { Terminal, RefreshCw, Mail, AlertTriangle, Shield } from "lucide-react"
 import { api } from "@/lib/api"
 
 interface EnvEntry {
@@ -20,6 +20,11 @@ export default function AdminEnvironmentPage() {
   const [error, setError] = useState<string | null>(null)
   const [entries, setEntries] = useState<EnvEntry[]>([])
   const [sourceNote, setSourceNote] = useState("")
+  const [derived, setDerived] = useState<{
+    corsOriginsEffective: string[]
+    corsOriginsResolvedFrom: string
+    corsOriginsEnvSet?: boolean
+  } | null>(null)
   const [mailStatus, setMailStatus] = useState<{ enabled: boolean; message?: string } | null>(null)
 
   const load = async () => {
@@ -31,6 +36,11 @@ export default function AdminEnvironmentPage() {
           success?: boolean
           entries?: EnvEntry[]
           sourceNote?: string
+          derived?: {
+            corsOriginsEffective?: string[]
+            corsOriginsResolvedFrom?: string
+            corsOriginsEnvSet?: boolean
+          }
           error?: string
         }>,
         api.admin.getEmailSystemStatus() as Promise<{ success?: boolean; enabled?: boolean; message?: string }>,
@@ -38,6 +48,15 @@ export default function AdminEnvironmentPage() {
       if (envRes.success && envRes.entries) {
         setEntries(envRes.entries)
         setSourceNote(envRes.sourceNote || "")
+        if (envRes.derived?.corsOriginsEffective) {
+          setDerived({
+            corsOriginsEffective: envRes.derived.corsOriginsEffective,
+            corsOriginsResolvedFrom: envRes.derived.corsOriginsResolvedFrom || "",
+            corsOriginsEnvSet: envRes.derived.corsOriginsEnvSet,
+          })
+        } else {
+          setDerived(null)
+        }
       } else {
         setError(envRes.error || "Failed to load environment")
       }
@@ -100,6 +119,38 @@ export default function AdminEnvironmentPage() {
       {error && (
         <Card className="border-destructive/50">
           <CardContent className="pt-6 text-sm text-destructive">{error}</CardContent>
+        </Card>
+      )}
+
+      {derived && derived.corsOriginsEffective.length > 0 && (
+        <Card className="border-primary/20 bg-muted/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Effective CORS origins
+            </CardTitle>
+            <CardDescription>
+              Browser requests to this API are allowed from these origins.{" "}
+              <span className="text-foreground/90">
+                Source: <code className="text-xs bg-muted px-1 rounded">{derived.corsOriginsResolvedFrom}</code>
+              </span>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-disc pl-5 space-y-1 text-sm font-mono break-all">
+              {derived.corsOriginsEffective.map((o) => (
+                <li key={o}>{o}</li>
+              ))}
+            </ul>
+            {derived.corsOriginsEnvSet === false && (
+              <p className="text-xs text-muted-foreground mt-3">
+                <code className="bg-muted px-1 rounded">CORS_ORIGINS</code> is not set in the raw env table below; the API
+                still allows the origins listed above using <code className="bg-muted px-1 rounded">APP_URL</code> /{" "}
+                <code className="bg-muted px-1 rounded">NEXT_PUBLIC_APP_URL</code> (see{" "}
+                <code className="bg-muted px-1 rounded">config.ts</code>).
+              </p>
+            )}
+          </CardContent>
         </Card>
       )}
 
