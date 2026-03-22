@@ -81,6 +81,19 @@ services:
     env_file: .env
     ports:
       - "127.0.0.1:4000:4000"
+    # 502 from Caddy usually means nothing listening here — check `docker compose logs api`
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
 
   dashboard:
     image: ${REGISTRY_IMAGE_PREFIX:-ghcr.io/your-org/luminum}-dashboard:latest
