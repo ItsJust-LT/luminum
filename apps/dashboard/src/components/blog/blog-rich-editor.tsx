@@ -657,7 +657,7 @@ export const BlogRichEditor = React.forwardRef<
     editorProps: {
       attributes: {
         class: cn(
-          "prose prose-sm md:prose-base lg:prose-lg max-w-none focus:outline-none min-h-[min(50vh,22rem)] sm:min-h-[300px] px-3 py-4 sm:px-5 sm:py-5",
+          "prose prose-sm md:prose-base lg:prose-lg max-w-none focus:outline-none min-h-[min(58vh,26rem)] sm:min-h-[min(62vh,28rem)] lg:min-h-[min(70vh,32rem)] px-3 py-4 sm:px-6 sm:py-6",
           "prose-headings:font-semibold prose-headings:tracking-tight prose-headings:text-foreground prose-headings:scroll-mt-20",
           "prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl",
           "prose-p:leading-[1.75] prose-p:text-foreground prose-p:my-3",
@@ -860,7 +860,7 @@ export const BlogRichEditor = React.forwardRef<
           >
             <EditorContent
               editor={editor}
-              className="blog-rich-editor min-h-[max(18rem,calc(100dvh-22rem))] overflow-y-auto sm:min-h-[max(24rem,calc(100dvh-19rem))] [&_.ProseMirror-selectednode]:ring-2 [&_.ProseMirror-selectednode]:ring-primary/50 [&_.ProseMirror-selectednode]:rounded-xl"
+              className="blog-rich-editor min-h-[max(22rem,calc(100dvh-18rem))] overflow-y-auto sm:min-h-[max(28rem,calc(100dvh-15rem))] lg:min-h-[calc(100dvh-12rem)] [&_.ProseMirror-selectednode]:ring-2 [&_.ProseMirror-selectednode]:ring-primary/50 [&_.ProseMirror-selectednode]:rounded-xl"
             />
           </div>
         </ContextMenuTrigger>

@@ -35,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -43,6 +44,7 @@ import { slugifyFromTitle } from "@/lib/blog-slug";
 import { BlogRichEditor, type BlogRichEditorHandle } from "./blog-rich-editor";
 import { BlogAssetUploadContext } from "./blog-upload-context";
 import { BlogCategoryCombobox } from "./blog-category-combobox";
+import { cn } from "@/lib/utils";
 import {
   Loader2,
   ArrowLeft,
@@ -60,6 +62,7 @@ import {
   FileCode2,
   Undo2,
   Redo2,
+  Search,
 } from "lucide-react";
 
 type AllowComponent = { name: string; props: Record<string, { type: string; required?: boolean }> };
@@ -118,6 +121,16 @@ export function BlogEditor(props: {
   const [imageAltDraft, setImageAltDraft] = React.useState("Image");
 
   const markDirty = React.useCallback(() => setDirty(true), []);
+
+  const metaDescLen = seoDescription.length;
+  const metaDescHint =
+    metaDescLen === 0
+      ? "neutral"
+      : metaDescLen <= 160
+        ? metaDescLen >= 120
+          ? "good"
+          : "short"
+        : "long";
 
   const uploadBlogAsset = React.useCallback(
     async (file: File) => {
@@ -475,9 +488,9 @@ export function BlogEditor(props: {
             <Skeleton className="h-4 w-28" />
           </div>
         </div>
-        <div className="mx-auto w-full max-w-7xl flex-1 space-y-6 p-4 md:p-8">
-          <Skeleton className="h-40 w-full rounded-2xl" />
-          <Skeleton className="min-h-[max(24rem,calc(100dvh-19rem))] w-full rounded-2xl" />
+        <div className="mx-auto grid w-full max-w-[1600px] flex-1 gap-6 p-4 md:p-8 lg:grid-cols-[minmax(300px,400px)_1fr] lg:gap-8">
+          <Skeleton className="h-[28rem] w-full rounded-2xl lg:h-auto lg:min-h-[24rem]" />
+          <Skeleton className="min-h-[min(70vh,calc(100dvh-12rem))] w-full rounded-2xl lg:min-h-[calc(100dvh-7rem)]" />
         </div>
       </div>
     );
@@ -651,14 +664,16 @@ export function BlogEditor(props: {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.05 }}
-        className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8"
+        className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col gap-6 overflow-y-auto px-4 py-6 md:px-8 lg:grid lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] lg:items-start lg:gap-8 xl:max-w-[1800px]"
       >
-          <Card className="shrink-0 border-border/60 shadow-sm sm:rounded-2xl">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Post details</CardTitle>
-              <CardDescription>Title, URL slug, cover image, and categories</CardDescription>
+          <Card className="shrink-0 border-border/60 shadow-sm sm:rounded-2xl lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto">
+            <CardHeader className="space-y-1 pb-4">
+              <CardTitle className="text-lg">Post details</CardTitle>
+              <CardDescription className="text-pretty leading-relaxed">
+                Cover, title, categories, and how this post appears in search and link previews.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-5">
               <input
                 ref={coverInputRef}
                 type="file"
@@ -666,8 +681,9 @@ export function BlogEditor(props: {
                 className="hidden"
                 onChange={(e) => void onCoverFile(e)}
               />
-              <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 p-4">
-                <p className="text-xs font-medium text-muted-foreground">Cover image (required to publish)</p>
+              <div className="rounded-xl border border-dashed border-border/60 bg-gradient-to-b from-muted/20 to-muted/5 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cover image</p>
+                <p className="mt-1 text-xs text-muted-foreground">Required before you can publish.</p>
                 <div className="mt-3 flex flex-wrap items-center gap-4">
                   <Button type="button" variant="outline" size="sm" onClick={() => coverInputRef.current?.click()}>
                     <ImagePlus className="mr-2 h-4 w-4" />
@@ -679,7 +695,7 @@ export function BlogEditor(props: {
                       <img
                         src={dashboardBlogAssetUrlFromKey(coverKey)}
                         alt="Cover preview"
-                        className="h-24 max-w-[min(100%,20rem)] rounded-lg border object-cover shadow-sm"
+                        className="h-28 max-w-[min(100%,20rem)] rounded-lg border object-cover shadow-sm ring-1 ring-border/40"
                       />
                       <Button
                         type="button"
@@ -708,14 +724,16 @@ export function BlogEditor(props: {
                     setTitle(e.target.value);
                     markDirty();
                   }}
+                  className="text-base"
+                  placeholder="Post title"
                 />
               </div>
               <div className="space-y-2">
                 <Label>URL slug</Label>
                 <p className="text-xs text-muted-foreground">
-                  Generated from the title automatically. Changing the title updates the slug (save to apply).
+                  Generated from the title. Save to apply on the live site.
                 </p>
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 font-mono text-sm">
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 font-mono text-sm">
                   <span className="min-w-0 break-all text-foreground">{slug || "…"}</span>
                 </div>
               </div>
@@ -730,16 +748,82 @@ export function BlogEditor(props: {
                   suggestions={categorySuggestions}
                 />
               </div>
+
+              <Separator className="bg-border/80" />
+
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/40 text-muted-foreground">
+                    <Search className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-sm font-semibold leading-none">Search &amp; social</p>
+                    <p className="text-xs text-muted-foreground">
+                      Optional overrides for Google and when this link is shared.
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="seo_title">Search title</Label>
+                  <Input
+                    id="seo_title"
+                    value={seoTitle}
+                    onChange={(e) => {
+                      setSeoTitle(e.target.value);
+                      markDirty();
+                    }}
+                    placeholder={title.trim() || "Same as post title"}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Leave blank to use the post title. Aim for clear, specific wording (~50–60 characters).
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-end justify-between gap-2">
+                    <Label htmlFor="seo_description" className="leading-snug">
+                      Meta description
+                    </Label>
+                    <span
+                      className={cn(
+                        "shrink-0 text-[11px] tabular-nums",
+                        metaDescHint === "good" && "font-medium text-emerald-600 dark:text-emerald-500",
+                        metaDescHint === "short" && "text-muted-foreground",
+                        metaDescHint === "long" && "font-medium text-amber-600 dark:text-amber-500",
+                        metaDescHint === "neutral" && "text-muted-foreground"
+                      )}
+                      aria-live="polite"
+                    >
+                      {metaDescLen} / 160
+                    </span>
+                  </div>
+                  <Textarea
+                    id="seo_description"
+                    rows={4}
+                    value={seoDescription}
+                    onChange={(e) => {
+                      setSeoDescription(e.target.value);
+                      markDirty();
+                    }}
+                    placeholder="One or two sentences: what readers get from this post."
+                    className="min-h-[5.5rem] resize-y text-sm leading-relaxed"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {metaDescHint === "long"
+                      ? "Consider shortening — search results often truncate around 160 characters."
+                      : "Roughly 120–160 characters usually fits search result snippets."}
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/80 shadow-md sm:rounded-2xl">
-            <CardHeader className="shrink-0 space-y-0 pb-3">
+          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/80 shadow-md sm:rounded-2xl min-h-[min(62vh,calc(100dvh-11rem))] lg:min-h-[calc(100dvh-7rem)]">
+            <CardHeader className="shrink-0 space-y-0 border-b border-border/40 bg-muted/10 pb-4 pt-5 sm:px-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle className="text-lg">Content</CardTitle>
-                  <CardDescription>
-                    What you see is what you get — select text and use the toolbar (like Word). Drafts save automatically.
+                <div className="space-y-1">
+                  <CardTitle className="text-xl tracking-tight">Content</CardTitle>
+                  <CardDescription className="max-w-2xl text-pretty">
+                    Write in the visual editor or switch to Markdown for custom blocks. Drafts save automatically.
                   </CardDescription>
                 </div>
                 {useAdvancedMarkdown ? (
@@ -773,7 +857,7 @@ export function BlogEditor(props: {
                 )}
               </div>
             </CardHeader>
-            <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4 pt-0 sm:p-6 sm:pt-0">
+            <CardContent className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4 pt-4 sm:p-6 sm:pt-5">
               <input ref={inlineImageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void onInlineImage(e)} />
 
               <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/50 bg-muted/30 p-2">
@@ -822,7 +906,7 @@ export function BlogEditor(props: {
                     ref={advancedTextareaRef}
                     spellCheck
                     rows={24}
-                    className="min-h-[max(24rem,calc(100dvh-19rem))] w-full resize-y font-mono text-sm leading-relaxed"
+                    className="min-h-[max(32rem,calc(100dvh-14rem))] w-full resize-y font-mono text-sm leading-relaxed lg:min-h-[calc(100dvh-12rem)]"
                     value={content}
                     onChange={(e) => {
                       setContent(e.target.value);
@@ -846,40 +930,6 @@ export function BlogEditor(props: {
                   />
                 </BlogAssetUploadContext.Provider>
               )}
-            </CardContent>
-          </Card>
-
-          <Card className="shrink-0 border-border/60 bg-muted/15 shadow-sm sm:rounded-2xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Search appearance</CardTitle>
-              <CardDescription>Optional — how this post may look in Google and social shares</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="seo_title">Title override</Label>
-                <Input
-                  id="seo_title"
-                  value={seoTitle}
-                  onChange={(e) => {
-                    setSeoTitle(e.target.value);
-                    markDirty();
-                  }}
-                  placeholder="Defaults to post title"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="seo_description">Meta description</Label>
-                <Textarea
-                  id="seo_description"
-                  rows={3}
-                  value={seoDescription}
-                  onChange={(e) => {
-                    setSeoDescription(e.target.value);
-                    markDirty();
-                  }}
-                  placeholder="Short description for search results"
-                />
-              </div>
             </CardContent>
           </Card>
       </motion.div>
