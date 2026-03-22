@@ -1,5 +1,6 @@
 import { prisma } from "./prisma.js";
 import { checkDomainDkim, checkDomainDmarc, checkDomainMx, checkDomainSpf } from "./email-dns.js";
+import { isEmailSystemEnabled } from "./email-system.js";
 
 export interface EmailDnsVerificationResult {
   checked: number;
@@ -8,6 +9,9 @@ export interface EmailDnsVerificationResult {
 }
 
 export async function runEmailDnsVerification(): Promise<EmailDnsVerificationResult> {
+  if (!isEmailSystemEnabled()) {
+    return { checked: 0, disabled: 0, errors: [] };
+  }
   const orgs = await prisma.organization.findMany({
     where: { emails_enabled: true, email_domain_id: { not: null } },
     select: {

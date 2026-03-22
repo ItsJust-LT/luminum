@@ -41,6 +41,7 @@ import {
   ExternalLink,
   Server,
   FileText as LogsIcon,
+  Terminal,
 } from "lucide-react"
 
 interface AdminSidebarProps {
@@ -83,6 +84,7 @@ export function AdminSidebar({
     { title: "Server Monitoring", href: "/admin/monitoring", icon: Server },
     { title: "System Logs", href: "/admin/logs", icon: LogsIcon },
     { title: "Database", href: "/admin/database", icon: Database },
+    { title: "Environment", href: "/admin/environment", icon: Terminal },
   ]
 
   const managementItems = [

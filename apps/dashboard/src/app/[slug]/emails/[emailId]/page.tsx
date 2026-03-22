@@ -34,7 +34,7 @@ export default function EmailDetailPage() {
   const emailId = params.emailId as string
   const router = useRouter()
   const [state, setState] = useState<{
-    status: "loading" | "error" | "redirect" | "ready"
+    status: "loading" | "error" | "redirect" | "ready" | "unavailable"
     error?: string
     email?: any
   }>({ status: "loading" })
@@ -46,9 +46,23 @@ export default function EmailDetailPage() {
 
     async function load() {
       try {
-        const result = await api.emails.getById(emailId) as { success?: boolean; data?: any; error?: string }
+        const result = await api.emails.getById(emailId) as {
+          success?: boolean
+          data?: any
+          error?: string
+          emailSystemUnavailable?: boolean
+        }
         if (cancelled) return
         if (!result.success || !result.data) {
+          if (result.emailSystemUnavailable) {
+            setState({
+              status: "unavailable",
+              error:
+                result.error ||
+                "Email is not available at this time. Please try again later or contact support if you need assistance.",
+            })
+            return
+          }
           setState({ status: "error", error: result.error || "Email not found" })
           return
         }
@@ -100,6 +114,31 @@ export default function EmailDetailPage() {
     load()
     return () => { cancelled = true }
   }, [emailId, slug, router])
+
+  if (state.status === "unavailable") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="border-b bg-background/95 backdrop-blur">
+          <div className="rounded-b-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 px-4 py-3">
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/${slug}/dashboard`} className="flex items-center gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                Back to Dashboard
+              </Link>
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center space-y-4 max-w-md">
+            <div className="rounded-full bg-muted/50 p-4 w-fit mx-auto">
+              <Mail className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <p className="text-lg font-semibold text-foreground">{state.error}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (state.status === "loading" || state.status === "redirect") {
     return (

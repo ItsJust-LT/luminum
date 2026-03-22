@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
@@ -50,7 +51,11 @@ func main() {
 	}
 	smtpSrv := smtp.NewServer(backend)
 	smtpSrv.Addr = ":" + portSMTP
-	smtpSrv.Domain = "localhost"
+	if helo := os.Getenv("MAIL_SMTP_DOMAIN"); helo != "" {
+		smtpSrv.Domain = helo
+	} else {
+		smtpSrv.Domain = "localhost"
+	}
 	smtpSrv.ReadTimeout = 60 * time.Second
 	smtpSrv.WriteTimeout = 60 * time.Second
 	smtpSrv.AllowInsecureAuth = true
@@ -73,9 +78,24 @@ func main() {
 	}
 	mux.HandleFunc("POST /send", sendHandler.ServeHTTP)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		inboundIP := os.Getenv("MAIL_SEND_IP")
+		if inboundIP == "" {
+			inboundIP = os.Getenv("MAIL_INBOUND_IPV4")
+		}
+		dkimOn := os.Getenv("MAIL_DKIM_PRIVATE_KEY") != ""
+		payload := map[string]any{
+			"status":             "ok",
+			"service":            serviceName,
+			"smtpListen":         ":" + portSMTP,
+			"httpListen":         ":" + portHTTP,
+			"dkimSigningEnabled": dkimOn,
+		}
+		if inboundIP != "" {
+			payload["inboundPublicIpv4"] = inboundIP
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok","service":"luminum-mail"}`))
+		_ = json.NewEncoder(w).Encode(payload)
 	})
 	httpSrv := &http.Server{
 		Addr:         ":" + portHTTP,

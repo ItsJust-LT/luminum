@@ -67,6 +67,9 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
       MAIL_APP_URL: ${MAIL_APP_URL:-http://mail:8025}
+      # Server public IPv4 — SPF/A-record hints in dashboard; set in .env on the host
+      MAIL_SEND_IP: ${MAIL_SEND_IP:-}
+      EMAIL_SYSTEM_ENABLED: ${EMAIL_SYSTEM_ENABLED:-true}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       PAYSTACK_SECRET: ${PAYSTACK_SECRET:-}
       S3_ENDPOINT: http://minio:9000
@@ -138,6 +141,8 @@ services:
       API_URL: http://api:4000
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
       MAIL_FROM_DEFAULT: ${MAIL_FROM_DEFAULT:-}
+      # Same public IP as API MAIL_SEND_IP — shown on GET /health for operators
+      MAIL_SEND_IP: ${MAIL_SEND_IP:-}
       PORT_HTTP: 8025
       PORT_SMTP: 25
     env_file: .env

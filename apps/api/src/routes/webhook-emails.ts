@@ -6,6 +6,7 @@ import { upload } from "../lib/storage/s3.js";
 import { emailAttachmentKey, orgAttachmentsEmailsKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import crypto from "crypto";
+import { isEmailSystemEnabled } from "../lib/email-system.js";
 
 const router = Router();
 
@@ -49,6 +50,9 @@ router.get("/", (_req: Request, res: Response) => {
 });
 
 router.post("/", async (req: Request, res: Response) => {
+  if (!isEmailSystemEnabled()) {
+    return res.status(200).json({ ok: false, accepted: false, reason: "email_system_disabled" });
+  }
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || "";
   const startTime = Date.now();
   const requestId = `webhook-${Date.now()}-${Math.random().toString(36).substring(7)}`;

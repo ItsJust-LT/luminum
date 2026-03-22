@@ -3,6 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import Link from "next/link"
 import { 
   Settings, 
   Shield, 
@@ -14,7 +15,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Crown,
-  Info
+  Info,
+  Terminal,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
@@ -228,24 +230,30 @@ export default function AdminSettingsPage() {
               Email Configuration
             </CardTitle>
             <CardDescription>
-              Email service configuration and status
+              Auth and transactional email (Resend, etc.) and organization inbox are configured via server environment.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="p-4 bg-muted/50 rounded-lg">
-              <h4 className="font-semibold mb-2">Email Service</h4>
-              <p className="text-sm text-muted-foreground">
-                Email notifications are handled by external email service providers
+              <h4 className="font-semibold mb-2">Runtime environment</h4>
+              <p className="text-sm text-muted-foreground mb-3">
+                View masked secrets and deployment-related variables (read-only). Values come from the API process
+                environment (e.g. server .env produced from GitHub Actions).
               </p>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/admin/environment" className="inline-flex items-center gap-2">
+                  <Terminal className="h-4 w-4" />
+                  Open Environment
+                </Link>
+              </Button>
             </div>
             
             <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
-              <h4 className="font-semibold mb-2 text-blue-700 dark:text-blue-300">Available Features</h4>
+              <h4 className="font-semibold mb-2 text-blue-700 dark:text-blue-300">Typical features</h4>
               <ul className="text-sm text-blue-600 dark:text-blue-400 space-y-1">
-                <li>• User invitation emails</li>
-                <li>• Organization invitation emails</li>
-                <li>• Password reset emails</li>
-                <li>• Email verification</li>
+                <li>• User and organization invitations</li>
+                <li>• Password reset and email verification</li>
+                <li>• Organization email inbox (when enabled)</li>
               </ul>
             </div>
           </CardContent>

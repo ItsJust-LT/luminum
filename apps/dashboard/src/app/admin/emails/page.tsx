@@ -30,6 +30,8 @@ import { formatNumber, formatDate } from "@/lib/utils"
 import { api } from "@/lib/api"
 
 export default function AdminEmailsPage() {
+  const [mailSystemEnabled, setMailSystemEnabled] = useState<boolean | null>(null)
+  const [mailSystemMessage, setMailSystemMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [emails, setEmails] = useState<any[]>([])
@@ -45,6 +47,16 @@ export default function AdminEmailsPage() {
     setLoading(true)
     setError(null)
     try {
+      const statusRes = (await api.admin.getEmailSystemStatus()) as {
+        success?: boolean
+        enabled?: boolean
+        message?: string
+      }
+      if (statusRes.success) {
+        setMailSystemEnabled(!!statusRes.enabled)
+        setMailSystemMessage(statusRes.message || null)
+      }
+
       const params: any = { limit, offset }
       if (directionFilter !== "all") params.direction = directionFilter
       if (readFilter === "unread") params.read = false
@@ -77,6 +89,20 @@ export default function AdminEmailsPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6 max-w-7xl mx-auto">
+      {mailSystemEnabled === false && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="pt-6 flex flex-col sm:flex-row sm:items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+            <div className="space-y-1 text-sm">
+              <p className="font-semibold text-destructive">Platform email is disabled</p>
+              <p className="text-muted-foreground">
+                {mailSystemMessage ||
+                  "EMAIL_SYSTEM_ENABLED is false on the API server. Inbound webhooks and sending are rejected. Users see a generic unavailable message. See Admin → Environment for variables."}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

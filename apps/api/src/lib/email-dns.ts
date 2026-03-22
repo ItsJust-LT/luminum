@@ -1,59 +1,44 @@
 import dns from "dns/promises";
 
 const MAIL_MX_HOST = (process.env.MAIL_MX_HOST || "").toLowerCase().replace(/\.$/, "");
-const MAIL_MX_DOMAIN = (process.env.MAIL_MX_DOMAIN || "").toLowerCase().replace(/\.$/, "");
 const MAIL_SEND_HOST_RAW = (process.env.MAIL_SEND_HOST || "").toLowerCase().replace(/\.$/, "");
-const MAIL_SEND_IP = process.env.MAIL_SEND_IP || "";
+const MAIL_SEND_IP = (process.env.MAIL_SEND_IP || "").trim();
 const MAIL_DKIM_SELECTOR = (process.env.MAIL_DKIM_SELECTOR || "default").toLowerCase().replace(/\.$/, "");
-
-const MX_CACHE_MS = 5 * 60 * 1000;
-let cachedMxHost: string | null = null;
-let cachedMxAt = 0;
 
 function domainFromMailFrom(defaultFrom: string): string {
   const match = defaultFrom.match(/@([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,})/);
   return match ? match[1].toLowerCase() : "";
 }
 
-/** Resolve expected MX host: from MAIL_MX_HOST, or by looking up MX for MAIL_MX_DOMAIN (or domain from MAIL_FROM_DEFAULT). */
-export async function getExpectedMxHost(): Promise<string> {
+/**
+ * Hostname that should appear in the customer's MX record (where inbound SMTP is delivered).
+ * Never inferred from live DNS (that mirrored registrar forwarding and broke self-hosted setups).
+ *
+ * - If MAIL_MX_HOST is set (single-tenant / operator override), use it for all orgs.
+ * - Otherwise use mail.<emailDomain> for the org's chosen email domain.
+ */
+export function getPrescribedInboundMxHost(emailDomain: string): string {
+  const d = emailDomain.toLowerCase().trim().replace(/\.$/, "");
+  if (!d) return MAIL_MX_HOST || "";
   if (MAIL_MX_HOST) return MAIL_MX_HOST;
-  const domain = MAIL_MX_DOMAIN || domainFromMailFrom(process.env.MAIL_FROM_DEFAULT || "noreply@luminum.agency");
-  if (!domain) return "";
-  if (cachedMxHost !== null && Date.now() - cachedMxAt < MX_CACHE_MS) return cachedMxHost;
-  try {
-    const records = await dns.resolveMx(domain);
-    const sorted = (records || []).slice().sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-    const first = sorted[0]?.exchange;
-    if (first) {
-      cachedMxHost = first.toLowerCase().replace(/\.$/, "");
-      cachedMxAt = Date.now();
-      return cachedMxHost;
-    }
-  } catch {
-    // ignore
-  }
-  // No MX yet for domain (e.g. initial setup): suggest common convention so UI can show a target
-  return `mail.${domain}`;
+  return `mail.${d}`;
 }
 
-/** Suggested SPF TXT value. Prefer MAIL_SEND_HOST / MAIL_MX_HOST so the suggestion matches your mail server; only use domain's MX when env is not set. */
-export async function getExpectedSpfRecord(domain?: string): Promise<string> {
-  const ip = MAIL_SEND_IP;
-  if (ip) return `v=spf1 ip4:${ip} -all`;
-  let host = MAIL_SEND_HOST_RAW || MAIL_MX_HOST;
-  if (!host && domain) {
-    try {
-      const records = await dns.resolveMx(domain);
-      const first = (records || []).slice().sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0]?.exchange;
-      if (first) host = first.toLowerCase().replace(/\.$/, "");
-    } catch {
-      // ignore
-    }
-  }
-  if (!host) host = (await getExpectedMxHost()) || "";
-  if (host) return `v=spf1 include:${host} -all`;
-  return "v=spf1 -all";
+/**
+ * SPF TXT we ask users to add. Prefer ip4 when MAIL_SEND_IP is set; otherwise a:/mx for the inbound host.
+ */
+export function getExpectedSpfRecordForDomain(emailDomain: string): string {
+  if (MAIL_SEND_IP) return `v=spf1 ip4:${MAIL_SEND_IP} -all`;
+  const mxHost = getPrescribedInboundMxHost(emailDomain);
+  const host = MAIL_SEND_HOST_RAW || mxHost;
+  return `v=spf1 a:${host} mx -all`;
+}
+
+/** @deprecated Prefer getPrescribedInboundMxHost(domain) with the org email domain. */
+export async function getExpectedMxHost(): Promise<string> {
+  const fallback = domainFromMailFrom(process.env.MAIL_FROM_DEFAULT || "noreply@luminum.agency");
+  if (!fallback) return MAIL_MX_HOST || "";
+  return getPrescribedInboundMxHost(fallback);
 }
 
 /** DKIM TXT record name (selector._domainkey.domain) and selector for setup instructions. */
@@ -79,9 +64,9 @@ export interface MxCheckResult {
 }
 
 export async function checkDomainMx(domain: string): Promise<MxCheckResult> {
-  const expected = await getExpectedMxHost();
+  const expected = getPrescribedInboundMxHost(domain);
   if (!expected) {
-    return { ok: false, expectedHost: "", actualHosts: [], error: "MAIL_MX_HOST or MAIL_MX_DOMAIN (or MAIL_FROM_DEFAULT domain) not configured" };
+    return { ok: false, expectedHost: "", actualHosts: [], error: "Could not determine inbound mail hostname for this domain" };
   }
   try {
     const records = await dns.resolveMx(domain);
@@ -111,7 +96,8 @@ export interface SpfCheckResult {
 }
 
 export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
-  const expectedHost = MAIL_SEND_HOST_RAW || (await getExpectedMxHost()) || MAIL_MX_HOST;
+  const mxHost = getPrescribedInboundMxHost(domain);
+  const expectedHost = MAIL_SEND_HOST_RAW || MAIL_MX_HOST || mxHost;
   const expectedIp = MAIL_SEND_IP;
   let actualMxHosts: string[] = [];
   try {
@@ -155,7 +141,6 @@ export interface DkimCheckResult {
 
 export async function checkDomainDkim(domain: string): Promise<DkimCheckResult> {
   if (!MAIL_DKIM_SELECTOR) {
-    // DKIM selector not configured; treat as "not enforced"
     return { ok: true, selector: "", record: undefined };
   }
   const name = `${MAIL_DKIM_SELECTOR}._domainkey.${domain}`;

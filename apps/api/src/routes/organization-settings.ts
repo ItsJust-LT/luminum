@@ -5,6 +5,7 @@ import { getMemberOrAdmin } from "../lib/access.js";
 import * as s3 from "../lib/storage/s3.js";
 import { orgImagesKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
+import { isEmailSystemEnabled } from "../lib/email-system.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -13,8 +14,14 @@ router.use(requireAuth);
 router.get("/emails-enabled", async (req: Request, res: Response) => {
   try {
     const org = await prisma.organization.findUnique({ where: { id: req.query.organizationId as string }, select: { emails_enabled: true } });
-    res.json({ enabled: org?.emails_enabled || false });
-  } catch { res.json({ enabled: false }); }
+    const sys = isEmailSystemEnabled();
+    res.json({
+      enabled: sys && (org?.emails_enabled || false),
+      systemEmailAvailable: sys,
+    });
+  } catch {
+    res.json({ enabled: false, systemEmailAvailable: false });
+  }
 });
 
 // GET /api/organization-settings/whatsapp-enabled?organizationId=...

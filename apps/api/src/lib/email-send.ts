@@ -1,4 +1,5 @@
 import { prisma } from "./prisma.js";
+import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "./email-system.js";
 
 const MAIL_APP_URL = (process.env.MAIL_APP_URL || "").replace(/\/$/, "");
 const MAIL_APP_SECRET = process.env.MAIL_APP_SECRET || "";
@@ -42,6 +43,9 @@ export interface SendViaMailAppPayload {
 }
 
 export async function sendViaMailApp(payload: SendViaMailAppPayload): Promise<{ messageId: string }> {
+  if (!isEmailSystemEnabled()) {
+    throw new Error(EMAIL_SYSTEM_UNAVAILABLE_MESSAGE);
+  }
   if (!MAIL_APP_URL) {
     throw new Error("MAIL_APP_URL not configured");
   }

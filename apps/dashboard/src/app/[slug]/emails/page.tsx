@@ -297,6 +297,28 @@ export default function EmailsPage() {
     )
   }
 
+  if (setupStatus.emailSystemUnavailable) {
+    return (
+      <AppPageContainer fullWidth>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Card className="app-card w-full max-w-md border border-border">
+            <CardContent className="pt-6 px-6 pb-6 text-center">
+              <Mail className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">Email unavailable</h3>
+              <p className="text-muted-foreground mb-4">
+                {setupStatus.error ||
+                  "Email is not available at this time. Please try again later or contact support if you need assistance."}
+              </p>
+              <Button onClick={() => router.push(`/${organization.slug}/dashboard`)} variant="outline" className="w-full">
+                Back to Dashboard
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppPageContainer>
+    )
+  }
+
   // Route guard: emails feature not enabled (direct URL access blocked)
   if (setupStatus.access === false) {
     return (
@@ -428,19 +450,16 @@ export default function EmailsPage() {
                 <p className="text-muted-foreground">
                   Your domain <strong>{setupStatus.domain}</strong> is set. Add the DNS records below at your DNS provider, then click Verify DNS.
                 </p>
-                {!setupStatus?.dnsRecords && !setupStatus?.expectedMxHost && (
-                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-                    <p className="font-medium">DNS targets not configured</p>
-                    <p className="mt-1 text-muted-foreground">
-                      An administrator needs to set <code className="bg-muted px-1 rounded">MAIL_MX_HOST</code> (or <code className="bg-muted px-1 rounded">MAIL_MX_DOMAIN</code>) in the API server environment so we can show the correct records.
-                    </p>
-                  </div>
+                {setupStatus?.setupNotes && setupStatus.setupNotes.length > 0 && (
+                  <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
+                    {setupStatus.setupNotes.map((note, i) => (
+                      <li key={i}>{note}</li>
+                    ))}
+                  </ul>
                 )}
                 {setupStatus?.lastError && (
                   <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-                    {setupStatus.lastError.includes("not configured")
-                      ? "Cannot verify DNS until the server has MAIL_MX_HOST or MAIL_MX_DOMAIN set. See the note above."
-                      : setupStatus.lastError}
+                    {setupStatus.lastError}
                   </div>
                 )}
                 {setupStatus?.dnsRecords && (
@@ -452,6 +471,15 @@ export default function EmailsPage() {
                         <p className="text-xs text-muted-foreground">Type: MX · Name: @ (or {setupStatus.dnsRecords.mx.name}) · Priority: {setupStatus.dnsRecords.mx.priority}</p>
                         <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.mx.value}</code>
                       </div>
+                      {setupStatus.dnsRecords.mailHostA && (
+                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">A — Mail host ({setupStatus.dnsRecords.mailHostA.fqdn})</p>
+                          <p className="text-xs text-muted-foreground">
+                            Type: A · Name: <strong>{setupStatus.dnsRecords.mailHostA.name}</strong> (under zone {setupStatus.domain})
+                          </p>
+                          <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.mailHostA.value}</code>
+                        </div>
+                      )}
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF — Sender policy</p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: @ (or {setupStatus.dnsRecords.spf.name})</p>
@@ -460,6 +488,9 @@ export default function EmailsPage() {
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Signing (selector: {setupStatus.dnsRecords.dkim.selector})</p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dkim.name}</p>
+                        {setupStatus.dnsRecords.dkim.value && (
+                          <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dkim.value}</code>
+                        )}
                         <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.dkim.valueNote}</p>
                       </div>
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">

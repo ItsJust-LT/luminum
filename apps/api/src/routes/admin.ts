@@ -8,6 +8,8 @@ import { notifyAdminsOrganizationCreated } from "../lib/notifications/helpers.js
 import { computeAuditAdminStats } from "../site-audit/admin-stats.js";
 import { sendOwnerInvitationEmail, sendInvitationEmail } from "../lib/email.js";
 import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
+import { getAdminSystemEnvironmentSnapshot } from "../lib/system-environment.js";
+import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -227,9 +229,38 @@ router.post("/check-email-dns", adminOnly, async (req: Request, res: Response) =
   }
 });
 
+// GET /api/admin/system-environment — read-only env snapshot (secrets masked) for operators
+router.get("/system-environment", adminOnly, async (_req: Request, res: Response) => {
+  try {
+    const { entries, sourceNote } = getAdminSystemEnvironmentSnapshot();
+    res.json({ success: true, entries, sourceNote });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message ?? "Failed" });
+  }
+});
+
+// GET /api/admin/email-system-status — platform email feature flag
+router.get("/email-system-status", adminOnly, async (_req: Request, res: Response) => {
+  const enabled = isEmailSystemEnabled();
+  res.json({
+    success: true,
+    enabled,
+    message: enabled
+      ? "Organization email (inbox / send) is enabled when EMAIL_SYSTEM_ENABLED is not set to false."
+      : `Platform email is disabled (EMAIL_SYSTEM_ENABLED=false). Inbound webhooks and send are rejected. ${EMAIL_SYSTEM_UNAVAILABLE_MESSAGE}`,
+  });
+});
+
 // POST /api/admin/enable-organization-email-access — enable emails feature for org (access only; org does domain/DNS setup in dashboard).
 router.post("/enable-organization-email-access", adminOnly, async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Platform email is disabled (EMAIL_SYSTEM_ENABLED). Enable it in the server environment before granting org access.",
+      });
+    }
     const { organizationId } = req.body as { organizationId: string };
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     await prisma.organization.update({
@@ -245,6 +276,13 @@ router.post("/enable-organization-email-access", adminOnly, async (req: Request,
 // POST /api/admin/enable-organization-email — full enable with domain and MX verification (optional; use enable-organization-email-access for access-only).
 router.post("/enable-organization-email", adminOnly, async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Platform email is disabled (EMAIL_SYSTEM_ENABLED). Enable it in the server environment before enabling email for organizations.",
+      });
+    }
     const { organizationId, websiteId, email_from_address } = req.body as { organizationId: string; websiteId?: string; email_from_address?: string };
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     if (!websiteId) {

@@ -44,6 +44,7 @@ import {
   Server,
   FileText as LogsIcon,
   Database,
+  Terminal,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import NotificationBell from "@/components/NotificationBell"
@@ -124,6 +125,7 @@ export default function AdminLayout({
     { title: "Server Monitoring", icon: Server, href: "/admin/monitoring" },
     { title: "System Logs", icon: LogsIcon, href: "/admin/logs" },
     { title: "Database", icon: Database, href: "/admin/database" },
+    { title: "Environment", icon: Terminal, href: "/admin/environment" },
     { title: "Settings", icon: Settings, href: "/admin/settings" },
   ]
 

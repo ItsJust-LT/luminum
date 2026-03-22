@@ -7,16 +7,35 @@ import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
 import {
-  getExpectedMxHost,
-  getExpectedSpfRecord,
+  getPrescribedInboundMxHost,
+  getExpectedSpfRecordForDomain,
   getDkimRecordName,
   getExpectedDmarcRecord,
 } from "../lib/email-dns.js";
 import { getOrgReplyAddress, sendViaMailApp } from "../lib/email-send.js";
 import { logger } from "../lib/logger.js";
+import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
+
+const MAIL_DKIM_DNS_VALUE = (process.env.MAIL_DKIM_DNS_VALUE || "").trim();
 
 const router = Router();
 router.use(requireAuth);
+
+function jsonEmailSystemDisabled(res: Response) {
+  return res.json({ success: false, emailSystemUnavailable: true, error: EMAIL_SYSTEM_UNAVAILABLE_MESSAGE });
+}
+
+function jsonEmailSystemDisabledList(res: Response) {
+  return res.json({
+    success: false,
+    emailSystemUnavailable: true,
+    error: EMAIL_SYSTEM_UNAVAILABLE_MESSAGE,
+    data: {
+      emails: [],
+      pagination: { page: 1, limit: 50, total: 0, unreadCount: 0, totalPages: 0, hasMore: false },
+    },
+  });
+}
 
 function extractEmailAddress(emailString: string): string {
   const match = emailString.match(/<([^>]+)>/);
@@ -33,15 +52,21 @@ router.get("/enabled", async (req: Request, res: Response) => {
   try {
     const organizationId = queryParam(req, "organizationId");
     const org = await prisma.organization.findUnique({ where: { id: organizationId! }, select: { emails_enabled: true } });
-    res.json({ success: true, enabled: org?.emails_enabled || false });
+    const sys = isEmailSystemEnabled();
+    res.json({
+      success: true,
+      enabled: sys && (org?.emails_enabled || false),
+      systemEmailAvailable: sys,
+    });
   } catch (error: any) {
-    res.json({ success: false, enabled: false, error: error.message });
+    res.json({ success: false, enabled: false, systemEmailAvailable: false, error: error.message });
   }
 });
 
 // GET /api/emails/addresses?organizationId=...
 router.get("/addresses", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const organizationId = req.query.organizationId as string;
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
@@ -71,6 +96,7 @@ router.get("/addresses", async (req: Request, res: Response) => {
 // GET /api/emails/unread-count?organizationId=...
 router.get("/unread-count", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const organizationId = queryParam(req, "organizationId");
     if (!(await canAccessOrganization(organizationId!, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const count = await prisma.email.count({ where: { organization_id: organizationId!, read: false } });
@@ -83,6 +109,15 @@ router.get("/unread-count", async (req: Request, res: Response) => {
 // GET /api/emails/setup-status?organizationId=...
 router.get("/setup-status", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) {
+      return res.json({
+        success: true,
+        access: false,
+        setupComplete: false,
+        emailSystemUnavailable: true,
+        error: EMAIL_SYSTEM_UNAVAILABLE_MESSAGE,
+      });
+    }
     const organizationId = queryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
@@ -103,32 +138,58 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const hasDomain = !!org.email_domain_id && !!org.email_domain;
     const setupComplete = access && hasDomain && !!org.email_dns_verified_at && !org.email_dns_last_error;
     const domain = org.email_domain?.domain ?? "";
-    const [expectedMxHost, expectedSpfRecord] = await Promise.all([
-      getExpectedMxHost(),
-      getExpectedSpfRecord(domain || undefined),
-    ]);
+    const expectedMxHost = domain ? getPrescribedInboundMxHost(domain) : "";
+    const expectedSpfRecord = domain ? getExpectedSpfRecordForDomain(domain) : "";
     const dkimInfo = domain ? getDkimRecordName(domain) : null;
     const expectedDmarcRecord = domain ? getExpectedDmarcRecord(domain) : "";
     const dmarcRecordName = domain ? `_dmarc.${domain}` : "";
+
+    const mailSendIp = (process.env.MAIL_SEND_IP || "").trim();
+    let mailHostA: {
+      type: "A";
+      name: string;
+      fqdn: string;
+      value: string;
+    } | undefined;
+    if (domain && mailSendIp && expectedMxHost) {
+      const d = domain.toLowerCase().replace(/\.$/, "");
+      const suffix = `.${d}`;
+      const fqdn = expectedMxHost.toLowerCase().replace(/\.$/, "");
+      const relative =
+        fqdn.endsWith(suffix) && fqdn.length > suffix.length ? fqdn.slice(0, -suffix.length) : fqdn;
+      mailHostA = {
+        type: "A",
+        name: relative,
+        fqdn: expectedMxHost,
+        value: mailSendIp,
+      };
+    }
+
+    const dkimValueNote =
+      "Set MAIL_DKIM_DNS_VALUE on the API host to show the exact TXT value here, or paste the public key from your DKIM pair (private key lives in MAIL_DKIM_PRIVATE_KEY on the mail service).";
 
     const dnsRecords = domain
       ? {
           mx: {
             type: "MX" as const,
-            name: domain,
+            name: "@",
             value: expectedMxHost || "mail.yourdomain.com",
             priority: 10,
           },
+          ...(mailHostA ? { mailHostA } : {}),
           spf: {
             type: "TXT" as const,
-            name: domain,
+            name: "@",
             value: expectedSpfRecord,
           },
           dkim: {
             type: "TXT" as const,
             name: dkimInfo?.name ?? "",
             selector: dkimInfo?.selector ?? "default",
-            valueNote: "Your mail provider (e.g. Cloudflare Email Routing, Mailgun, or your server) gives you a DKIM public key. In your DNS, add the TXT record they provide. The record name is usually <selector>._domainkey.<domain> — we use selector \"default\" unless your provider uses another. The TXT value is the public key from the provider; we cannot generate it here.",
+            ...(MAIL_DKIM_DNS_VALUE ? { value: MAIL_DKIM_DNS_VALUE } : {}),
+            valueNote: MAIL_DKIM_DNS_VALUE
+              ? "Paste this TXT value at your DNS provider (from MAIL_DKIM_DNS_VALUE on the server)."
+              : dkimValueNote,
           },
           dmarc: {
             type: "TXT" as const,
@@ -136,6 +197,16 @@ router.get("/setup-status", async (req: Request, res: Response) => {
             value: expectedDmarcRecord,
           },
         }
+      : undefined;
+
+    const setupNotes = domain
+      ? [
+          "Use only the MX target below for this domain. Remove conflicting MX records (e.g. registrar forwarding or another provider).",
+          mailSendIp
+            ? `Point the A record for the mail host (${expectedMxHost}) to ${mailSendIp}. If you use Cloudflare, use DNS only (grey cloud), not proxied, so SMTP reaches your server.`
+            : "Set MAIL_SEND_IP in the API environment to the server’s public IPv4 so we can show the exact A record and SPF line.",
+          "Your host must allow inbound TCP 25 to the mail container for receiving mail.",
+        ]
       : undefined;
 
     res.json({
@@ -148,6 +219,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
       lastError: org.email_dns_last_error ?? undefined,
       emailFromAddress: org.email_from_address ?? undefined,
       dnsRecords,
+      setupNotes,
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -157,6 +229,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
 // POST /api/emails/setup-domain — set email domain (website) for org. Owner/admin or platform admin only.
 router.post("/setup-domain", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const { organizationId, websiteId } = req.body as { organizationId?: string; websiteId?: string };
     if (!organizationId || !websiteId) return res.status(400).json({ success: false, error: "organizationId and websiteId required" });
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
@@ -185,6 +258,7 @@ router.post("/setup-domain", async (req: Request, res: Response) => {
 // POST /api/emails/verify-dns — check MX for org's email domain and update verified flag if ok.
 router.post("/verify-dns", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const { organizationId } = req.body as { organizationId?: string };
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
@@ -259,6 +333,7 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
 // POST /api/emails/send
 router.post("/send", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const { organizationId, to: toInput, subject, text, html, attachments: attachmentsInput } = req.body as {
       organizationId?: string; to?: string | string[]; subject?: string; text?: string; html?: string;
       attachments?: { storageKey?: string; filename?: string; contentType?: string; contentBase64?: string }[];
@@ -305,13 +380,20 @@ router.post("/send", async (req: Request, res: Response) => {
   } catch (error: unknown) {
     const reqWithId = req as Request & { requestId?: string };
     logger.logError(error, "Emails send failed", { organizationId: (req.body as any)?.organizationId }, reqWithId.requestId);
-    res.status(400).json({ success: false, error: error instanceof Error ? error.message : "Send failed" });
+    const msg = error instanceof Error ? error.message : "Send failed";
+    const isUnavailable = msg === EMAIL_SYSTEM_UNAVAILABLE_MESSAGE;
+    res.status(400).json({
+      success: false,
+      error: isUnavailable ? EMAIL_SYSTEM_UNAVAILABLE_MESSAGE : msg,
+      ...(isUnavailable && { emailSystemUnavailable: true }),
+    });
   }
 });
 
 // GET /api/emails?organizationId=...&page=1&limit=20&read=true&search=...&from=...&emailAddresses=a,b
 router.get("/", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabledList(res);
     const organizationId = queryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     const page = parseInt(queryParam(req, "page") ?? "", 10) || 1;
@@ -387,6 +469,7 @@ router.get("/", async (req: Request, res: Response) => {
 // GET /api/emails/:id
 router.get("/:id", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
     const email = await prisma.email.findUnique({
       where: { id },
@@ -406,6 +489,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 // POST /api/emails/:id/read
 router.post("/:id/read", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
     const email = await prisma.email.findUnique({ where: { id }, select: { organization_id: true } });
     if (!email) return res.status(404).json({ success: false, error: "Email not found" });
@@ -428,6 +512,7 @@ router.post("/:id/read", async (req: Request, res: Response) => {
 // POST /api/emails/:id/unread
 router.post("/:id/unread", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
     const email = await prisma.email.findUnique({ where: { id }, select: { organization_id: true } });
     if (!email?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
@@ -445,6 +530,7 @@ router.post("/:id/unread", async (req: Request, res: Response) => {
 // POST /api/emails/:id/reply
 router.post("/:id/reply", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
     const { text, html } = req.body as { text?: string; html?: string };
     if (!text && !html) return res.status(400).json({ success: false, error: "text or html required" });
@@ -489,6 +575,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
 // DELETE /api/emails/:id
 router.delete("/:id", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
     const email = await prisma.email.findUnique({ where: { id }, include: { attachments: true } });
     if (!email?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
@@ -524,6 +611,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
 // GET /api/emails/:id/attachment/:index — returns proxy URL for the attachment (client can GET that URL with auth to stream or download)
 router.get("/:id/attachment/:index", async (req: Request, res: Response) => {
   try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
     const email = await prisma.email.findUnique({ where: { id }, include: { attachments: true } });
     if (!email?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });

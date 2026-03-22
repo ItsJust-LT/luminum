@@ -200,6 +200,8 @@ function createApiClient(baseUrl: string = "") {
   // ─── Admin ────────────────────────────────────────────────
   const admin = {
     getDashboardStats: () => get("/api/admin/dashboard-stats"),
+    getSystemEnvironment: () => get("/api/admin/system-environment"),
+    getEmailSystemStatus: () => get("/api/admin/email-system-status"),
     getOrganizations: (params?: Record<string, string>) =>
       get("/api/admin/organizations", params),
     getOrganization: (id: string) => get(`/api/admin/organizations/${id}`),
