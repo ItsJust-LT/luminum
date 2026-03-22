@@ -59,6 +59,7 @@ services:
       PORT: 4000
       CHROMIUM_PATH: /usr/bin/chromium
       APP_URL: ${APP_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       API_URL: ${API_URL:-https://api.luminum.agency}
       API_WS_URL: ${API_WS_URL}
       DATABASE_URL: postgresql://${POSTGRES_USER:-luminum}:${POSTGRES_PASSWORD:-luminum_internal}@postgres:5432/${POSTGRES_DB:-luminum}

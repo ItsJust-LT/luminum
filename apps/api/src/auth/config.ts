@@ -13,8 +13,16 @@ import {
 } from "../lib/email.js";
 import { notifyNewUserRegistration } from "../lib/notifications/helpers.js";
 
-const APP_URL = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "");
-const API_URL = (process.env.API_URL || "http://localhost:4000").replace(/\/$/, "");
+/** Match apps/api/src/config.ts: dashboard origin for CORS and trustedOrigins. */
+const APP_URL = (
+  process.env.APP_URL?.trim() ||
+  process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+  "http://localhost:3000"
+).replace(/\/$/, "");
+const API_URL = (process.env.API_URL?.trim() || process.env.API_WS_URL?.trim() || "http://localhost:4000").replace(
+  /\/$/,
+  "",
+);
 
 export const auth = betterAuth({
   baseURL: {
@@ -37,12 +45,17 @@ export const auth = betterAuth({
     },
   },
   trustedOrigins: [
-    APP_URL,
-    API_URL,
-    "http://localhost:3000",
-    "http://localhost:4000",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:4000",
+    ...new Set([
+      APP_URL,
+      API_URL,
+      ...(process.env.CORS_ORIGINS
+        ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim().replace(/\/$/, "")).filter(Boolean)
+        : []),
+      "http://localhost:3000",
+      "http://localhost:4000",
+      "http://127.0.0.1:3000",
+      "http://127.0.0.1:4000",
+    ]),
   ],
   database: prismaAdapter(prisma, {
     provider: "postgresql",

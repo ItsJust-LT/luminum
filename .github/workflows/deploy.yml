@@ -150,6 +150,7 @@ jobs:
             echo "POSTGRES_PASSWORD=$PG_PASS"
             echo "POSTGRES_DB=${{ vars.PROD_POSTGRES_DB || 'luminum' }}"
             echo "APP_URL=${{ vars.PROD_APP_URL }}"
+            echo "CORS_ORIGINS=${{ vars.PROD_CORS_ORIGINS }}"
             echo "API_URL=${{ vars.PROD_API_URL || 'https://api.luminum.agency' }}"
             echo "API_WS_URL=${{ vars.PROD_API_WS_URL }}"
             echo "NEXT_PUBLIC_APP_URL=${{ vars.PROD_DASHBOARD_NEXT_PUBLIC_APP_URL }}"
