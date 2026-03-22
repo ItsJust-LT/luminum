@@ -51,12 +51,25 @@ export async function createAndEnqueueWebsiteAudit(
     },
   });
 
-  await enqueueAudit({
+  const jobId = await enqueueAudit({
     auditId: audit.id,
     websiteId: params.websiteId,
     targetUrl,
     formFactor: factor,
   });
+  if (!jobId) {
+    await prisma.website_audit.update({
+      where: { id: audit.id },
+      data: {
+        status: "failed",
+        completed_at: new Date(),
+        error_message: "Audit queue unavailable (REDIS_URL or audit-worker).",
+      },
+    });
+    throw new Error(
+      "Site audit queue is unavailable (check REDIS_URL and that the audit-worker service is running).",
+    );
+  }
 
   return audit;
 }
