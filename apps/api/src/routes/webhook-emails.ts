@@ -68,9 +68,10 @@ router.post("/", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Timestamp too old" });
     }
 
-    // For webhook routes, we need the raw body. Since express.json() has already parsed it,
-    // we'll stringify it back for signature verification
-    const bodyText = JSON.stringify(req.body);
+    // Must verify HMAC over the exact bytes the mail service sent. Go uses json.Marshal;
+    // JSON.stringify(req.body) can reorder keys and break the signature → 401.
+    const rawBody = (req as Request & { rawBody?: string }).rawBody;
+    const bodyText = typeof rawBody === "string" && rawBody.length > 0 ? rawBody : JSON.stringify(req.body);
     if (!checkSignature(WEBHOOK_SECRET, bodyText, ts, sig)) {
       return res.status(401).json({ error: "Invalid signature" });
     }

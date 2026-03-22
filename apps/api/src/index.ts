@@ -68,7 +68,17 @@ app.use(
 app.all("/api/auth/*", toNodeHandler(auth));
 
 // ─── Body parsing ──────────────────────────────────────────────────────────
-app.use(express.json({ limit: config.bodyLimit }));
+app.use(
+  express.json({
+    limit: config.bodyLimit,
+    verify: (req, _res, buf) => {
+      const r = req as express.Request & { rawBody?: string };
+      if (r.method !== "POST") return;
+      if (!r.originalUrl?.startsWith("/api/webhook/emails")) return;
+      r.rawBody = buf.toString("utf8");
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: config.bodyLimit }));
 
 // ─── Request logging (after body, before routes) ───────────────────────────
