@@ -21,6 +21,10 @@ import {
   isRedisAvailable,
   type RedisMessage,
 } from "./redis-store.js";
+import {
+  recordWhatsAppClientEvent,
+  WhatsAppNotReadyError,
+} from "./whatsapp-client-events.js";
 
 const { Client, RemoteAuth, MessageMedia } = whatsappWeb;
 
@@ -42,6 +46,10 @@ const ALWAYS_ON_RECOVERY_COOLDOWN_MS = Math.max(
 );
 const INIT_RETRY_MAX = Math.max(1, parseInt(process.env.WHATSAPP_INIT_RETRY_MAX || "6", 10));
 const INIT_RETRY_BASE_MS = Math.max(2000, parseInt(process.env.WHATSAPP_INIT_RETRY_BASE_MS || "6000", 10));
+const WAIT_READY_MS = Math.max(15_000, parseInt(process.env.WHATSAPP_WAIT_READY_MS || "120000", 10));
+const WAIT_READY_ALWAYS_ON_MS = Math.max(WAIT_READY_MS, parseInt(process.env.WHATSAPP_ALWAYS_ON_WAIT_READY_MS || "240000", 10));
+const READY_POLL_MS = Math.max(200, parseInt(process.env.WHATSAPP_READY_POLL_MS || "400", 10));
+const ALWAYS_ON_RECONNECT_DELAY_MS = Math.max(2000, parseInt(process.env.WHATSAPP_ALWAYS_ON_RECONNECT_MS || "5000", 10));
 
 function formatUnknownError(err: unknown): { message: string; details?: string } {
   if (err instanceof Error) {
@@ -111,6 +119,8 @@ let broadcastToAdmins: BroadcastToAdminsFn = () => {};
 const clients = new Map<string, ManagedClient>();
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 const lastAlwaysOnRecoveryAttempt = new Map<string, number>();
+const lastDriftEventLogged = new Map<string, number>();
+const DRIFT_LOG_COOLDOWN_MS = 5 * 60 * 1000;
 let alwaysOnRecoveryRunning = false;
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -178,12 +188,22 @@ export async function getAccountStatus(organizationId: string) {
 }
 
 export async function startOrRestartClient(organizationId: string) {
-  if (clients.has(organizationId)) await destroyClient(organizationId);
+  if (clients.has(organizationId)) {
+    await destroyClient(organizationId, {
+      reasonCode: "CLIENT_RESTART",
+      detail: "startOrRestartClient: stopping existing runtime before starting a new WhatsApp Web session.",
+    });
+  }
   return startClientForAccount(organizationId);
 }
 
 export async function disconnectClient(organizationId: string) {
-  if (clients.has(organizationId)) await destroyClient(organizationId);
+  if (clients.has(organizationId)) {
+    await destroyClient(organizationId, {
+      reasonCode: "ADMIN_DISCONNECT",
+      detail: "disconnectClient() — operator or API requested the WhatsApp session to stop.",
+    });
+  }
   await prisma.whatsapp_account.updateMany({
     where: { organization_id: organizationId },
     data: { status: "DISCONNECTED", qr_code: null, owner_instance_id: null, lease_expires_at: null },
@@ -191,7 +211,12 @@ export async function disconnectClient(organizationId: string) {
 }
 
 export async function clearSessionData(organizationId: string): Promise<void> {
-  if (clients.has(organizationId)) await destroyClient(organizationId);
+  if (clients.has(organizationId)) {
+    await destroyClient(organizationId, {
+      reasonCode: "CLEAR_SESSION",
+      detail: "clearSessionData() — local/browser session cleared; client stopped.",
+    });
+  }
   await prisma.whatsapp_account.updateMany({
     where: { organization_id: organizationId },
     data: { status: "DISCONNECTED", qr_code: null, session_data: null, session_saved_at: null, last_error: null, retry_count: 0, next_retry_at: null, owner_instance_id: null, lease_expires_at: null },
@@ -220,8 +245,7 @@ export async function sendMessage(opts: {
     if (dup) return dup;
   }
 
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "sendMessage");
 
   const sendOpts: Record<string, unknown> = {};
   if (quotedMessageId) sendOpts.quotedMessageId = quotedMessageId;
@@ -268,8 +292,7 @@ export async function sendMediaMessage(opts: {
     if (dup) return dup;
   }
 
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "sendMediaMessage");
 
   const { mime, base64 } = parseDataUrl(dataUrl);
   const media = new MessageMedia(mime, base64, "image");
@@ -307,8 +330,7 @@ export async function forwardMessage(opts: {
   targetChatIds: string[]; // contact_ids now
 }) {
   const { organizationId, waMessageId, targetChatIds } = opts;
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "forwardMessage");
 
   const waMsg = await managed.client.getMessageById(waMessageId);
   if (!waMsg) throw new Error("WhatsApp message not found");
@@ -331,8 +353,7 @@ export async function starMessage(opts: {
   starred: boolean;
 }) {
   const { organizationId, waMessageId, starred } = opts;
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "starMessage");
 
   const waMsg = await managed.client.getMessageById(waMessageId);
   if (!waMsg) throw new Error("WhatsApp message not found");
@@ -349,8 +370,7 @@ export async function deleteMessage(opts: {
   everyone: boolean;
 }) {
   const { organizationId, waMessageId, everyone } = opts;
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "deleteMessage");
 
   const waMsg = await managed.client.getMessageById(waMessageId);
   if (!waMsg) throw new Error("WhatsApp message not found");
@@ -367,8 +387,7 @@ export async function reactToMessage(opts: {
   emoji: string;
 }) {
   const { organizationId, waMessageId, emoji } = opts;
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "reactToMessage");
 
   const waMsg = await managed.client.getMessageById(waMessageId);
   if (!waMsg) throw new Error("WhatsApp message not found");
@@ -382,8 +401,7 @@ export async function getMessageInfo(opts: {
   organizationId: string;
   waMessageId: string;
 }) {
-  const managed = await ensureClient(opts.organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(opts.organizationId, "getMessageInfo");
 
   const waMsg = await managed.client.getMessageById(opts.waMessageId);
   if (!waMsg) throw new Error("WhatsApp message not found");
@@ -399,8 +417,7 @@ export async function getMessageInfo(opts: {
 // ── Phase 2: Chat management ─────────────────────────────────────────────────
 
 export async function archiveChat(organizationId: string, contactId: string, archive: boolean) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "archiveChat");
   const waChat = await managed.client.getChatById(contactId);
   if (archive) await (waChat as any).archive(); else await (waChat as any).unarchive();
   await updateChatFields(organizationId, contactId, { is_archived: archive } as any);
@@ -408,8 +425,7 @@ export async function archiveChat(organizationId: string, contactId: string, arc
 }
 
 export async function pinChat(organizationId: string, contactId: string, pin: boolean) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "pinChat");
   const waChat = await managed.client.getChatById(contactId);
   if (pin) await (waChat as any).pin(); else await (waChat as any).unpin();
   await updateChatFields(organizationId, contactId, { is_pinned: pin } as any);
@@ -417,8 +433,7 @@ export async function pinChat(organizationId: string, contactId: string, pin: bo
 }
 
 export async function muteChat(organizationId: string, contactId: string, mute: boolean, unmuteDate?: Date) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "muteChat");
   const waChat = await managed.client.getChatById(contactId);
   if (mute) await (waChat as any).mute(unmuteDate || undefined); else await (waChat as any).unmute();
   await updateChatFields(organizationId, contactId, {
@@ -429,16 +444,14 @@ export async function muteChat(organizationId: string, contactId: string, mute: 
 }
 
 export async function markChatUnread(organizationId: string, contactId: string) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "markChatUnread");
   const waChat = await managed.client.getChatById(contactId);
   await (waChat as any).markUnread();
   return { unread: true };
 }
 
 export async function sendSeenForChat(organizationId: string, contactId: string) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "sendSeenForChat");
   const waChat = await managed.client.getChatById(contactId);
   await waChat.sendSeen();
   await setChatUnread(organizationId, contactId, 0);
@@ -446,8 +459,7 @@ export async function sendSeenForChat(organizationId: string, contactId: string)
 }
 
 export async function getChatLabels(organizationId: string, contactId: string) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "getChatLabels");
   const waChat = await managed.client.getChatById(contactId);
   try {
     const labels = await (waChat as any).getLabels();
@@ -456,8 +468,7 @@ export async function getChatLabels(organizationId: string, contactId: string) {
 }
 
 export async function updateChatLabels(organizationId: string, contactId: string, labelIds: string[]) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "updateChatLabels");
   const waChat = await managed.client.getChatById(contactId);
   try { await (waChat as any).changeLabels(labelIds); } catch { /* not all accounts support labels */ }
   return { labels: labelIds };
@@ -470,8 +481,7 @@ export async function setChatNote(organizationId: string, contactId: string, not
 }
 
 export async function sendTypingState(organizationId: string, contactId: string, typing: boolean) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "sendTypingState");
   const waChat = await managed.client.getChatById(contactId);
   if (typing) await (waChat as any).sendStateTyping(); else await (waChat as any).clearState();
   return { typing };
@@ -480,8 +490,7 @@ export async function sendTypingState(organizationId: string, contactId: string,
 // ── Phase 3: Groups ──────────────────────────────────────────────────────────
 
 export async function getGroupMetadata(organizationId: string, contactId: string) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "getGroupMetadata");
   const meta = await getChatMeta(organizationId, contactId);
   if (meta && !meta.is_group) throw new Error("Not a group chat");
   const waChat: any = await managed.client.getChatById(contactId);
@@ -515,8 +524,7 @@ export async function getGroupMetadata(organizationId: string, contactId: string
 }
 
 async function requireGroupChat(organizationId: string, contactId: string) {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) throw new Error("WhatsApp client not ready");
+  const managed = await getReadyClient(organizationId, "groupChat");
   const meta = await getChatMeta(organizationId, contactId);
   if (meta && !meta.is_group) throw new Error("Not a group chat");
   return managed.client.getChatById(contactId) as Promise<any>;
@@ -610,11 +618,136 @@ export async function leaveGroup(organizationId: string, contactId: string) {
 async function ensureClient(organizationId: string): Promise<ManagedClient | null> {
   const existing = clients.get(organizationId);
   if (existing?.ready) return existing;
-  if (clients.size >= MAX_ORG_CLIENTS) {
+  /** Initialization in progress — never spawn a second Client for the same org. */
+  if (existing && !existing.destroying) return existing;
+  if (clients.size >= MAX_ORG_CLIENTS && !clients.has(organizationId)) {
     logger.warn("WhatsApp client limit reached", { limit: MAX_ORG_CLIENTS, orgId: organizationId });
     return null;
   }
   return startClientForAccount(organizationId);
+}
+
+function buildNotReadyDetail(
+  headline: string,
+  account: { status: string; last_error: string | null } | null | undefined,
+  managed: ManagedClient | null,
+  extra?: string
+): string {
+  const parts = [headline];
+  if (extra) parts.push(extra);
+  if (account) {
+    parts.push(`db_status=${account.status}`);
+    parts.push(account.last_error ? `db_last_error=${account.last_error}` : "db_last_error=(none)");
+  } else parts.push("db_account=(none)");
+  if (managed) parts.push(`mem_ready=${managed.ready}`, `mem_destroying=${managed.destroying}`);
+  else parts.push("mem_client=(none)");
+  return parts.join(" | ");
+}
+
+function scheduleAlwaysOnReconnect(organizationId: string, reason: string) {
+  lastAlwaysOnRecoveryAttempt.set(organizationId, 0);
+  logger.info("WhatsApp always-on: scheduling reconnect", { orgId: organizationId, reason, delayMs: ALWAYS_ON_RECONNECT_DELAY_MS });
+  setTimeout(() => {
+    void startClientForAccount(organizationId).catch((err) =>
+      logger.logError(err, "Always-on reconnect after event failed", { orgId: organizationId })
+    );
+  }, ALWAYS_ON_RECONNECT_DELAY_MS);
+}
+
+/**
+ * Wait until the WhatsApp Web client is ready to accept commands.
+ * Always-on orgs get a longer timeout and auto-requeue on failure.
+ */
+export async function getReadyClient(organizationId: string, context = "api"): Promise<ManagedClient> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { whatsapp_enabled: true, whatsapp_always_on: true },
+  });
+  if (!org?.whatsapp_enabled) {
+    const detail = buildNotReadyDetail("WhatsApp is disabled for this organization", null, clients.get(organizationId) ?? null);
+    await recordWhatsAppClientEvent({
+      organizationId,
+      reasonCode: "WHATSAPP_DISABLED",
+      detail: `${detail} (context=${context})`,
+      instanceId: INSTANCE_ID,
+      alwaysOn: false,
+      metadata: { context },
+    });
+    throw new WhatsAppNotReadyError(
+      "WHATSAPP_DISABLED",
+      "WhatsApp client not ready: feature is not enabled for this organization",
+      detail,
+      context
+    );
+  }
+
+  const accountRow = await prisma.whatsapp_account.findUnique({ where: { organization_id: organizationId } });
+  const timeoutMs = org.whatsapp_always_on ? WAIT_READY_ALWAYS_ON_MS : WAIT_READY_MS;
+  const deadline = Date.now() + timeoutMs;
+
+  let managed = await ensureClient(organizationId);
+  if (!managed) {
+    const acc = await prisma.whatsapp_account.findUnique({ where: { organization_id: organizationId } });
+    const detail = buildNotReadyDetail(
+      "Could not start or attach WhatsApp client (lease denied, max clients, or init exhausted)",
+      acc,
+      null,
+      `context=${context}`
+    );
+    await recordWhatsAppClientEvent({
+      organizationId,
+      accountId: accountRow?.id,
+      reasonCode: "CLIENT_START_FAILED",
+      detail,
+      instanceId: INSTANCE_ID,
+      alwaysOn: org.whatsapp_always_on,
+      metadata: { context },
+    });
+    if (org.whatsapp_always_on) scheduleAlwaysOnReconnect(organizationId, "CLIENT_START_FAILED");
+    throw new WhatsAppNotReadyError("CLIENT_START_FAILED", `WhatsApp client not ready: ${detail}`, detail, context);
+  }
+
+  while (!managed.ready && !managed.destroying && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, READY_POLL_MS));
+    const m = clients.get(organizationId);
+    if (!m) {
+      const acc = await prisma.whatsapp_account.findUnique({ where: { organization_id: organizationId } });
+      const detail = buildNotReadyDetail("Client disappeared from memory while waiting for ready", acc, null, `context=${context}`);
+      await recordWhatsAppClientEvent({
+        organizationId,
+        accountId: accountRow?.id,
+        reasonCode: "CLIENT_GONE_DURING_INIT",
+        detail,
+        instanceId: INSTANCE_ID,
+        alwaysOn: org.whatsapp_always_on,
+        metadata: { context },
+      });
+      if (org.whatsapp_always_on) scheduleAlwaysOnReconnect(organizationId, "CLIENT_GONE_DURING_INIT");
+      throw new WhatsAppNotReadyError("CLIENT_GONE_DURING_INIT", `WhatsApp client not ready: ${detail}`, detail, context);
+    }
+    managed = m;
+  }
+
+  if (managed.ready && !managed.destroying) return managed;
+
+  const acc = await prisma.whatsapp_account.findUnique({ where: { organization_id: organizationId } });
+  const detail = buildNotReadyDetail(
+    `Timed out after ${timeoutMs}ms waiting for WhatsApp Web "ready" (QR pending, auth, or network)`,
+    acc,
+    managed,
+    `context=${context}`
+  );
+  await recordWhatsAppClientEvent({
+    organizationId,
+    accountId: accountRow?.id,
+    reasonCode: "NOT_READY_TIMEOUT",
+    detail,
+    instanceId: INSTANCE_ID,
+    alwaysOn: org.whatsapp_always_on,
+    metadata: { context, timeoutMs },
+  });
+  if (org.whatsapp_always_on) scheduleAlwaysOnReconnect(organizationId, "NOT_READY_TIMEOUT");
+  throw new WhatsAppNotReadyError("NOT_READY_TIMEOUT", `WhatsApp client not ready: ${detail}`, detail, context);
 }
 
 async function startClientForAccount(organizationId: string): Promise<ManagedClient | null> {
@@ -623,7 +756,7 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     include: { organization: { select: { whatsapp_enabled: true } } },
   });
   if (!account || !account.organization.whatsapp_enabled) return null;
-  if (clients.size >= MAX_ORG_CLIENTS) {
+  if (clients.size >= MAX_ORG_CLIENTS && !clients.has(organizationId)) {
     logger.warn("WhatsApp client limit reached on start", { limit: MAX_ORG_CLIENTS, orgId: organizationId });
     return null;
   }
@@ -715,6 +848,17 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
     const formatted = formatUnknownError(lastErr);
     const displayMessage = formatted.message.trim() && formatted.message !== "{}" ? formatted.message : "Initialization failed after retries. Wait a few minutes and try again.";
     await safeUpdateAccountById(account.id, { status: "ERROR", last_error: displayMessage, owner_instance_id: null, lease_expires_at: null });
+    const alwaysOn = await prisma.organization.findUnique({ where: { id: organizationId }, select: { whatsapp_always_on: true } });
+    await recordWhatsAppClientEvent({
+      organizationId,
+      accountId: account.id,
+      reasonCode: "INIT_EXHAUSTED",
+      detail: `WhatsApp Web failed to initialize after ${INIT_RETRY_MAX} attempt(s). Last error: ${displayMessage}`,
+      instanceId: INSTANCE_ID,
+      alwaysOn: !!alwaysOn?.whatsapp_always_on,
+      metadata: { attempts: INIT_RETRY_MAX },
+    });
+    if (alwaysOn?.whatsapp_always_on) scheduleAlwaysOnReconnect(organizationId, "INIT_EXHAUSTED");
   }
   return null;
 }
@@ -728,7 +872,10 @@ function attachEventHandlers(managed: ManagedClient) {
       logger.warn("WhatsApp QR max retries exceeded", { orgId, accountId });
       await prisma.whatsapp_account.update({ where: { id: accountId }, data: { status: "ERROR", last_error: "QR code scan timeout — max retries exceeded", qr_code: null } });
       broadcastToOrg(orgId, { type: "whatsapp:status", data: { status: "auth_failure", error: "QR max retries exceeded" } });
-      await destroyClient(orgId);
+      await destroyClient(orgId, {
+        reasonCode: "QR_MAX_RETRIES",
+        detail: `QR code was not scanned in time (${QR_MAX_RETRIES} QR rotations). Session stopped.`,
+      });
       return;
     }
     await prisma.whatsapp_account.update({ where: { id: accountId }, data: { status: "QR_PENDING", qr_code: qr, qr_updated_at: new Date() } });
@@ -781,21 +928,72 @@ function attachEventHandlers(managed: ManagedClient) {
   });
 
   client.on("disconnected", async (reason: string) => {
-    logger.warn("WhatsApp client disconnected", { orgId, accountId, reason });
+    const waReason = String(reason ?? "").trim() || "UNKNOWN";
+    const detail = `WhatsApp Web emitted disconnected. Library reason: "${waReason}". Likely causes: logged out elsewhere, network loss, WhatsApp server maintenance, or browser crash.`;
+    logger.warn("WhatsApp client disconnected", { orgId, accountId, reason: waReason });
     managed.ready = false;
-    await prisma.whatsapp_account.update({ where: { id: accountId }, data: { status: "DISCONNECTED", last_error: reason, owner_instance_id: null, lease_expires_at: null } });
-    broadcastToOrg(orgId, { type: "whatsapp:status", data: { status: "disconnected", reason } });
-    broadcastToAdmins({ type: "whatsapp:client_disconnected", data: { organizationId: orgId } });
+    const orgRow = await prisma.organization.findUnique({ where: { id: orgId }, select: { whatsapp_always_on: true } });
+    await recordWhatsAppClientEvent({
+      organizationId: orgId,
+      accountId,
+      reasonCode: "WA_DISCONNECTED",
+      detail,
+      waDisconnectReason: waReason,
+      instanceId: INSTANCE_ID,
+      alwaysOn: !!orgRow?.whatsapp_always_on,
+      metadata: { source: "whatsapp-web.js:event:disconnected" },
+    });
+    await prisma.whatsapp_account.update({
+      where: { id: accountId },
+      data: { status: "DISCONNECTED", last_error: `Disconnected: ${waReason}`, owner_instance_id: null, lease_expires_at: null },
+    });
+    broadcastToOrg(orgId, { type: "whatsapp:status", data: { status: "disconnected", reason: waReason } });
+    broadcastToAdmins({
+      type: "whatsapp:client_disconnected",
+      data: { organizationId: orgId, reasonCode: "WA_DISCONNECTED", detail, waReason: waReason, at: new Date().toISOString() },
+    });
     clients.delete(orgId);
+    try {
+      await client.destroy();
+    } catch (err) {
+      logger.logError(err, "WhatsApp client.destroy after disconnected", { orgId, accountId });
+    }
+    if (orgRow?.whatsapp_always_on) {
+      scheduleAlwaysOnReconnect(orgId, "WA_DISCONNECTED");
+    }
   });
 
   client.on("auth_failure", async (msg: string) => {
-    logger.error("WhatsApp auth failure", { orgId, accountId, error: msg });
+    const raw = String(msg ?? "").trim() || "unknown";
+    const detail = `WhatsApp Web auth_failure: "${raw}". Session is no longer valid — user must scan QR again (or session was revoked).`;
+    logger.error("WhatsApp auth failure", { orgId, accountId, error: raw });
     managed.ready = false;
-    await prisma.whatsapp_account.update({ where: { id: accountId }, data: { status: "ERROR", last_error: `Auth failure: ${msg}`, session_data: null, owner_instance_id: null, lease_expires_at: null } });
-    broadcastToOrg(orgId, { type: "whatsapp:status", data: { status: "auth_failure", error: msg } });
-    broadcastToAdmins({ type: "whatsapp:client_disconnected", data: { organizationId: orgId } });
+    const orgRow = await prisma.organization.findUnique({ where: { id: orgId }, select: { whatsapp_always_on: true } });
+    await recordWhatsAppClientEvent({
+      organizationId: orgId,
+      accountId,
+      reasonCode: "AUTH_FAILURE",
+      detail,
+      waDisconnectReason: raw,
+      instanceId: INSTANCE_ID,
+      alwaysOn: !!orgRow?.whatsapp_always_on,
+      metadata: { source: "whatsapp-web.js:event:auth_failure" },
+    });
+    await prisma.whatsapp_account.update({
+      where: { id: accountId },
+      data: { status: "ERROR", last_error: `Auth failure: ${raw}`, session_data: null, owner_instance_id: null, lease_expires_at: null },
+    });
+    broadcastToOrg(orgId, { type: "whatsapp:status", data: { status: "auth_failure", error: raw } });
+    broadcastToAdmins({
+      type: "whatsapp:client_disconnected",
+      data: { organizationId: orgId, reasonCode: "AUTH_FAILURE", detail, waReason: raw, at: new Date().toISOString() },
+    });
     clients.delete(orgId);
+    try {
+      await client.destroy();
+    } catch (err) {
+      logger.logError(err, "WhatsApp client.destroy after auth_failure", { orgId, accountId });
+    }
   });
 
   client.on("change_state", async (state: WAWebJS.WAState) => {
@@ -939,8 +1137,14 @@ async function handleReactionEvent(managed: ManagedClient, reaction: any) {
 // ── Contact helpers ───────────────────────────────────────────────────────────
 
 export async function getContactDisplayNames(organizationId: string, jids: string[]): Promise<Record<string, string>> {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready || jids.length === 0) return {};
+  if (jids.length === 0) return {};
+  let managed: ManagedClient;
+  try {
+    managed = await getReadyClient(organizationId, "getContactDisplayNames");
+  } catch (e) {
+    if (e instanceof WhatsAppNotReadyError) return {};
+    throw e;
+  }
   const out: Record<string, string> = {};
   const unique = [...new Set(jids)].filter((j) => j && !j.toLowerCase().includes("@lid"));
   for (const jid of unique) {
@@ -957,8 +1161,14 @@ export async function getContactDisplayNames(organizationId: string, jids: strin
 }
 
 export async function getContactProfilePictures(organizationId: string, jids: string[]): Promise<Record<string, string>> {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready || jids.length === 0) return {};
+  if (jids.length === 0) return {};
+  let managed: ManagedClient;
+  try {
+    managed = await getReadyClient(organizationId, "getContactProfilePictures");
+  } catch (e) {
+    if (e instanceof WhatsAppNotReadyError) return {};
+    throw e;
+  }
   const out: Record<string, string> = {};
   const unique = [...new Set(jids)].filter((j) => j && !j.toLowerCase().includes("@lid"));
   for (const jid of unique) {
@@ -971,8 +1181,14 @@ export async function getContactProfilePictures(organizationId: string, jids: st
 }
 
 export async function getContactDetails(organizationId: string, jid: string): Promise<Record<string, unknown> | null> {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready || !jid) return null;
+  if (!jid) return null;
+  let managed: ManagedClient;
+  try {
+    managed = await getReadyClient(organizationId, "getContactDetails");
+  } catch (e) {
+    if (e instanceof WhatsAppNotReadyError) return null;
+    throw e;
+  }
   try {
     const contact: any = await managed.client.getContactById(jid);
     const profilePictureUrl = await (managed.client as any).getProfilePicUrl?.(jid).catch(() => null);
@@ -1004,8 +1220,14 @@ export async function getContactDetails(organizationId: string, jid: string): Pr
 }
 
 export async function setContactBlocked(organizationId: string, jid: string, blocked: boolean): Promise<boolean | null> {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready || !jid) return null;
+  if (!jid) return null;
+  let managed: ManagedClient;
+  try {
+    managed = await getReadyClient(organizationId, "setContactBlocked");
+  } catch (e) {
+    if (e instanceof WhatsAppNotReadyError) return null;
+    throw e;
+  }
   try {
     const contact: any = await managed.client.getContactById(jid);
     if (!contact) return null;
@@ -1017,8 +1239,13 @@ export async function setContactBlocked(organizationId: string, jid: string, blo
 
 /** Fetch recent message history from WhatsApp and cache in Redis. */
 export async function fetchChatHistory(organizationId: string, contactId: string, limit = 50): Promise<RedisMessage[]> {
-  const managed = await ensureClient(organizationId);
-  if (!managed?.ready) return [];
+  let managed: ManagedClient;
+  try {
+    managed = await getReadyClient(organizationId, "fetchChatHistory");
+  } catch (e) {
+    if (e instanceof WhatsAppNotReadyError) return [];
+    throw e;
+  }
   try {
     const waChat = await managed.client.getChatById(contactId);
     const waMessages = await waChat.fetchMessages({ limit });
@@ -1094,15 +1321,41 @@ function recordAnalytics(orgId: string, direction: "sent" | "received", isMedia:
 
 // ── Client destruction ────────────────────────────────────────────────────────
 
-async function destroyClient(organizationId: string) {
+type DestroyMeta = { reasonCode: string; detail: string; waReason?: string; alwaysOn?: boolean };
+
+async function destroyClient(organizationId: string, meta?: DestroyMeta) {
   const managed = clients.get(organizationId);
   if (!managed) return;
+  const accountId = managed.accountId;
   managed.destroying = true;
   managed.ready = false;
   clients.delete(organizationId);
-  broadcastToAdmins({ type: "whatsapp:client_disconnected", data: { organizationId } });
-  try { await managed.client.destroy(); }
-  catch (err) { logger.logError(err, "Error destroying WhatsApp client", { orgId: organizationId }); }
+  if (meta) {
+    void recordWhatsAppClientEvent({
+      organizationId,
+      accountId,
+      reasonCode: meta.reasonCode,
+      detail: meta.detail,
+      waDisconnectReason: meta.waReason ?? null,
+      instanceId: INSTANCE_ID,
+      alwaysOn: meta.alwaysOn ?? false,
+      metadata: { source: "destroyClient" },
+    });
+  }
+  broadcastToAdmins({
+    type: "whatsapp:client_disconnected",
+    data: {
+      organizationId,
+      reasonCode: meta?.reasonCode,
+      detail: meta?.detail,
+      at: new Date().toISOString(),
+    },
+  });
+  try {
+    await managed.client.destroy();
+  } catch (err) {
+    logger.logError(err, "Error destroying WhatsApp client", { orgId: organizationId });
+  }
 }
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
@@ -1169,6 +1422,48 @@ async function recoverAlwaysOnClients() {
   }
 }
 
+/** DB says CONNECTED + always-on but process has no ready client (crash, missed disconnect event). */
+async function detectDriftedAlwaysOnClients() {
+  const now = Date.now();
+  let rows: { id: string; organization_id: string }[];
+  try {
+    rows = await prisma.whatsapp_account.findMany({
+      where: {
+        status: "CONNECTED",
+        organization: { whatsapp_enabled: true, whatsapp_always_on: true } as any,
+      },
+      select: { id: true, organization_id: true },
+    });
+  } catch (err) {
+    logger.logError(err, "WhatsApp drift detection query failed");
+    return;
+  }
+
+  for (const row of rows) {
+    const m = clients.get(row.organization_id);
+    if (m?.ready) continue;
+
+    const last = lastDriftEventLogged.get(row.organization_id) ?? 0;
+    if (now - last < DRIFT_LOG_COOLDOWN_MS) continue;
+    lastDriftEventLogged.set(row.organization_id, now);
+
+    const detail = `Drift: DB reports CONNECTED with always-on, but this API process has no ready client (mem=${m ? "starting_or_dead" : "none"}). Starting recovery.`;
+    await recordWhatsAppClientEvent({
+      organizationId: row.organization_id,
+      accountId: row.id,
+      reasonCode: "DRIFT_RECOVERY",
+      detail,
+      instanceId: INSTANCE_ID,
+      alwaysOn: true,
+      metadata: { memReady: m?.ready ?? false, memDestroying: m?.destroying ?? false },
+    });
+    lastAlwaysOnRecoveryAttempt.set(row.organization_id, 0);
+    void startClientForAccount(row.organization_id).catch((err) =>
+      logger.logError(err, "WhatsApp drift recovery start failed", { orgId: row.organization_id })
+    );
+  }
+}
+
 async function runHeartbeat() {
   const now = new Date();
   const leaseExpiry = new Date(now.getTime() + LEASE_TTL_MS);
@@ -1181,11 +1476,19 @@ async function runHeartbeat() {
     } catch (err) { logger.logError(err, "WhatsApp heartbeat failed", { orgId }); }
   }
   void recoverAlwaysOnClients();
+  void detectDriftedAlwaysOnClients();
 }
 
 export function shutdownWhatsAppManager() {
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   const destroyPromises: Promise<void>[] = [];
-  for (const [orgId] of clients) destroyPromises.push(destroyClient(orgId));
+  for (const [orgId] of clients) {
+    destroyPromises.push(
+      destroyClient(orgId, {
+        reasonCode: "API_SHUTDOWN",
+        detail: "API process shutdown (deploy/restart) — in-memory WhatsApp clients destroyed.",
+      })
+    );
+  }
   return Promise.allSettled(destroyPromises);
 }

@@ -220,6 +220,8 @@ function createApiClient(baseUrl: string = "") {
     getWhatsappAnalytics: (params?: { days?: number }) =>
       get("/api/admin/whatsapp/analytics", params),
     getWhatsappLiveClients: () => get("/api/admin/whatsapp/clients"),
+    getWhatsappClientEvents: (params?: { limit?: number; organizationId?: string }) =>
+      get("/api/admin/whatsapp/client-events", params),
     shutdownWhatsappClient: (organizationId: string) =>
       post(`/api/admin/whatsapp/clients/${encodeURIComponent(organizationId)}/shutdown`),
     setWhatsappAlwaysOn: (organizationId: string, enabled: boolean) =>

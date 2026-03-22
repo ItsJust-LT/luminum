@@ -55,8 +55,24 @@ import {
   getTotalUnread,
   getChatMessageCount,
 } from "../whatsapp/redis-store.js";
+import { WhatsAppNotReadyError } from "../whatsapp/whatsapp-client-events.js";
 
 const router = Router();
+
+/** Returns true if response was sent (503 not-ready). */
+function handleWhatsAppError(res: Response, err: unknown): boolean {
+  if (err instanceof WhatsAppNotReadyError) {
+    res.status(503).json({
+      success: false,
+      error: err.message,
+      code: err.code,
+      detail: err.detail,
+      context: err.context ?? null,
+    });
+    return true;
+  }
+  return false;
+}
 router.use(requireAuth);
 
 function extractMetaTag(html: string, attr: string, key: string): string | null {
@@ -130,6 +146,7 @@ router.get("/accounts", async (req: Request, res: Response) => {
     res.json({ success: true, account: account || null });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/accounts");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -151,6 +168,7 @@ router.post("/accounts", async (req: Request, res: Response) => {
     res.json({ success: true, account });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/accounts");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -168,6 +186,7 @@ router.get("/accounts/:id", async (req: Request, res: Response) => {
     res.json({ success: true, account: status });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/accounts/:id");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -185,6 +204,7 @@ router.delete("/accounts/:id", async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     logger.logError(error, "DELETE /api/whatsapp/accounts/:id");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -199,6 +219,7 @@ router.post("/disconnect", async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/disconnect");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -212,6 +233,7 @@ router.post("/clear-session", async (req: Request, res: Response) => {
     res.json({ success: true, message: "Session data cleared. Reconnect to show a new QR code." });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/clear-session");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -226,6 +248,7 @@ router.post("/reconnect", async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/reconnect");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -272,6 +295,7 @@ router.get("/chats", async (req: Request, res: Response) => {
     res.json({ success: true, chats: enrichedChats, total, page, limit });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/chats");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -327,6 +351,7 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/chats/:id");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -352,6 +377,7 @@ router.get("/contacts/:chatId", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/contacts/:chatId");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -369,6 +395,7 @@ router.post("/contacts/:chatId/block", async (req: Request, res: Response) => {
     res.json({ success: true, blocked: true });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/contacts/:chatId/block");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -386,6 +413,7 @@ router.post("/contacts/:chatId/unblock", async (req: Request, res: Response) => 
     res.json({ success: true, blocked: false });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/contacts/:chatId/unblock");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -406,6 +434,7 @@ router.post("/chats/:id/messages", async (req: Request, res: Response) => {
     res.json({ success: true, message });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/messages");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -423,6 +452,7 @@ router.post("/chats/:id/media", async (req: Request, res: Response) => {
     res.json({ success: true, message });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/media");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -441,6 +471,7 @@ router.post("/messages/:id/forward", async (req: Request, res: Response) => {
     res.json({ success: true, results });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/messages/:id/forward");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -456,6 +487,7 @@ router.post("/messages/:id/star", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/messages/:id/star");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -471,6 +503,7 @@ router.post("/messages/:id/delete", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/messages/:id/delete");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -487,6 +520,7 @@ router.post("/messages/:id/react", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/messages/:id/react");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -502,6 +536,7 @@ router.get("/messages/:id/info", async (req: Request, res: Response) => {
     res.json({ success: true, info });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/messages/:id/info");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -519,6 +554,7 @@ router.post("/chats/:id/archive", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/archive");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -534,6 +570,7 @@ router.post("/chats/:id/pin", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/pin");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -549,6 +586,7 @@ router.post("/chats/:id/mute", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/mute");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -564,6 +602,7 @@ router.post("/chats/:id/mark-unread", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/mark-unread");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -579,6 +618,7 @@ router.post("/chats/:id/send-seen", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/send-seen");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -594,6 +634,7 @@ router.get("/chats/:id/labels", async (req: Request, res: Response) => {
     res.json({ success: true, labels });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/chats/:id/labels");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -609,6 +650,7 @@ router.post("/chats/:id/labels", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/labels");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -624,6 +666,7 @@ router.post("/chats/:id/note", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/note");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -639,6 +682,7 @@ router.post("/chats/:id/typing", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/typing");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -656,6 +700,7 @@ router.get("/groups/:id", async (req: Request, res: Response) => {
     res.json({ success: true, group: metadata });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/groups/:id");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -672,6 +717,7 @@ router.post("/groups/:id/participants/add", async (req: Request, res: Response) 
     res.json({ success: true, result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/participants/add");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -688,6 +734,7 @@ router.post("/groups/:id/participants/remove", async (req: Request, res: Respons
     res.json({ success: true, result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/participants/remove");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -704,6 +751,7 @@ router.post("/groups/:id/participants/promote", async (req: Request, res: Respon
     res.json({ success: true, result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/participants/promote");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -720,6 +768,7 @@ router.post("/groups/:id/participants/demote", async (req: Request, res: Respons
     res.json({ success: true, result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/participants/demote");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -736,6 +785,7 @@ router.post("/groups/:id/subject", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/subject");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -752,6 +802,7 @@ router.post("/groups/:id/description", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/description");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -767,6 +818,7 @@ router.post("/groups/:id/settings", async (req: Request, res: Response) => {
     res.json({ success: true, settings: result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/settings");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -782,6 +834,7 @@ router.get("/groups/:id/invite", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/groups/:id/invite");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -797,6 +850,7 @@ router.post("/groups/:id/invite/revoke", async (req: Request, res: Response) => 
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/invite/revoke");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -812,6 +866,7 @@ router.get("/groups/:id/membership-requests", async (req: Request, res: Response
     res.json({ success: true, requests });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/groups/:id/membership-requests");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -828,6 +883,7 @@ router.post("/groups/:id/membership-requests/approve", async (req: Request, res:
     res.json({ success: true, result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/membership-requests/approve");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -844,6 +900,7 @@ router.post("/groups/:id/membership-requests/reject", async (req: Request, res: 
     res.json({ success: true, result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/membership-requests/reject");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -859,6 +916,7 @@ router.post("/groups/:id/leave", async (req: Request, res: Response) => {
     res.json({ success: true, ...result });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/groups/:id/leave");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -876,6 +934,7 @@ router.post("/chats/:id/read", async (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (error: any) {
     logger.logError(error, "POST /api/whatsapp/chats/:id/read");
+    if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
   }
 });

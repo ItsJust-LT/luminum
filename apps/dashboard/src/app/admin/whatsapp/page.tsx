@@ -38,6 +38,7 @@ import {
   Image,
   Send,
   Inbox,
+  AlertTriangle,
 } from "lucide-react"
 import {
   AlertDialog,
@@ -78,6 +79,20 @@ interface LiveClientEntry {
   lastSeenAt: string | null
   runningSinceMs: number | null
   alwaysOn: boolean
+}
+
+interface ClientRuntimeEvent {
+  id: string
+  organizationId: string
+  organizationName: string | null
+  organizationSlug: string | null
+  accountId: string | null
+  reasonCode: string
+  detail: string
+  waDisconnectReason: string | null
+  instanceId: string | null
+  alwaysOn: boolean
+  createdAt: string
 }
 
 interface AnalyticsData {
@@ -141,6 +156,9 @@ export default function AdminWhatsAppPage() {
   const [shuttingDown, setShuttingDown] = useState<string | null>(null)
   const [togglingAlwaysOn, setTogglingAlwaysOn] = useState<string | null>(null)
   const [removingAll, setRemovingAll] = useState(false)
+  const [eventsLoading, setEventsLoading] = useState(true)
+  const [eventsError, setEventsError] = useState<string | null>(null)
+  const [clientEvents, setClientEvents] = useState<ClientRuntimeEvent[]>([])
   const { connected, onMessage } = useRealtime()
 
   const fetchAnalytics = useCallback(async () => {
@@ -171,14 +189,39 @@ export default function AdminWhatsAppPage() {
     } finally { setClientsLoading(false) }
   }, [])
 
+  const fetchClientEvents = useCallback(async () => {
+    setEventsLoading(true)
+    setEventsError(null)
+    try {
+      const res = (await api.admin.getWhatsappClientEvents({ limit: 80 })) as {
+        success?: boolean
+        events?: ClientRuntimeEvent[]
+        error?: string
+      }
+      if (res?.success && Array.isArray(res.events)) setClientEvents(res.events)
+      else setEventsError(res?.error || "Failed to load client events")
+    } catch (err: unknown) {
+      setEventsError(err instanceof Error ? err.message : "Failed to load client events")
+    } finally {
+      setEventsLoading(false)
+    }
+  }, [])
+
   useEffect(() => { fetchAnalytics() }, [fetchAnalytics])
   useEffect(() => { fetchClients() }, [fetchClients])
+  useEffect(() => { fetchClientEvents() }, [fetchClientEvents])
 
   useEffect(() => {
-    const unsubConnect = onMessage("whatsapp:client_connected", () => fetchClients())
-    const unsubDisconnect = onMessage("whatsapp:client_disconnected", () => fetchClients())
+    const unsubConnect = onMessage("whatsapp:client_connected", () => {
+      void fetchClients()
+      void fetchClientEvents()
+    })
+    const unsubDisconnect = onMessage("whatsapp:client_disconnected", () => {
+      void fetchClients()
+      void fetchClientEvents()
+    })
     return () => { unsubConnect(); unsubDisconnect() }
-  }, [onMessage, fetchClients])
+  }, [onMessage, fetchClients, fetchClientEvents])
 
   const handleShutdown = async (organizationId: string) => {
     setShuttingDown(organizationId)
@@ -196,7 +239,7 @@ export default function AdminWhatsAppPage() {
 
   const handleRemoveAll = async () => {
     setRemovingAll(true)
-    try { await api.admin.removeAllWhatsappData(); toast.success("All WhatsApp data has been removed."); await Promise.all([fetchAnalytics(), fetchClients()]) }
+    try { await api.admin.removeAllWhatsappData(); toast.success("All WhatsApp data has been removed."); await Promise.all([fetchAnalytics(), fetchClients(), fetchClientEvents()]) }
     catch (err: unknown) { toast.error(err instanceof Error ? err.message : "Failed to remove WhatsApp data") }
     finally { setRemovingAll(false) }
   }
@@ -235,7 +278,7 @@ export default function AdminWhatsAppPage() {
               <SelectItem value="90">Last 90 days</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={() => { fetchAnalytics(); fetchClients() }}>
+          <Button variant="outline" size="icon" onClick={() => { void fetchAnalytics(); void fetchClients(); void fetchClientEvents() }}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
@@ -393,6 +436,71 @@ export default function AdminWhatsAppPage() {
             </Card>
           </>
         ) : null}
+      </section>
+
+      {/* ── Client runtime events (disconnects, not-ready, recovery) ───────────── */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-amber-600" />
+          Client runtime events
+          <Badge variant="outline" className="font-normal text-muted-foreground">Why sessions stop</Badge>
+        </h2>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Health &amp; incident log</CardTitle>
+            <CardDescription>
+              Every row includes a <strong>reason code</strong> and full detail (WhatsApp disconnect reason, timeouts, admin actions, drift recovery).
+              Always-on orgs are flagged — the server auto-reconnects after delays.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {eventsLoading && clientEvents.length === 0 ? (
+              <Skeleton className="h-40 w-full rounded-lg" />
+            ) : eventsError ? (
+              <p className="text-center text-muted-foreground py-4">{eventsError}</p>
+            ) : clientEvents.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">No events recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-[min(70vh,28rem)]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">When</TableHead>
+                      <TableHead>Organization</TableHead>
+                      <TableHead>Code</TableHead>
+                      <TableHead>Always-on</TableHead>
+                      <TableHead>WA / raw reason</TableHead>
+                      <TableHead className="min-w-[280px]">Detail</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {clientEvents.map((ev) => (
+                      <TableRow key={ev.id}>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap align-top">
+                          {new Date(ev.createdAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <span className="font-medium">{ev.organizationName ?? ev.organizationId}</span>
+                          {ev.organizationSlug ? (
+                            <span className="block text-xs text-muted-foreground">{ev.organizationSlug}</span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant="secondary" className="font-mono text-xs">{ev.reasonCode}</Badge>
+                        </TableCell>
+                        <TableCell className="align-top">{ev.alwaysOn ? <Badge>Yes</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell className="text-xs font-mono align-top max-w-[200px] break-all">
+                          {ev.waDisconnectReason ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-sm align-top text-muted-foreground">{ev.detail}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
       {/* ── Live clients ──────────────────────────────────────────────────────── */}

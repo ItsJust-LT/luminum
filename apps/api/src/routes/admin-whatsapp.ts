@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { getPathParam } from "../lib/req-params.js";
 import { getLiveClientsForAdmin, disconnectClient, startOrRestartClient } from "../whatsapp/manager.js";
 import { deleteAllOrgData } from "../whatsapp/redis-store.js";
+import { listWhatsAppClientEventsForAdmin } from "../whatsapp/whatsapp-client-events.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -114,6 +115,18 @@ router.get("/analytics", adminOnly, async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error?.message ?? "Failed to load analytics" });
+  }
+});
+
+/** GET /api/admin/whatsapp/client-events — disconnects, not-ready, recovery, etc. */
+router.get("/client-events", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || "80"), 10)));
+    const organizationId = typeof req.query.organizationId === "string" ? req.query.organizationId : undefined;
+    const events = await listWhatsAppClientEventsForAdmin({ limit, organizationId });
+    res.json({ success: true, events });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message ?? "Failed to load client events" });
   }
 });
 

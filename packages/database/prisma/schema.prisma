@@ -250,6 +250,7 @@ model organization {
   email_domain                                                      websites?                 @relation("OrganizationEmailDomain", fields: [email_domain_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   whatsapp_accounts                                                 whatsapp_account[]
   whatsapp_analytics                                                whatsapp_analytics_daily[]
+  whatsapp_client_events                                            whatsapp_client_event[]
   blog_posts                                                        blog_post[]
   blog_assets                                                       blog_asset[]
   blog_preview_tokens                                               blog_preview_token[]
@@ -733,4 +734,23 @@ model whatsapp_analytics_daily {
   @@unique([organization_id, day])
   @@index([organization_id])
   @@index([day])
+}
+
+/// Admin-visible log when a WhatsApp runtime client disconnects, fails readiness, or recovery runs.
+model whatsapp_client_event {
+  id                  String       @id @default(cuid())
+  organization_id     String       @db.VarChar(255)
+  account_id          String?      @db.VarChar(255)
+  reason_code         String       @db.VarChar(64)
+  detail              String       @db.Text
+  wa_disconnect_reason String?     @db.Text
+  instance_id         String?      @db.VarChar(255)
+  always_on           Boolean      @default(false)
+  metadata            Json?
+  created_at          DateTime     @default(now()) @db.Timestamptz(6)
+  organization        organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  @@index([organization_id, created_at(sort: Desc)])
+  @@index([created_at(sort: Desc)])
+  @@index([reason_code])
 }
