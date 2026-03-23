@@ -93,8 +93,16 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 	ContentType  string `json:"contentType"`
 	ContentBase64 string `json:"contentBase64"`
 }, inReplyTo, references, messageId string) error {
+	envelopeFrom := envelopeAddress(from)
+	if envelopeFrom == "" {
+		return fmt.Errorf("invalid from address")
+	}
+
 	// For simplicity we send to the first recipient's MX; real implementation might loop per-recipient.
-	recipient := to[0]
+	recipient := envelopeAddress(to[0])
+	if recipient == "" {
+		return fmt.Errorf("invalid recipient: %s", to[0])
+	}
 	at := strings.Index(recipient, "@")
 	if at <= 0 {
 		return fmt.Errorf("invalid recipient: %s", recipient)
@@ -131,11 +139,15 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 		}
 	}
 
-	if err = client.Mail(from); err != nil {
+	if err = client.Mail(envelopeFrom); err != nil {
 		return err
 	}
 	for _, t := range to {
-		if err = client.Rcpt(t); err != nil {
+		rcpt := envelopeAddress(t)
+		if rcpt == "" {
+			return fmt.Errorf("invalid recipient: %s", t)
+		}
+		if err = client.Rcpt(rcpt); err != nil {
 			return err
 		}
 	}
@@ -172,6 +184,21 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 		return err
 	}
 	return wc.Close()
+}
+
+func envelopeAddress(value string) string {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return ""
+	}
+	addr, err := mail.ParseAddress(v)
+	if err == nil && addr != nil && strings.TrimSpace(addr.Address) != "" {
+		return strings.TrimSpace(addr.Address)
+	}
+	if strings.Contains(v, "<") || strings.Contains(v, ">") {
+		return ""
+	}
+	return v
 }
 
 // domainFromAddress extracts the domain from a From address (e.g. "Name <user@domain.com>" or "user@domain.com").
