@@ -42,10 +42,14 @@ Example:
 
 ### SPF (sending, required)
 
-- Add a **TXT** record for the domain so recipients accept mail from your server. Example:  
-  **Name:** `@` (or the subdomain you send from)  
-  **Content:** `v=spf1 a mx ip4:YOUR_SERVER_IP ~all`  
-  (Replace `YOUR_SERVER_IP` with your server’s public IP, or use `include:` if you use another SPF provider.)
+- Add a **TXT** record for the domain so recipients accept mail from your server. The dashboard prescribes **IPv4-only** SPF when **`MAIL_SEND_IP`** is set on the API:  
+  **Name:** `@`  
+  **Content:** `v=spf1 ip4:YOUR_SERVER_IP -all`  
+  DNS verification requires that exact `ip4:` when `MAIL_SEND_IP` is configured.
+
+### DMARC (policy)
+
+- Add a **TXT** record at **`_dmarc.yourdomain`**. Setup suggests **`p=quarantine`** (with aggregate reports to `rua`). Verification accepts **`p=quarantine`** or **`p=reject`**; **`p=none`** does not pass verification.
 
 ### DKIM (required for best deliverability)
 
@@ -53,14 +57,6 @@ Example:
   - Generate a DKIM key pair and store the private key where **apps/mail** can read it (e.g. env or file).
   - Add a **TXT** record for the chosen selector (e.g. **default._domainkey**) with the public key.  
   Implementation of DKIM signing in the Go app can be added in a follow-up; this section documents the DNS side.
-
-### DMARC (policy, strongly recommended)
-
-- DMARC tells recipients what to do if SPF/DKIM fail and gives you reports about spoofing attempts.
-- Add a **TXT** record for `_dmarc` on your domain. Example:  
-  **Name:** `_dmarc`  
-  **Content:** `v=DMARC1; p=none; rua=mailto:dmarc@YOUR_DOMAIN`  
-  You can tighten the policy to `p=quarantine` or `p=reject` once you are confident SPF/DKIM are correct.
 
 ## Why didn’t my email arrive?
 
@@ -90,7 +86,7 @@ Set these in the **API** process (e.g. `apps/api/.env` or your deployment env).
 | `MAIL_MX_HOST` | Optional | Exact MX hostname the dashboard shows (e.g. `mail.luminum.agency`). Skips DNS lookup. | Your mail server’s public hostname (same as the A record for the host receiving mail on port 25). |
 | `MAIL_MX_DOMAIN` | Optional | Domain used to resolve MX for setup/verification (e.g. `luminum.agency`). | Your email domain. If unset, derived from `MAIL_FROM_DEFAULT`. |
 | `MAIL_SEND_HOST` | Optional | Host used in **SPF** suggestion in the dashboard (e.g. `mail.luminum.agency`). | Same as your MX host if you use `include:` in SPF. |
-| `MAIL_SEND_IP` | Optional | IP used in **SPF** suggestion (e.g. your server’s public IP). If set, SPF suggestion uses `ip4:...` instead of `include:...`. | Your mail server’s public IPv4. |
+| `MAIL_SEND_IP` | **Required for org email setup UI** | Public IPv4 used in the **SPF** TXT (`v=spf1 ip4:… -all`) and for DNS verification. Without it, the dashboard cannot show an SPF TXT value. | Your mail server’s public IPv4 (same as the A record for the MX host). |
 | `MAIL_DKIM_SELECTOR` | Optional | DKIM selector for setup instructions (default `default`). Record name becomes `{selector}._domainkey.{domain}`. | Whatever selector you use for DKIM (e.g. `default`). |
 
 ### Mail service (apps/mail)

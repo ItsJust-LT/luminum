@@ -2,7 +2,7 @@ export interface EmailDnsRecords {
   mx: { type: "MX"; name: string; value: string; priority: number }
   /** A record for the MX hostname when MAIL_SEND_IP is set on the API */
   mailHostA?: { type: "A"; name: string; fqdn: string; value: string }
-  spf: { type: "TXT"; name: string; value: string }
+  spf: { type: "TXT"; name: string; value: string; valueNote?: string }
   dkim: { type: "TXT"; name: string; selector: string; value?: string; valueNote: string }
   dmarc: { type: "TXT"; name: string; value: string }
 }

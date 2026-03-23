@@ -25,13 +25,12 @@ export function getPrescribedInboundMxHost(emailDomain: string): string {
 }
 
 /**
- * SPF TXT we ask users to add. Prefer ip4 when MAIL_SEND_IP is set; otherwise a:/mx for the inbound host.
+ * SPF TXT we ask users to add: ip4 to the mail server’s public IPv4 only.
+ * Requires MAIL_SEND_IP on the API; there is no a:/mx fallback in setup instructions.
  */
-export function getExpectedSpfRecordForDomain(emailDomain: string): string {
-  if (MAIL_SEND_IP) return `v=spf1 ip4:${MAIL_SEND_IP} -all`;
-  const mxHost = getPrescribedInboundMxHost(emailDomain);
-  const host = MAIL_SEND_HOST_RAW || mxHost;
-  return `v=spf1 a:${host} mx -all`;
+export function getExpectedSpfRecordForDomain(_emailDomain: string): string {
+  if (!MAIL_SEND_IP) return "";
+  return `v=spf1 ip4:${MAIL_SEND_IP} -all`;
 }
 
 /** @deprecated Prefer getPrescribedInboundMxHost(domain) with the org email domain. */
@@ -53,7 +52,14 @@ export function getDkimRecordName(domain: string): { name: string; selector: str
 /** Suggested DMARC TXT value for _dmarc.domain (for setup instructions). */
 export function getExpectedDmarcRecord(domain: string): string {
   const rua = `mailto:dmarc@${domain}`;
-  return `v=DMARC1; p=none; rua=${rua}; pct=100`;
+  return `v=DMARC1; p=quarantine; rua=${rua}; pct=100`;
+}
+
+/** Parse DMARC p= tag from a TXT record (case-insensitive). */
+export function parseDmarcPolicy(record: string): "none" | "quarantine" | "reject" | null {
+  const m = String(record).match(/\bp\s*=\s*(none|quarantine|reject)\b/i);
+  if (!m) return null;
+  return m[1].toLowerCase() as "none" | "quarantine" | "reject";
 }
 
 export interface MxCheckResult {
@@ -98,7 +104,7 @@ export interface SpfCheckResult {
 export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
   const mxHost = getPrescribedInboundMxHost(domain);
   const expectedHost = MAIL_SEND_HOST_RAW || MAIL_MX_HOST || mxHost;
-  const expectedIp = MAIL_SEND_IP;
+  const mailSendIp = (MAIL_SEND_IP || "").trim().replace(/\s/g, "");
   let actualMxHosts: string[] = [];
   try {
     const mxRecords = await dns.resolveMx(domain);
@@ -106,7 +112,7 @@ export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
   } catch {
     // ignore
   }
-  if (!expectedHost && !expectedIp && actualMxHosts.length === 0) {
+  if (!expectedHost && !mailSendIp && actualMxHosts.length === 0) {
     return { ok: true, record: undefined };
   }
   try {
@@ -118,13 +124,23 @@ export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
     }
     const record = String(spf).trim();
     const lower = record.toLowerCase();
+
+    // When API has MAIL_SEND_IP, verification requires that exact ip4: in SPF (org setup uses ip4-only SPF).
+    if (mailSendIp) {
+      const hasIp = lower.includes(`ip4:${mailSendIp.toLowerCase()}`);
+      return {
+        ok: hasIp,
+        record,
+        error: hasIp ? undefined : `SPF must include ip4:${mailSendIp} (sender IPv4)`,
+      };
+    }
+
     const authorizes = (host: string) =>
       host && (lower.includes(`include:${host}`) || lower.includes(`a:${host}`));
     const hasExpected = expectedHost && authorizes(expectedHost);
     const hasActualMx = actualMxHosts.some((h) => authorizes(h));
-    const hasIp = expectedIp && lower.includes(expectedIp);
     const hasCloudflare = lower.includes("include:_spf.");
-    const ok = hasExpected || hasActualMx || hasIp || hasCloudflare;
+    const ok = hasExpected || hasActualMx || hasCloudflare;
     return { ok, record, error: ok ? undefined : "SPF does not authorize this server" };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -173,7 +189,15 @@ export async function checkDomainDmarc(domain: string): Promise<DmarcCheckResult
     if (!dmarc) {
       return { ok: false, error: "No DMARC record found" };
     }
-    return { ok: true, record: String(dmarc) };
+    const record = String(dmarc);
+    const policy = parseDmarcPolicy(record);
+    if (policy === "none") {
+      return { ok: false, record, error: "DMARC policy must be quarantine or reject (p=none is not allowed for verification)" };
+    }
+    if (policy !== "quarantine" && policy !== "reject") {
+      return { ok: false, record, error: "DMARC record must include p=quarantine or p=reject" };
+    }
+    return { ok: true, record };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: message };

@@ -181,6 +181,12 @@ router.get("/setup-status", async (req: Request, res: Response) => {
             type: "TXT" as const,
             name: "@",
             value: expectedSpfRecord,
+            ...(!expectedSpfRecord
+              ? {
+                  valueNote:
+                    "SPF must authorize your sending server by IPv4. Set MAIL_SEND_IP on the API host to your server’s public IPv4, then add the TXT value shown here once it appears.",
+                }
+              : {}),
           },
           dkim: {
             type: "TXT" as const,
@@ -334,15 +340,27 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
 router.post("/send", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
-    const { organizationId, to: toInput, subject, text, html, attachments: attachmentsInput } = req.body as {
+    const { organizationId, to: toInput, subject, text, html, attachments: attachmentsInput, fromLocalPart } = req.body as {
       organizationId?: string; to?: string | string[]; subject?: string; text?: string; html?: string;
       attachments?: { storageKey?: string; filename?: string; contentType?: string; contentBase64?: string }[];
+      /** Mailbox name only (before @); must match org email domain on the server. */
+      fromLocalPart?: string;
     };
     if (!organizationId || !subject || (!text && !html)) {
       return res.status(400).json({ success: false, error: "organizationId, subject, and text or html required" });
     }
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
-    const { from, replyTo } = await getOrgReplyAddress(organizationId);
+    let from: string;
+    let replyTo: string;
+    try {
+      ({ from, replyTo } = await getOrgReplyAddress(organizationId, fromLocalPart));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Invalid From")) {
+        return res.status(400).json({ success: false, error: msg });
+      }
+      throw err;
+    }
     const toList = Array.isArray(toInput) ? toInput : toInput ? [toInput] : [];
     if (toList.length === 0) return res.status(400).json({ success: false, error: "At least one recipient required" });
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
@@ -363,7 +381,7 @@ router.post("/send", async (req: Request, res: Response) => {
     const emailRecord = await prisma.email.create({
       data: {
         organization_id: organizationId,
-        from: replyTo,
+        from,
         to: JSON.stringify(toList),
         subject,
         text: text || null,
@@ -595,7 +613,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
     const emailRecord = await prisma.email.create({
       data: {
         organization_id: original.organization_id,
-        from: replyTo,
+        from,
         to: JSON.stringify([toAddr]),
         subject: reSubject,
         text: text || null,

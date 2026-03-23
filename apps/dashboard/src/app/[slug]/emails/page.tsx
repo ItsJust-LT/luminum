@@ -108,6 +108,8 @@ export default function EmailsPage() {
     checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
   } | null>(null)
   const [composeOpen, setComposeOpen] = useState(false)
+  /** Local part only; server appends @org domain */
+  const [composeFromLocal, setComposeFromLocal] = useState("noreply")
   const [composeTo, setComposeTo] = useState("")
   const [composeSubject, setComposeSubject] = useState("")
   const [composeBody, setComposeBody] = useState("")
@@ -378,6 +380,7 @@ export default function EmailsPage() {
     try {
       const result = await api.post("/api/emails/send", {
         organizationId: organization.id,
+        fromLocalPart: composeFromLocal.trim(),
         to: [to],
         subject,
         text,
@@ -385,6 +388,7 @@ export default function EmailsPage() {
       if (!result?.success) throw new Error(result?.error || "Failed to send email")
       toast.success("Email sent")
       setComposeOpen(false)
+      setComposeFromLocal("noreply")
       setComposeTo("")
       setComposeSubject("")
       setComposeBody("")
@@ -534,9 +538,14 @@ export default function EmailsPage() {
                         </div>
                       )}
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF — Sender policy</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF — Sender policy (IPv4)</p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: @ (or {setupStatus.dnsRecords.spf.name})</p>
-                        <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.spf.value}</code>
+                        {setupStatus.dnsRecords.spf.value ? (
+                          <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.spf.value}</code>
+                        ) : null}
+                        {setupStatus.dnsRecords.spf.valueNote && (
+                          <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.spf.valueNote}</p>
+                        )}
                       </div>
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Signing (selector: {setupStatus.dnsRecords.dkim.selector})</p>
@@ -654,6 +663,22 @@ export default function EmailsPage() {
                 <DialogTitle>New email</DialogTitle>
               </DialogHeader>
               <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <p className="text-sm text-muted-foreground">From</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Input
+                      placeholder="noreply"
+                      value={composeFromLocal}
+                      onChange={(e) => setComposeFromLocal(e.target.value)}
+                      className="min-w-0 flex-1"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <span className="text-sm text-muted-foreground shrink-0 truncate max-w-[55%]">
+                      @{setupStatus?.domain ?? "…"}
+                    </span>
+                  </div>
+                </div>
                 <Input
                   placeholder="To (email address)"
                   value={composeTo}
