@@ -140,6 +140,7 @@ services:
     environment:
       API_URL: http://api:4000
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      LOG_INGEST_SECRET: ${LOG_INGEST_SECRET:-}
       MAIL_FROM_DEFAULT: ${MAIL_FROM_DEFAULT:-}
       # Same public IP as API MAIL_SEND_IP — shown on GET /health for operators
       MAIL_SEND_IP: ${MAIL_SEND_IP:-}

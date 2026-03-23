@@ -43,6 +43,20 @@ export default function AdminEmailsPage() {
   const [offset, setOffset] = useState(0)
   const limit = 25
 
+  const toDisplayAddress = (value: unknown): string => {
+    if (!value) return "-"
+    if (Array.isArray(value)) return value.filter(Boolean).join(", ") || "-"
+    if (typeof value !== "string") return "-"
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return parsed.filter(Boolean).join(", ") || "-"
+      if (typeof parsed === "string") return parsed || "-"
+      return value || "-"
+    } catch {
+      return value || "-"
+    }
+  }
+
   const fetchData = async () => {
     setLoading(true)
     setError(null)
@@ -265,11 +279,17 @@ export default function AdminEmailsPage() {
                         )}
                       </TableCell>
                       <TableCell className="truncate max-w-[200px]">{email.subject || "(no subject)"}</TableCell>
-                      <TableCell className="text-sm truncate max-w-[150px]">{email.from_address || "-"}</TableCell>
-                      <TableCell className="text-sm truncate max-w-[150px]">{email.to_address || "-"}</TableCell>
+                      <TableCell className="text-sm truncate max-w-[200px]">{toDisplayAddress(email.from)}</TableCell>
+                      <TableCell className="text-sm truncate max-w-[220px]">{toDisplayAddress(email.to)}</TableCell>
                       <TableCell className="text-sm truncate max-w-[120px]">{email.organization?.name || "-"}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
-                        {email.receivedAt ? formatDate(email.receivedAt, { relative: true }) : "-"}
+                        {email.receivedAt
+                          ? formatDate(email.receivedAt, { relative: true })
+                          : email.sent_at
+                            ? formatDate(email.sent_at, { relative: true })
+                            : email.createdAt
+                              ? formatDate(email.createdAt, { relative: true })
+                              : "-"}
                       </TableCell>
                       <TableCell>
                         {email.read ? (

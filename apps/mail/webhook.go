@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,6 +100,6 @@ func forwardToAPI(apiURL, webhookSecret string, raw []byte, from string, to []st
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook returned %d", resp.StatusCode)
 	}
-	log.Printf("[%s] Inbound email forwarded to API (from=%s)", serviceName, parsed.From)
+	logInfo("Inbound email forwarded to API", map[string]any{"from": parsed.From, "to": parsed.To, "subject": parsed.Subject})
 	return nil
 }

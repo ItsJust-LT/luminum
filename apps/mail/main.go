@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,11 +29,13 @@ func main() {
 
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
-		log.Fatalf("[%s] API_URL is required", serviceName)
+		logError("API_URL is required", nil)
+		os.Exit(1)
 	}
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
 	if webhookSecret == "" {
-		log.Fatalf("[%s] WEBHOOK_SECRET is required", serviceName)
+		logError("WEBHOOK_SECRET is required", nil)
+		os.Exit(1)
 	}
 
 	portHTTP := os.Getenv("PORT_HTTP")
@@ -62,9 +63,9 @@ func main() {
 	smtpSrv.AllowInsecureAuth = true
 
 	go func() {
-		log.Printf("[%s] SMTP listening on %s", serviceName, smtpSrv.Addr)
+		logInfo("SMTP listening", map[string]any{"addr": smtpSrv.Addr})
 		if err := smtpSrv.ListenAndServe(); err != nil {
-			log.Printf("[%s] SMTP server error: %v", serviceName, err)
+			logError("SMTP server error", map[string]any{"error": err.Error()})
 		}
 	}()
 
@@ -112,16 +113,16 @@ func main() {
 		WriteTimeout: 60 * time.Second,
 	}
 	go func() {
-		log.Printf("[%s] HTTP listening on %s", serviceName, httpSrv.Addr)
+		logInfo("HTTP listening", map[string]any{"addr": httpSrv.Addr})
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("[%s] HTTP server error: %v", serviceName, err)
+			logError("HTTP server error", map[string]any{"error": err.Error()})
 		}
 	}()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
-	log.Printf("[%s] Shutting down...", serviceName)
+	logInfo("Shutting down", nil)
 	_ = smtpSrv.Shutdown(context.Background())
 	_ = httpSrv.Close()
 }
@@ -158,9 +159,14 @@ func (s *Session) Rcpt(to string, _ *smtp.RcptOptions) error {
 func (s *Session) Data(r io.Reader) error {
 	raw, err := io.ReadAll(r)
 	if err != nil {
+		logError("Failed to read inbound SMTP DATA", map[string]any{"error": err.Error()})
 		return err
 	}
-	return forwardToAPI(s.backend.apiURL, s.backend.webhookSecret, raw, s.from, s.to)
+	if err := forwardToAPI(s.backend.apiURL, s.backend.webhookSecret, raw, s.from, s.to); err != nil {
+		logError("Failed to forward inbound email to API", map[string]any{"error": err.Error(), "from": s.from, "rcptCount": len(s.to)})
+		return err
+	}
+	return nil
 }
 
 func (s *Session) Reset() {

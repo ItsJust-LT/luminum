@@ -527,6 +527,48 @@ router.post("/:id/unread", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/emails/mark-all-read
+router.post("/mark-all-read", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    const { organizationId } = req.body as { organizationId?: string };
+    if (!organizationId) {
+      return res.status(400).json({ success: false, error: "organizationId required" });
+    }
+    if (!(await canAccessOrganization(organizationId, req.user))) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+
+    const result = await prisma.email.updateMany({
+      where: { organization_id: organizationId, read: false },
+      data: { read: true },
+    });
+
+    const unreadNotifications = await prisma.notifications.findMany({
+      where: { user_id: req.user.id, read: false },
+      select: { id: true, data: true },
+    });
+    const emailIds = await prisma.email.findMany({
+      where: { organization_id: organizationId },
+      select: { id: true },
+    });
+    const emailIdSet = new Set(emailIds.map((e) => e.id));
+    const matchingNotificationIds = unreadNotifications
+      .filter((n: any) => emailIdSet.has((n.data as any)?.emailId))
+      .map((n) => n.id);
+    if (matchingNotificationIds.length > 0) {
+      await prisma.notifications.updateMany({
+        where: { id: { in: matchingNotificationIds } },
+        data: { read: true },
+      });
+    }
+
+    res.json({ success: true, updated: result.count });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // POST /api/emails/:id/reply
 router.post("/:id/reply", async (req: Request, res: Response) => {
   try {
@@ -608,7 +650,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/emails/:id/attachment/:index — returns proxy URL for the attachment (client can GET that URL with auth to stream or download)
+// GET /api/emails/:id/attachment/:index — streams attachment bytes with auth.
 router.get("/:id/attachment/:index", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
@@ -625,11 +667,28 @@ router.get("/:id/attachment/:index", async (req: Request, res: Response) => {
     const att = attachments[idx];
     if (!att.r2Key) return res.status(400).json({ success: false, error: "No storage key" });
 
-    const base = config.apiUrl.replace(/\/$/, "");
-    const url = `${base}/api/files/${encodeURIComponent(att.r2Key)}`;
-    res.json({ success: true, url, filename: att.filename, contentType: att.contentType });
+    if (!s3.isStorageConfigured()) {
+      return res.status(503).json({ success: false, error: "Storage not configured" });
+    }
+
+    const head = await s3.headObject(att.r2Key);
+    if (!head) return res.status(404).json({ success: false, error: "Attachment not found" });
+    const obj = await s3.getObject(att.r2Key);
+    if (!obj) return res.status(404).json({ success: false, error: "Attachment not found" });
+
+    const download = /^1|true|yes$/i.test((req.query.download as string) ?? "");
+    const filename = (att.filename || att.r2Key.split("/").pop() || "attachment").replace(/"/g, "%22");
+    res.setHeader("Content-Type", obj.contentType || att.contentType || "application/octet-stream");
+    if (obj.contentLength) res.setHeader("Content-Length", obj.contentLength);
+    if (obj.etag) res.setHeader("ETag", `"${obj.etag}"`);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.setHeader(
+      "Content-Disposition",
+      download ? `attachment; filename="${filename}"` : `inline; filename="${filename}"`
+    );
+    obj.stream.pipe(res);
   } catch (error: any) {
-    res.json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

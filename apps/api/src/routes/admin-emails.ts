@@ -81,7 +81,7 @@ router.get("/", async (req: Request, res: Response) => {
         where,
         select: {
           id: true, subject: true, from: true, to: true,
-          direction: true, read: true, receivedAt: true, organization_id: true,
+          direction: true, read: true, receivedAt: true, sent_at: true, createdAt: true, organization_id: true,
           organization: { select: { id: true, name: true, slug: true } },
         },
         orderBy: { receivedAt: "desc" },

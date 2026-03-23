@@ -16,7 +16,7 @@ import { api } from "@/lib/api"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 
 const LEVEL_OPTIONS = ["", "info", "warn", "error", "debug"]
-const SERVICE_OPTIONS = ["", "api", "dashboard", "analytics"]
+const SERVICE_OPTIONS = ["", "api", "dashboard", "analytics", "mail"]
 
 interface LogItem {
   id: string
@@ -112,7 +112,7 @@ export default function AdminLogsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">System Logs</h1>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-            Request, error, and application logs from API, dashboard, and analytics.
+            Request, error, and application logs from API, dashboard, analytics, and mail.
             {connected ? (
               <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
                 <Wifi className="h-3.5 w-3.5" /> Live

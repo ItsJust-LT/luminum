@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
+	"io"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
 	"strings"
 	"time"
@@ -25,7 +28,7 @@ type AttachmentPart struct {
 	Filename      string
 	ContentType   string
 	ContentBase64 string
-	Size         int
+	Size          int
 }
 
 func ParseRawMessage(raw []byte) (*ParsedEmail, error) {
@@ -56,65 +59,101 @@ func ParseRawMessage(raw []byte) (*ParsedEmail, error) {
 	if mediaType == "" {
 		mediaType = "text/plain"
 	}
-	if strings.HasPrefix(mediaType, "multipart/") {
-		boundary := params["boundary"]
-		if boundary == "" {
-			out.Text = readBody(msg.Body)
-			return out, nil
-		}
-		mr := multipart.NewReader(msg.Body, boundary)
-		for {
-			p, err := mr.NextPart()
-			if err != nil {
-				break
-			}
-			partType := p.Header.Get("Content-Type")
-			partMedia, _, _ := mime.ParseMediaType(partType)
-			disp := p.Header.Get("Content-Disposition")
-			_, dispParams, _ := mime.ParseMediaType(disp)
-			filename := dispParams["filename"]
-			if filename == "" {
-				filename = p.FileName()
-			}
-			partBody := readBody(p)
-			if filename != "" {
-				out.Attachments = append(out.Attachments, AttachmentPart{
-					Filename:      filename,
-					ContentType:   partMedia,
-					ContentBase64: base64.StdEncoding.EncodeToString([]byte(partBody)),
-					Size:          len(partBody),
-				})
-			} else {
-				partMedia = strings.ToLower(strings.TrimSpace(partMedia))
-				if strings.HasPrefix(partMedia, "text/html") {
-					out.HTML = partBody
-				} else {
-					out.Text = partBody
-				}
-			}
-		}
+	bodyBytes, _ := io.ReadAll(msg.Body)
+	if strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
+		parseMultipartBody(bodyBytes, mediaType, params, out)
 	} else {
-		body := readBody(msg.Body)
+		body := decodeContentBytes(bodyBytes, msg.Header.Get("Content-Transfer-Encoding"))
+		bodyText := string(body)
 		if strings.HasPrefix(strings.ToLower(mediaType), "text/html") {
-			out.HTML = body
+			out.HTML = bodyText
 		} else {
-			out.Text = body
+			out.Text = bodyText
 		}
 	}
 	return out, nil
 }
 
-func readBody(r interface{ Read([]byte) (int, error) }) string {
-	var b strings.Builder
-	buf := make([]byte, 4096)
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			b.Write(buf[:n])
+func parseMultipartBody(body []byte, mediaType string, params map[string]string, out *ParsedEmail) {
+	boundary := params["boundary"]
+	if boundary == "" {
+		if out.Text == "" {
+			out.Text = string(body)
 		}
+		return
+	}
+	mr := multipart.NewReader(bytes.NewReader(body), boundary)
+	for {
+		p, err := mr.NextPart()
 		if err != nil {
 			break
 		}
+		partBody, _ := io.ReadAll(p)
+		partBody = decodeContentBytes(partBody, p.Header.Get("Content-Transfer-Encoding"))
+
+		partType := p.Header.Get("Content-Type")
+		partMedia, partParams, _ := mime.ParseMediaType(partType)
+		partMedia = strings.ToLower(strings.TrimSpace(partMedia))
+		if partMedia == "" {
+			partMedia = "text/plain"
+		}
+
+		disp := p.Header.Get("Content-Disposition")
+		_, dispParams, _ := mime.ParseMediaType(disp)
+		filename := dispParams["filename"]
+		if filename == "" {
+			filename = partParams["name"]
+		}
+		if filename == "" {
+			filename = p.FileName()
+		}
+
+		if strings.HasPrefix(partMedia, "multipart/") {
+			parseMultipartBody(partBody, partMedia, partParams, out)
+			continue
+		}
+
+		if filename != "" || strings.Contains(strings.ToLower(disp), "attachment") {
+			out.Attachments = append(out.Attachments, AttachmentPart{
+				Filename:      filename,
+				ContentType:   partMedia,
+				ContentBase64: base64.StdEncoding.EncodeToString(partBody),
+				Size:          len(partBody),
+			})
+			continue
+		}
+
+		if strings.HasPrefix(partMedia, "text/html") {
+			if out.HTML == "" {
+				out.HTML = string(partBody)
+			}
+			continue
+		}
+		if strings.HasPrefix(partMedia, "text/plain") && out.Text == "" {
+			out.Text = string(partBody)
+		}
 	}
-	return b.String()
+}
+
+func decodeContentBytes(body []byte, transferEncoding string) []byte {
+	enc := strings.ToLower(strings.TrimSpace(transferEncoding))
+	switch enc {
+	case "", "7bit", "8bit", "binary":
+		return body
+	case "base64":
+		decoded, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, bytes.NewReader(body)))
+		if err == nil && len(decoded) > 0 {
+			return decoded
+		}
+		return body
+	case "quoted-printable":
+		decoded, err := io.ReadAll(quotedprintable.NewReader(bytes.NewReader(body)))
+		if err == nil && len(decoded) > 0 {
+			return decoded
+		}
+		return body
+	default:
+		// Leave unknown transfer encodings untouched so we don't corrupt content.
+		return body
+	}
 }

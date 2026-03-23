@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/mail"
@@ -77,10 +76,11 @@ func (h *SendHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err := h.sendSMTP(from, req.ReplyTo, req.To, req.Subject, req.Text, req.HTML, req.Attachments, req.InReplyTo, req.References, messageId)
 	if err != nil {
-		log.Printf("[%s] Send error: %v", serviceName, err)
+		logError("Send error", map[string]any{"error": err.Error(), "toCount": len(req.To), "subject": req.Subject})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	logInfo("Outbound email sent", map[string]any{"toCount": len(req.To), "subject": req.Subject, "messageId": messageId})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -125,7 +125,7 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		if err = client.StartTLS(nil); err != nil {
 			// Continue without TLS if server doesn't support or cert issue
-			log.Printf("[%s] STARTTLS failed for %s: %v", serviceName, host, err)
+			logWarn("STARTTLS failed, continuing without TLS", map[string]any{"host": host, "error": err.Error()})
 		}
 	}
 
@@ -155,7 +155,7 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 			opts.AddSignatureTimestamp = true
 			opts.Canonicalization = "relaxed/relaxed"
 			if err := dkim.Sign(&msg, opts); err != nil {
-				log.Printf("[%s] DKIM sign failed: %v", serviceName, err)
+				logWarn("DKIM sign failed, continuing without DKIM", map[string]any{"error": err.Error(), "domain": domain})
 				// continue without DKIM rather than failing the send
 			}
 		}

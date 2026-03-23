@@ -97,6 +97,7 @@ function createApiClient(baseUrl: string = "") {
     getById: (id: string) => get(`/api/emails/${id}`),
     markAsRead: (id: string) => post(`/api/emails/${id}/read`),
     markAsUnread: (id: string) => post(`/api/emails/${id}/unread`),
+    markAllAsRead: (organizationId: string) => post("/api/emails/mark-all-read", { organizationId }),
     delete: (id: string) => del(`/api/emails/${id}`),
     getUnreadCount: (organizationId: string) =>
       get("/api/emails/unread-count", { organizationId }),

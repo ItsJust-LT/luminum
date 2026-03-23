@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Mail,
+  Send,
   Search,
   Trash2,
   Check,
@@ -37,6 +38,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { EmailAvatar } from "@/components/emails/email-avatar"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { cn } from "@/lib/utils"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 
 function smartDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : new Date(date)
@@ -104,6 +107,11 @@ export default function EmailsPage() {
     message?: string
     checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
   } | null>(null)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [composeTo, setComposeTo] = useState("")
+  const [composeSubject, setComposeSubject] = useState("")
+  const [composeBody, setComposeBody] = useState("")
+  const [sendingCompose, setSendingCompose] = useState(false)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
@@ -207,6 +215,23 @@ export default function EmailsPage() {
     api.emails.delete(emailId)
     setEmails((prev) => prev.filter((email) => email.id !== emailId))
   }, [setEmails])
+
+  const handleMarkAllAsRead = useCallback(async () => {
+    if (!organization?.id) return
+    try {
+      const result = await api.emails.markAllAsRead(organization.id) as { success?: boolean; updated?: number; error?: string }
+      if (!result?.success) throw new Error(result?.error || "Failed to mark all as read")
+      setEmails((prev) => prev.map((email) => ({ ...email, read: true })))
+      setUnreadCountFromApi(0)
+      toast.success(
+        result.updated && result.updated > 0
+          ? `Marked ${result.updated} email${result.updated === 1 ? "" : "s"} as read`
+          : "All emails are already read"
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to mark all as read")
+    }
+  }, [organization?.id, setEmails, setUnreadCountFromApi])
 
   const extractPreview = useCallback((email: EmailListItem) => {
     if (email.textBody) return email.textBody.slice(0, 120).replace(/\s+/g, " ").trim() + (email.textBody.length > 120 ? "…" : "")
@@ -343,6 +368,34 @@ export default function EmailsPage() {
 
   const displayTotal = totalCount ?? emails.length
   const displayUnread = unreadCountFromApi ?? emails.filter((e) => !e.read).length
+
+  const handleSendEmail = async () => {
+    const to = composeTo.trim()
+    const subject = composeSubject.trim()
+    const text = composeBody.trim()
+    if (!organization?.id || !to || !subject || !text) return
+    setSendingCompose(true)
+    try {
+      const result = await api.post("/api/emails/send", {
+        organizationId: organization.id,
+        to: [to],
+        subject,
+        text,
+      }) as { success?: boolean; error?: string }
+      if (!result?.success) throw new Error(result?.error || "Failed to send email")
+      toast.success("Email sent")
+      setComposeOpen(false)
+      setComposeTo("")
+      setComposeSubject("")
+      setComposeBody("")
+      setPage(1)
+      await fetchEmails(1, true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to send email")
+    } finally {
+      setSendingCompose(false)
+    }
+  }
 
   if (showSetupRequired) {
     const hasDomain = !!setupStatus?.domain
@@ -579,6 +632,55 @@ export default function EmailsPage() {
             <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
             Refresh
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleMarkAllAsRead}
+            disabled={loading || displayUnread === 0}
+            className="shrink-0"
+          >
+            <Check className="h-4 w-4 mr-2" />
+            Mark all read
+          </Button>
+          <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="shrink-0">
+                <Send className="h-4 w-4 mr-2" />
+                Compose
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>New email</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Input
+                  placeholder="To (email address)"
+                  value={composeTo}
+                  onChange={(e) => setComposeTo(e.target.value)}
+                />
+                <Input
+                  placeholder="Subject"
+                  value={composeSubject}
+                  onChange={(e) => setComposeSubject(e.target.value)}
+                />
+                <Textarea
+                  placeholder="Message"
+                  value={composeBody}
+                  onChange={(e) => setComposeBody(e.target.value)}
+                  className="min-h-[220px]"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setComposeOpen(false)} disabled={sendingCompose}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSendEmail} disabled={sendingCompose || !composeTo.trim() || !composeSubject.trim() || !composeBody.trim()}>
+                    {sendingCompose ? "Sending..." : "Send"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

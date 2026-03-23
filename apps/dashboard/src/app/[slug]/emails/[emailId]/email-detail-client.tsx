@@ -47,6 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { EmailAvatar } from "@/components/emails/email-avatar"
+import { Textarea } from "@/components/ui/textarea"
 
 interface Email {
   id: string
@@ -102,6 +103,19 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
   } | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [textPreviewContent, setTextPreviewContent] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState("")
+  const [sendingReply, setSendingReply] = useState(false)
+
+  const getAttachmentEndpoint = (attachmentIndex: number, download = false) =>
+    `${(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "")}/api/emails/${encodeURIComponent(email.id)}/attachment/${attachmentIndex}${download ? "?download=1" : ""}`
+
+  const fetchAttachmentBlobUrl = async (attachmentIndex: number, download = false) => {
+    const endpoint = getAttachmentEndpoint(attachmentIndex, download)
+    const response = await fetch(endpoint, { credentials: "include" })
+    if (!response.ok) throw new Error("Failed to fetch attachment")
+    const blob = await response.blob()
+    return URL.createObjectURL(blob)
+  }
 
   useEffect(() => {
     if (email.htmlBody && typeof window !== "undefined") {
@@ -122,15 +136,20 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
   }
 
   const handleDownloadAttachment = async (attachmentIndex: number) => {
+    let blobUrl: string | null = null
     try {
-      const result = await api.emails.getAttachmentUrl(email.id, attachmentIndex) as { success?: boolean; url?: string; error?: string }
-      if (result?.url) {
-        window.open(result.url, "_blank")
-      } else {
-        toast.error(result?.error || "Failed to get attachment URL")
-      }
+      blobUrl = await fetchAttachmentBlobUrl(attachmentIndex, true)
+      const filename = email.attachments[attachmentIndex]?.filename || "attachment"
+      const a = document.createElement("a")
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(blobUrl!), 2000)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to get attachment URL")
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+      toast.error(err instanceof Error ? err.message : "Failed to download attachment")
     }
   }
 
@@ -141,17 +160,13 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
 
     setLoadingPreview(true)
     setTextPreviewContent(null)
+    let blobUrl: string | null = null
     try {
-      const result = await api.emails.getAttachmentUrl(email.id, attachmentIndex) as { success?: boolean; url?: string; error?: string }
+      blobUrl = await fetchAttachmentBlobUrl(attachmentIndex, false)
       setLoadingPreview(false)
 
-      if (!result?.url) {
-        toast.error(result?.error || "Failed to load preview")
-        return
-      }
-
       setPreview({
-        url: result.url,
+        url: blobUrl,
         filename: attachment.filename || "attachment",
         type,
         index: attachmentIndex,
@@ -159,12 +174,13 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
 
       if (type === "text") {
         setTextPreviewContent(null)
-        fetch(result.url)
+        fetch(blobUrl)
         .then((r) => (r.ok ? r.text() : Promise.reject(new Error("Failed to load"))))
         .then(setTextPreviewContent)
         .catch(() => setTextPreviewContent("(Unable to load text preview. You can download the file.)"))
       }
     } catch (err) {
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
       setLoadingPreview(false)
       toast.error(err instanceof Error ? err.message : "Failed to load preview")
     }
@@ -172,8 +188,26 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
 
   const handlePreviewOpenChange = (open: boolean) => {
     if (!open) {
+      if (preview?.url?.startsWith("blob:")) URL.revokeObjectURL(preview.url)
       setPreview(null)
       setTextPreviewContent(null)
+    }
+  }
+
+  const handleReply = async () => {
+    const text = replyText.trim()
+    if (!text) return
+    setSendingReply(true)
+    try {
+      const result = await api.post(`/api/emails/${email.id}/reply`, { text }) as { success?: boolean; error?: string }
+      if (!result?.success) throw new Error(result?.error || "Failed to send reply")
+      toast.success("Reply sent")
+      setReplyText("")
+      router.push(`/${organizationSlug}/emails`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send reply")
+    } finally {
+      setSendingReply(false)
     }
   }
 
@@ -555,6 +589,27 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
                 </p>
               </div>
             )}
+          </Card>
+
+          {/* Plain text dialog (opened from dropdown) */}
+          <Card className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b bg-muted/30 flex items-center gap-2">
+              <Reply className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Quick reply</span>
+            </div>
+            <div className="p-4 space-y-3">
+              <Textarea
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder="Write a reply..."
+                className="min-h-[120px]"
+              />
+              <div className="flex justify-end">
+                <Button onClick={handleReply} disabled={sendingReply || !replyText.trim()}>
+                  {sendingReply ? "Sending..." : "Send reply"}
+                </Button>
+              </div>
+            </div>
           </Card>
 
           {/* Plain text dialog (opened from dropdown) */}
