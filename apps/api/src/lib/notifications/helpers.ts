@@ -165,11 +165,15 @@ async function sendPushNotifications(notifications: any[]) {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
     return;
   }
+  // Deploy writes PEM keys into server .env as single-line values with literal "\n".
+  // Convert those escape sequences back to real newlines before passing into the web-push lib.
+  const vapidPublicKey = process.env.VAPID_PUBLIC_KEY!.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY!.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
   const webpush = (await import("web-push")).default;
   webpush.setVapidDetails(
     "mailto:notifications@luminum.agency",
-    process.env.VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!
+    vapidPublicKey,
+    vapidPrivateKey
   );
 
   for (const notif of notifications) {

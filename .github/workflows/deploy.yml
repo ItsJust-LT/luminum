@@ -144,6 +144,14 @@ jobs:
           PREFIX=$(echo "$PREFIX" | tr '[:upper:]' '[:lower:]')
           PG_PASS="${{ secrets.PROD_POSTGRES_PASSWORD }}"
           [ -z "$PG_PASS" ] && PG_PASS="luminum_internal"
+          escape_multiline_env() {
+            # Docker Compose env_file parser is strict: it cannot read values with literal newlines.
+            # Convert real newlines in secret values into literal "\n" so the .env file stays valid.
+            printf '%s' "$1" | sed ':a;N;$!ba;s/\r//g;s/\n/\\n/g'
+          }
+          MAIL_DKIM_PRIVATE_KEY_ESCAPED="$(escape_multiline_env "${{ secrets.PROD_MAIL_DKIM_PRIVATE_KEY }}")"
+          VAPID_PUBLIC_KEY_ESCAPED="$(escape_multiline_env "${{ secrets.PROD_API_VAPID_PUBLIC_KEY }}")"
+          VAPID_PRIVATE_KEY_ESCAPED="$(escape_multiline_env "${{ secrets.PROD_API_VAPID_PRIVATE_KEY }}")"
           {
             echo "REGISTRY_IMAGE_PREFIX=$PREFIX"
             echo "POSTGRES_USER=${{ vars.PROD_POSTGRES_USER || 'luminum' }}"
@@ -165,9 +173,9 @@ jobs:
             echo "MAIL_MX_DOMAIN=${{ secrets.PROD_MAIL_MX_DOMAIN }}"
             echo "MAIL_MX_HOST=${{ secrets.PROD_MAIL_MX_HOST }}"
             echo "MAIL_SEND_HOST=${{ secrets.PROD_MAIL_SEND_HOST }}"
-            echo "MAIL_DKIM_PRIVATE_KEY=${{ secrets.PROD_MAIL_DKIM_PRIVATE_KEY }}"
-            echo "VAPID_PUBLIC_KEY=${{ secrets.PROD_API_VAPID_PUBLIC_KEY }}"
-            echo "VAPID_PRIVATE_KEY=${{ secrets.PROD_API_VAPID_PRIVATE_KEY }}"
+            echo "MAIL_DKIM_PRIVATE_KEY=$MAIL_DKIM_PRIVATE_KEY_ESCAPED"
+            echo "VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY_ESCAPED"
+            echo "VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY_ESCAPED"
             echo "RESEND_API_KEY=${{ secrets.PROD_API_RESEND_API_KEY }}"
             echo "PAYSTACK_SECRET=${{ secrets.PROD_API_PAYSTACK_SECRET }}"
             echo "S3_ENDPOINT=${{ secrets.PROD_API_S3_ENDPOINT }}"

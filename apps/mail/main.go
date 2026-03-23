@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -70,7 +71,14 @@ func main() {
 	mux := http.NewServeMux()
 	sendHandler := &SendHandler{
 		mailFromDefault:   os.Getenv("MAIL_FROM_DEFAULT"),
-		dkimPrivateKeyPEM: []byte(os.Getenv("MAIL_DKIM_PRIVATE_KEY")),
+		// Deploy writes PEM keys into .env as single-line values with literal "\n".
+		// Convert those escape sequences back into real newlines before DKIM parsing.
+		dkimPrivateKeyPEM: func() []byte {
+			dkimKey := os.Getenv("MAIL_DKIM_PRIVATE_KEY")
+			dkimKey = strings.ReplaceAll(dkimKey, `\\n`, "\n")
+			dkimKey = strings.ReplaceAll(dkimKey, `\n`, "\n")
+			return []byte(dkimKey)
+		}(),
 		dkimSelector:      os.Getenv("MAIL_DKIM_SELECTOR"),
 	}
 	if sendHandler.dkimSelector == "" {
