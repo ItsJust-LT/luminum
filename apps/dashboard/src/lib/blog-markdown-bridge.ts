@@ -223,6 +223,19 @@ export function markdownToHtml(markdown: string): string {
   return marked.parse(wrapped, { async: false }) as string;
 }
 
+/**
+ * Turndown treats empty block elements as "blank" and applies blankReplacement
+ * before any custom rule runs. Blog widgets serialize as empty <div>s (attrs only),
+ * so they were dropped on visual → markdown. A zero-width space makes the node
+ * non-blank so blogWidgetBlock runs; it is not emitted in the final markdown.
+ */
+function preprocessHtmlForBlogWidgets(html: string): string {
+  return html.replace(
+    /<div(\s[^>]*\bdata-type=["']blog-widget["'][^>]*)>\s*<\/div>/gi,
+    "<div$1>\u200b</div>"
+  );
+}
+
 export function htmlToMarkdown(html: string): string {
-  return turndown.turndown(html || "").trim();
+  return turndown.turndown(preprocessHtmlForBlogWidgets(html || "")).trim();
 }

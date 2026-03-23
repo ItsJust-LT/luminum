@@ -1,3 +1,9 @@
+// DKIM key generation is not a standalone program. Run from this directory:
+//
+//	go run . gen-dkim-key [selector]
+//
+// Example: go run . gen-dkim-key default
+// Do not use: go run ./dkim_gen.go (that file has no func main).
 package main
 
 import (
