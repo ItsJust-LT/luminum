@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -123,7 +124,8 @@ func (h *SendHandler) sendSMTP(from, replyTo string, to []string, subject, text,
 		return err
 	}
 	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err = client.StartTLS(nil); err != nil {
+		tlsCfg := &tls.Config{ServerName: host}
+		if err = client.StartTLS(tlsCfg); err != nil {
 			// Continue without TLS if server doesn't support or cert issue
 			logWarn("STARTTLS failed, continuing without TLS", map[string]any{"host": host, "error": err.Error()})
 		}
