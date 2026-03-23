@@ -4,7 +4,6 @@ import React, { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
@@ -13,10 +12,11 @@ import {
 } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import {
-  Gauge, RefreshCw, Globe, AlertTriangle, CheckCircle2, Clock,
-  ArrowRight, Monitor, Smartphone, Zap, Loader2,
+  Gauge, RefreshCw, Globe, AlertTriangle, CheckCircle2,
+  Monitor, Smartphone, Zap, Loader2,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import type { Website } from "@/lib/types/websites"
 import type { AuditListItem, AuditDetail, AuditSummary, Grade, MetricStatus } from "@/lib/types/audits"
@@ -104,19 +104,30 @@ export default function AuditsPage() {
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [formFactor, setFormFactor] = useState<"mobile" | "desktop">("mobile")
-  const [scanPath, setScanPath] = useState("/")
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null)
 
   const syncAuditsFromServer = useCallback(async (websiteId: string) => {
-    const res = await api.websiteAudits.list({ websiteId, limit: 20 }) as any
+    const res = await api.websiteAudits.list({ websiteId, limit: 100 }) as any
     const rows: AuditListItem[] = res?.data ?? []
     setAudits(rows)
-    const completed = rows.find((a) => a.status === "completed")
+    const completedHome = rows.find(
+      (a) => a.status === "completed" && (a.path === "/" || a.path === "" || a.path == null),
+    )
+    const completed = completedHome ?? rows.find((a) => a.status === "completed")
     if (completed) {
       const detail = await api.websiteAudits.getById(completed.id) as any
       setLatestDetail(detail?.data ?? null)
+      setSelectedAuditId(completed.id)
     } else {
       setLatestDetail(null)
+      setSelectedAuditId(null)
     }
+  }, [])
+
+  const selectAudit = useCallback(async (id: string) => {
+    setSelectedAuditId(id)
+    const detail = await api.websiteAudits.getById(id) as any
+    setLatestDetail(detail?.data ?? null)
   }, [])
 
   const fetchWebsites = useCallback(async () => {
@@ -176,7 +187,7 @@ export default function AuditsPage() {
     if (!selectedWebsite || scanning) return
     setScanning(true)
     try {
-      await api.websiteAudits.create(selectedWebsite.id, { path: scanPath, formFactor })
+      await api.websiteAudits.create(selectedWebsite.id, { formFactor })
       await syncAuditsFromServer(selectedWebsite.id)
     } catch (err: any) {
       console.error("Scan failed:", err.message)
@@ -188,7 +199,13 @@ export default function AuditsPage() {
   const metrics = latestDetail?.metrics as AuditDetail["metrics"] | null
 
   const trendData = audits
-    .filter((a) => a.status === "completed" && a.summary)
+    .filter(
+      (a) =>
+        a.status === "completed" &&
+        a.summary &&
+        (a.path === "/" || a.path === "" || a.path == null),
+    )
+    .slice()
     .reverse()
     .map((a) => ({
       date: formatDate(a.completedAt!),
@@ -221,8 +238,8 @@ export default function AuditsPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Site Audits</h1>
             <p className="text-muted-foreground">
-              Performance insights powered by Lighthouse. If a site has no results yet, we start a mobile homepage scan automatically.
-              Daily scheduled scans also run once per site per UTC day when your worker and Redis are configured.
+              Full-site scans discover URLs from your sitemap (with a homepage link fallback), then run Lighthouse per page.
+              New sites get a mobile scan automatically when you open this page. Daily scheduled scans use the same discovery when cron is configured.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -244,13 +261,6 @@ export default function AuditsPage() {
                 </SelectContent>
               </Select>
             )}
-            <Input
-              className="w-[100px] h-9 text-sm"
-              value={scanPath}
-              onChange={(e) => setScanPath(e.target.value || "/")}
-              placeholder="Path"
-              title="URL path to scan (e.g. / or /pricing)"
-            />
             <Select value={formFactor} onValueChange={(v) => setFormFactor(v as "mobile" | "desktop")}>
               <SelectTrigger className="w-[130px]">
                 <SelectValue />
@@ -269,12 +279,12 @@ export default function AuditsPage() {
                 <span className="inline-flex">
                   <Button onClick={startScan} disabled={scanning || !selectedWebsite}>
                     {scanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Gauge className="h-4 w-4 mr-2" />}
-                    {scanning ? "Scanning..." : "Run manual scan"}
+                    {scanning ? "Scanning..." : "Run full-site scan"}
                   </Button>
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
-                Enqueues a new Lighthouse run immediately. Subject to per-user rate limits. First-time sites are auto-scanned when you open this page.
+                Enqueues Lighthouse for each discovered URL (sitemap + link crawl, capped). Subject to rate limits.
               </TooltipContent>
             </Tooltip>
           </div>
@@ -303,9 +313,108 @@ export default function AuditsPage() {
           </Card>
         )}
 
-        {/* Overview cards */}
-        {summary && (
-          <div className="grid gap-4 md:grid-cols-3">
+        {/* Pages — select a route to view metrics below */}
+        {audits.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                Pages
+              </CardTitle>
+              <CardDescription>
+                One row per URL. Click a row to load Lighthouse scores and timings for that page.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y rounded-md border">
+                {audits.map((a) => {
+                  const s = a.summary as AuditSummary | null
+                  return (
+                    <div
+                      key={a.id}
+                      role="button"
+                      tabIndex={0}
+                      className={cn(
+                        "py-3 px-3 first:pt-3 last:pb-3 flex items-center gap-4 cursor-pointer text-left w-full transition-colors",
+                        selectedAuditId === a.id ? "bg-muted/80" : "hover:bg-muted/50",
+                      )}
+                      onClick={() => void selectAudit(a.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          void selectAudit(a.id)
+                        }
+                      }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-mono font-medium truncate">{a.path || "/"}</p>
+                        <p className="text-xs text-muted-foreground truncate">{a.targetUrl}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatDate(a.createdAt)} · {a.formFactor}
+                          {a.scanBatchId ? " · multi-page scan" : ""}
+                        </p>
+                      </div>
+                      {a.status === "completed" && s && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm font-bold tabular-nums">{s.performanceScore}</span>
+                          <Badge className={`text-xs ${GRADE_COLORS[s.grade]}`}>{s.grade}</Badge>
+                        </div>
+                      )}
+                      {a.status === "failed" && (
+                        <Badge variant="destructive" className="text-xs shrink-0">Failed</Badge>
+                      )}
+                      {(a.status === "queued" || a.status === "running") && (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
+                      )}
+                      {a.status === "failed" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void (async () => {
+                                  await api.websiteAudits.retry(a.id)
+                                  if (selectedWebsite) void syncAuditsFromServer(selectedWebsite.id)
+                                })()
+                              }}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Re-run full-site scan</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {latestDetail?.status === "failed" && (
+          <Card className="border-destructive/40">
+            <CardHeader>
+              <CardTitle className="text-base text-destructive">Scan failed</CardTitle>
+              <CardDescription className="font-mono text-xs">{latestDetail.path || latestDetail.targetUrl}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm">{latestDetail.errorMessage ?? "Unknown error"}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Overview cards — selected route */}
+        {summary && latestDetail && (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Metrics for{" "}
+              <span className="font-mono font-medium text-foreground">{latestDetail.path || "/"}</span>
+            </p>
+            <div className="grid gap-4 md:grid-cols-3">
             <Card>
               <CardContent className="pt-6 flex items-center gap-6">
                 <ScoreRing score={summary.overallScore} label="Overall" />
@@ -357,6 +466,7 @@ export default function AuditsPage() {
                 )}
               </CardContent>
             </Card>
+          </div>
           </div>
         )}
 
@@ -421,8 +531,8 @@ export default function AuditsPage() {
             {trendData.length > 1 && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Performance Trend</CardTitle>
-                  <CardDescription>Score over recent audits</CardDescription>
+                  <CardTitle className="text-base">Homepage performance trend</CardTitle>
+                  <CardDescription>Completed audits for path / only</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ChartContainer config={trendChartConfig} className="h-[220px] w-full">
@@ -508,76 +618,6 @@ export default function AuditsPage() {
                     </Badge>
                   </div>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Audit history */}
-        {audits.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Audit History
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y">
-                {audits.map((a) => {
-                  const s = a.summary as AuditSummary | null
-                  return (
-                    <div key={a.id} className="py-3 first:pt-0 last:pb-0 flex items-center gap-4">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{a.targetUrl}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(a.createdAt)} · {a.formFactor}
-                        </p>
-                      </div>
-                      {a.status === "completed" && s && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{s.performanceScore}</span>
-                          <Badge className={`text-xs ${GRADE_COLORS[s.grade]}`}>{s.grade}</Badge>
-                        </div>
-                      )}
-                      {a.status === "failed" && (
-                        <Badge variant="destructive" className="text-xs">Failed</Badge>
-                      )}
-                      {(a.status === "queued" || a.status === "running") && (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      )}
-                      {a.status === "completed" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={async () => {
-                            const detail = await api.websiteAudits.getById(a.id) as any
-                            setLatestDetail(detail?.data ?? null)
-                          }}
-                        >
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                      {a.status === "failed" && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={async () => {
-                                await api.websiteAudits.retry(a.id)
-                                if (selectedWebsite) void syncAuditsFromServer(selectedWebsite.id)
-                              }}
-                            >
-                              <RefreshCw className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Retry scan</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                  )
-                })}
               </div>
             </CardContent>
           </Card>

@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { canAccessOrganization } from "../lib/access.js";
 import { getQueryParam, getPathParam } from "../lib/req-params.js";
 import { rateLimitAudit, rateLimitAuditBootstrap } from "../middleware/rate-limit.js";
-import { createAndEnqueueWebsiteAudit } from "../site-audit/create-audit.js";
+import { createFullSiteScan } from "../site-audit/create-audit.js";
 import { enqueueAuditReplacing } from "../site-audit/queue.js";
 
 const router = Router();
@@ -44,17 +44,22 @@ router.post("/bootstrap", rateLimitAuditBootstrap, async (req: Request, res: Res
       });
     }
 
-    const audit = await createAndEnqueueWebsiteAudit(prisma, {
+    const batch = await createFullSiteScan(prisma, {
       websiteId,
       organizationId: website.organization_id,
       domain: website.domain,
-      path: "/",
       formFactor: "mobile",
       triggerSource: "bootstrap",
     });
 
     res.json({
-      data: { triggered: true as const, reason: "enqueued" as const, auditId: audit.id },
+      data: {
+        triggered: true as const,
+        reason: "enqueued" as const,
+        scanBatchId: batch.scanBatchId,
+        auditIds: batch.auditIds,
+        count: batch.auditIds.length,
+      },
       error: null,
     });
   } catch (err: any) {
@@ -62,10 +67,10 @@ router.post("/bootstrap", rateLimitAuditBootstrap, async (req: Request, res: Res
   }
 });
 
-// POST /api/website-audits — manual scan (org member)
+// POST /api/website-audits — full-site scan (sitemap + link crawl), org member
 router.post("/", rateLimitAudit, async (req: Request, res: Response) => {
   try {
-    const { websiteId, path, formFactor } = req.body;
+    const { websiteId, formFactor } = req.body;
     if (!websiteId) return res.status(400).json({ data: null, error: "websiteId is required" });
 
     const website = await prisma.websites.findUnique({
@@ -79,16 +84,23 @@ router.post("/", rateLimitAudit, async (req: Request, res: Response) => {
 
     const factor = formFactor === "desktop" ? "desktop" : "mobile";
 
-    const audit = await createAndEnqueueWebsiteAudit(prisma, {
+    const batch = await createFullSiteScan(prisma, {
       websiteId,
       organizationId: website.organization_id,
       domain: website.domain,
-      path: path && typeof path === "string" ? path : "/",
       formFactor: factor,
       triggerSource: "manual",
     });
 
-    res.json({ data: { auditId: audit.id, status: audit.status }, error: null });
+    res.json({
+      data: {
+        scanBatchId: batch.scanBatchId,
+        auditIds: batch.auditIds,
+        count: batch.auditIds.length,
+        paths: batch.paths,
+      },
+      error: null,
+    });
   } catch (err: any) {
     const msg = err?.message ?? "Failed to create audit";
     res.status(400).json({ data: null, error: msg });
@@ -131,7 +143,7 @@ router.get("/", async (req: Request, res: Response) => {
     const [audits, total] = await Promise.all([
       prisma.website_audit.findMany({
         where,
-        orderBy: { created_at: "desc" },
+        orderBy: [{ created_at: "desc" }, { path: "asc" }],
         skip,
         take: limit,
         include: {
@@ -149,6 +161,7 @@ router.get("/", async (req: Request, res: Response) => {
         status: a.status,
         targetUrl: a.target_url,
         path: a.path,
+        scanBatchId: a.scan_batch_id,
         formFactor: a.form_factor,
         triggerSource: a.trigger_source,
         errorMessage: a.error_message,
@@ -189,6 +202,7 @@ router.get("/:id", async (req: Request, res: Response) => {
         status: audit.status,
         targetUrl: audit.target_url,
         path: audit.path,
+        scanBatchId: audit.scan_batch_id,
         formFactor: audit.form_factor,
         triggerSource: audit.trigger_source,
         errorMessage: audit.error_message,
@@ -241,16 +255,22 @@ router.post("/:id/retry", rateLimitAudit, async (req: Request, res: Response) =>
       });
     }
 
-    const audit = await createAndEnqueueWebsiteAudit(prisma, {
+    const batch = await createFullSiteScan(prisma, {
       websiteId: existing.website_id,
       organizationId: existing.organization_id,
       domain: website.domain,
-      path: existing.path ?? "/",
-      formFactor: existing.form_factor as "mobile" | "desktop",
+      formFactor: existing.form_factor === "desktop" ? "desktop" : "mobile",
       triggerSource: "manual",
     });
 
-    res.json({ data: { auditId: audit.id, status: audit.status }, error: null });
+    res.json({
+      data: {
+        scanBatchId: batch.scanBatchId,
+        auditIds: batch.auditIds,
+        count: batch.auditIds.length,
+      },
+      error: null,
+    });
   } catch (err: any) {
     res.status(500).json({ data: null, error: err.message });
   }

@@ -1,5 +1,5 @@
 import { prisma } from "./prisma.js";
-import { createAndEnqueueWebsiteAudit } from "../site-audit/create-audit.js";
+import { createFullSiteScan } from "../site-audit/create-audit.js";
 import { recoverStaleSiteAudits } from "../site-audit/recover-stale.js";
 import { logger } from "./logger.js";
 
@@ -31,8 +31,6 @@ export async function runScheduledSiteAudits(): Promise<{
   const scheduledToday = await prisma.website_audit.findMany({
     where: {
       trigger_source: "scheduled",
-      path: "/",
-      form_factor: "mobile",
       created_at: { gte: dayStart },
       status: { in: ["queued", "running", "completed"] },
     },
@@ -48,11 +46,10 @@ export async function runScheduledSiteAudits(): Promise<{
       continue;
     }
     try {
-      await createAndEnqueueWebsiteAudit(prisma, {
+      await createFullSiteScan(prisma, {
         websiteId: w.id,
         organizationId: w.organization_id,
         domain: w.domain,
-        path: "/",
         formFactor: "mobile",
         triggerSource: "scheduled",
       });

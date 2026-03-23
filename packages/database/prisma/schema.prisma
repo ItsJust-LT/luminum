@@ -594,6 +594,8 @@ model website_audit {
   form_factor         String              @default("mobile") @db.VarChar(10)
   /// manual | bootstrap | scheduled
   trigger_source      String              @default("manual") @db.VarChar(20)
+  /// Same UUID for all pages audited in one full-site scan
+  scan_batch_id       String?             @db.Uuid
   error_message       String?             @db.Text
   lighthouse_version  String?             @db.VarChar(20)
   started_at          DateTime?           @db.Timestamptz(6)
@@ -606,6 +608,7 @@ model website_audit {
   @@index([organization_id, completed_at(sort: Desc)], map: "idx_website_audit_org_completed")
   @@index([status], map: "idx_website_audit_status")
   @@index([website_id, trigger_source, created_at(sort: Desc)], map: "idx_website_audit_website_trigger_created")
+  @@index([website_id, scan_batch_id], map: "idx_website_audit_scan_batch")
 }
 
 model website_audit_result {

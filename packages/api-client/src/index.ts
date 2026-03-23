@@ -703,7 +703,7 @@ function createApiClient(baseUrl: string = "") {
 
   // ─── Website Audits ──────────────────────────────────────
   const websiteAudits = {
-    create: (websiteId: string, opts?: { path?: string; formFactor?: "mobile" | "desktop" }) =>
+    create: (websiteId: string, opts?: { formFactor?: "mobile" | "desktop" }) =>
       post("/api/website-audits", { websiteId, ...opts }),
     bootstrap: (websiteId: string) =>
       post("/api/website-audits/bootstrap", { websiteId }),

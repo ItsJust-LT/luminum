@@ -59,6 +59,8 @@ export interface AuditListItem {
   status: "queued" | "running" | "completed" | "failed";
   targetUrl: string;
   path: string | null;
+  /** Present when this row is part of a multi-page scan */
+  scanBatchId?: string | null;
   formFactor: string;
   errorMessage: string | null;
   lighthouseVersion: string | null;

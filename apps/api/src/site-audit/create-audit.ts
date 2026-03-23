@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@luminum/database";
+import { discoverPathsForDomain } from "./discover-urls.js";
 import { enqueueAudit } from "./queue.js";
 
 export type AuditTriggerSource = "manual" | "bootstrap" | "scheduled";
@@ -34,6 +36,7 @@ export async function createAndEnqueueWebsiteAudit(
     path?: string;
     formFactor: "mobile" | "desktop";
     triggerSource: AuditTriggerSource;
+    scanBatchId?: string | null;
   },
 ) {
   const factor = params.formFactor === "desktop" ? "desktop" : "mobile";
@@ -48,6 +51,7 @@ export async function createAndEnqueueWebsiteAudit(
       form_factor: factor,
       status: "queued",
       trigger_source: params.triggerSource,
+      scan_batch_id: params.scanBatchId ?? null,
     },
   });
 
@@ -72,4 +76,33 @@ export async function createAndEnqueueWebsiteAudit(
   }
 
   return audit;
+}
+
+/**
+ * Discovers URLs (sitemap + fallback), then creates one audit + queue job per path (shared scan_batch_id).
+ */
+export async function createFullSiteScan(
+  prisma: PrismaClient,
+  params: {
+    websiteId: string;
+    organizationId: string;
+    domain: string;
+    formFactor: "mobile" | "desktop";
+    triggerSource: AuditTriggerSource;
+  },
+): Promise<{ scanBatchId: string; auditIds: string[]; paths: string[] }> {
+  const paths = await discoverPathsForDomain(params.domain);
+  const scanBatchId = randomUUID();
+  const auditIds: string[] = [];
+
+  for (const path of paths) {
+    const audit = await createAndEnqueueWebsiteAudit(prisma, {
+      ...params,
+      path,
+      scanBatchId,
+    });
+    auditIds.push(audit.id);
+  }
+
+  return { scanBatchId, auditIds, paths };
 }
