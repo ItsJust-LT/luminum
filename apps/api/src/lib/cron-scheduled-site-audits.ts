@@ -1,5 +1,6 @@
 import { prisma } from "./prisma.js";
 import { createAndEnqueueWebsiteAudit } from "../site-audit/create-audit.js";
+import { recoverStaleSiteAudits } from "../site-audit/recover-stale.js";
 import { logger } from "./logger.js";
 
 function startOfUtcDay(d = new Date()): Date {
@@ -8,16 +9,20 @@ function startOfUtcDay(d = new Date()): Date {
 
 /**
  * Enqueues one mobile homepage audit per website per UTC day (trigger_source=scheduled),
- * skipping sites that already received a scheduled run today.
+ * skipping sites that already have an in-flight or completed scheduled run today.
+ * Failed scheduled runs today do not block a new attempt (e.g. after fixing the worker).
  */
 export async function runScheduledSiteAudits(): Promise<{
   totalWebsites: number;
   enqueued: number;
   skippedAlreadyToday: number;
   errors: string[];
+  recovered: Awaited<ReturnType<typeof recoverStaleSiteAudits>>;
 }> {
   const dayStart = startOfUtcDay();
   const errors: string[] = [];
+
+  const recovered = await recoverStaleSiteAudits(prisma);
 
   const websites = await prisma.websites.findMany({
     select: { id: true, domain: true, organization_id: true },
@@ -29,6 +34,7 @@ export async function runScheduledSiteAudits(): Promise<{
       path: "/",
       form_factor: "mobile",
       created_at: { gte: dayStart },
+      status: { in: ["queued", "running", "completed"] },
     },
     select: { website_id: true },
   });
@@ -64,5 +70,6 @@ export async function runScheduledSiteAudits(): Promise<{
     enqueued,
     skippedAlreadyToday,
     errors,
+    recovered,
   };
 }
