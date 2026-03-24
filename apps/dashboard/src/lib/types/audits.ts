@@ -61,6 +61,9 @@ export interface AuditListItem {
   path: string | null;
   formFactor: string;
   triggerSource: string;
+  progressCurrent?: string | null;
+  progressDone?: number;
+  progressTotal?: number;
   errorMessage: string | null;
   lighthouseVersion: string | null;
   startedAt: string | null;

@@ -594,6 +594,9 @@ model website_audit {
   form_factor         String              @default("both") @db.VarChar(10)
   /// manual | bootstrap | scheduled
   trigger_source      String              @default("manual") @db.VarChar(20)
+  progress_current    String?             @db.VarChar(500)
+  progress_done       Int                 @default(0)
+  progress_total      Int                 @default(0)
   error_message       String?             @db.Text
   lighthouse_version  String?             @db.VarChar(20)
   started_at          DateTime?           @db.Timestamptz(6)

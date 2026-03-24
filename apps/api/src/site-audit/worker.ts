@@ -125,17 +125,51 @@ function aggregate(results: PageDeviceResult[]) {
 
 async function processJob(job: { data: AuditJobPayload }) {
   const { auditId, domain, paths } = job.data;
+  const progressTotal = paths.length * 2;
+  let progressDone = 0;
   await prisma.website_audit.update({
     where: { id: auditId },
-    data: { status: "running", started_at: new Date(), form_factor: "both", path: null },
+    data: {
+      status: "running",
+      started_at: new Date(),
+      form_factor: "both",
+      path: null,
+      progress_total: progressTotal,
+      progress_done: 0,
+      progress_current: "Initializing full-site audit",
+    },
   });
 
   let lhVersion: string | null = null;
   const results: PageDeviceResult[] = [];
+  async function persistPartial(current: string) {
+    const agg = aggregate(results);
+    await prisma.website_audit_result.upsert({
+      where: { audit_id: auditId },
+      update: { summary: agg.summary as object, metrics: agg.metrics as object },
+      create: { audit_id: auditId, summary: agg.summary as object, metrics: agg.metrics as object },
+    });
+    await prisma.website_audit.update({
+      where: { id: auditId },
+      data: {
+        progress_current: current,
+        progress_done: progressDone,
+        progress_total: progressTotal,
+      },
+    });
+  }
 
   for (const path of paths) {
     const url = `https://${domain}${path}`;
     for (const device of ["mobile", "desktop"] as const) {
+      await prisma.website_audit.update({
+        where: { id: auditId },
+        data: {
+          progress_current: `Scanning ${path} (${device})`,
+          progress_done: progressDone,
+          progress_total: progressTotal,
+        },
+      });
       try {
         const lhr = await runLighthouse(url, device);
         if (!lhr) throw new Error("Lighthouse returned no result");
@@ -147,6 +181,8 @@ async function processJob(job: { data: AuditJobPayload }) {
         const message = err instanceof Error ? err.message.slice(0, 500) : "Unknown error";
         results.push({ path, url, device, status: "failed", error: message });
       }
+      progressDone += 1;
+      await persistPartial(`Completed ${path} (${device})`);
     }
   }
 
@@ -163,6 +199,9 @@ async function processJob(job: { data: AuditJobPayload }) {
       completed_at: new Date(),
       lighthouse_version: lhVersion,
       error_message: agg.summary.runsCompleted > 0 ? null : "No page/device runs completed successfully.",
+      progress_done: progressTotal,
+      progress_total: progressTotal,
+      progress_current: "Audit completed",
     },
   });
 }
