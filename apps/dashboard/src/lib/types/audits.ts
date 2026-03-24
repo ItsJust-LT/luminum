@@ -59,9 +59,8 @@ export interface AuditListItem {
   status: "queued" | "running" | "completed" | "failed";
   targetUrl: string;
   path: string | null;
-  /** Present when this row is part of a multi-page scan */
-  scanBatchId?: string | null;
   formFactor: string;
+  triggerSource: string;
   errorMessage: string | null;
   lighthouseVersion: string | null;
   startedAt: string | null;
@@ -71,5 +70,17 @@ export interface AuditListItem {
 }
 
 export interface AuditDetail extends AuditListItem {
-  metrics: AuditMetrics | null;
+  metrics: {
+    pageResults?: Array<{
+      path: string;
+      url: string;
+      device: "mobile" | "desktop";
+      status: "completed" | "failed";
+      error?: string;
+      summary?: AuditSummary;
+      metrics?: AuditMetrics;
+    }>;
+    topPages?: Array<{ path: string; device: "mobile" | "desktop"; score: number }>;
+    worstPages?: Array<{ path: string; device: "mobile" | "desktop"; score: number }>;
+  } | null;
 }

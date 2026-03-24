@@ -1,645 +1,221 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import {
-  Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
-  Bar, BarChart, Cell,
-} from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-import {
-  Gauge, RefreshCw, Globe, AlertTriangle, CheckCircle2,
-  Monitor, Smartphone, Zap, Loader2,
-} from "lucide-react"
+import { Loader2, Gauge, Globe, Smartphone, Monitor, RefreshCw, AlertTriangle, Trophy } from "lucide-react"
 import { api } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import type { Website } from "@/lib/types/websites"
-import type { AuditListItem, AuditDetail, AuditSummary, Grade, MetricStatus } from "@/lib/types/audits"
-const GRADE_COLORS: Record<Grade, string> = {
-  A: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40",
-  B: "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950/40",
-  C: "text-yellow-600 bg-yellow-50 dark:text-yellow-400 dark:bg-yellow-950/40",
-  D: "text-orange-600 bg-orange-50 dark:text-orange-400 dark:bg-orange-950/40",
-  F: "text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950/40",
+import type { AuditDetail, AuditListItem, AuditSummary } from "@/lib/types/audits"
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleString()
 }
 
-const STATUS_COLORS: Record<MetricStatus, string> = {
-  good: "text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40",
-  needsImprovement: "text-yellow-600 bg-yellow-50 dark:text-yellow-400 dark:bg-yellow-950/40",
-  poor: "text-red-600 bg-red-50 dark:text-red-400 dark:bg-red-950/40",
-}
-
-const STATUS_LABELS: Record<MetricStatus, string> = {
-  good: "Good",
-  needsImprovement: "Needs Improvement",
-  poor: "Poor",
-}
-
-function scoreToRingColor(score: number) {
-  if (score >= 90) return "stroke-emerald-500"
-  if (score >= 75) return "stroke-green-500"
-  if (score >= 60) return "stroke-yellow-500"
-  if (score >= 40) return "stroke-orange-500"
-  return "stroke-red-500"
-}
-
-function ScoreRing({ score, size = 120, label }: { score: number; size?: number; label?: string }) {
-  const radius = (size - 12) / 2
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference - (score / 100) * circumference
-
-  return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={8}
-          className="stroke-muted/30" />
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={8}
-          strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset}
-          className={`${scoreToRingColor(score)} transition-all duration-700`} />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold">{score}</span>
-        {label && <span className="text-xs text-muted-foreground">{label}</span>}
-      </div>
-    </div>
-  )
-}
-
-function formatBytes(bytes: number) {
-  if (bytes > 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-  if (bytes > 1_000) return `${(bytes / 1_000).toFixed(0)} KB`
-  return `${bytes} B`
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-  })
-}
-
-const trendChartConfig: ChartConfig = {
-  score: { label: "Performance", color: "#3b82f6" },
-}
-
-const resourceChartConfig: ChartConfig = {
-  js: { label: "JavaScript", color: "#f59e0b" },
-  css: { label: "CSS", color: "#3b82f6" },
-  images: { label: "Images", color: "#10b981" },
-  fonts: { label: "Fonts", color: "#8b5cf6" },
-  other: { label: "Other", color: "#6b7280" },
+function gradeColor(grade?: string) {
+  if (grade === "A") return "bg-emerald-500/15 text-emerald-600"
+  if (grade === "B") return "bg-green-500/15 text-green-600"
+  if (grade === "C") return "bg-yellow-500/15 text-yellow-700"
+  if (grade === "D") return "bg-orange-500/15 text-orange-700"
+  return "bg-red-500/15 text-red-700"
 }
 
 export default function AuditsPage() {
-  const { organization, loading: orgLoading } = useOrganization()
-
+  const { organization } = useOrganization()
   const [websites, setWebsites] = useState<Website[]>([])
-  const [selectedWebsite, setSelectedWebsite] = useState<Website | null>(null)
+  const [selectedWebsiteId, setSelectedWebsiteId] = useState<string>("")
   const [audits, setAudits] = useState<AuditListItem[]>([])
-  const [latestDetail, setLatestDetail] = useState<AuditDetail | null>(null)
+  const [selectedAudit, setSelectedAudit] = useState<AuditDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [scanning, setScanning] = useState(false)
-  const [formFactor, setFormFactor] = useState<"mobile" | "desktop">("mobile")
-  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null)
+  const [running, setRunning] = useState(false)
 
-  const syncAuditsFromServer = useCallback(async (websiteId: string) => {
-    const res = await api.websiteAudits.list({ websiteId, limit: 100 }) as any
-    const rows: AuditListItem[] = res?.data ?? []
+  const selectedWebsite = useMemo(
+    () => websites.find((w) => w.id === selectedWebsiteId) ?? null,
+    [websites, selectedWebsiteId],
+  )
+
+  const loadAudits = useCallback(async (websiteId: string) => {
+    const res = await api.websiteAudits.list({ websiteId, limit: 20 }) as any
+    const rows = (res?.data ?? []) as AuditListItem[]
     setAudits(rows)
-    const completedHome = rows.find(
-      (a) => a.status === "completed" && (a.path === "/" || a.path === "" || a.path == null),
-    )
-    const completed = completedHome ?? rows.find((a) => a.status === "completed")
-    if (completed) {
-      const detail = await api.websiteAudits.getById(completed.id) as any
-      setLatestDetail(detail?.data ?? null)
-      setSelectedAuditId(completed.id)
+    const first = rows[0]
+    if (first) {
+      const d = await api.websiteAudits.getById(first.id) as any
+      setSelectedAudit(d?.data ?? null)
     } else {
-      setLatestDetail(null)
-      setSelectedAuditId(null)
+      setSelectedAudit(null)
     }
   }, [])
 
-  const selectAudit = useCallback(async (id: string) => {
-    setSelectedAuditId(id)
-    const detail = await api.websiteAudits.getById(id) as any
-    setLatestDetail(detail?.data ?? null)
-  }, [])
-
-  const fetchWebsites = useCallback(async () => {
+  useEffect(() => {
     if (!organization?.id) return
-    try {
-      const res = await api.websites.list(organization.id) as { data?: Website[] }
-      const list = res?.data ?? []
+    ;(async () => {
+      const w = await api.websites.list(organization.id) as any
+      const list = (w?.data ?? []) as Website[]
       setWebsites(list)
-      setSelectedWebsite((prev) => {
-        if (prev && list.some((w) => w.id === prev.id)) return prev
-        return list[0] ?? null
-      })
-    } catch { /* ignore */ }
+      if (list[0]) setSelectedWebsiteId(list[0].id)
+    })().catch(() => {})
   }, [organization?.id])
 
-  const silentRefresh = useCallback(async (websiteId: string) => {
-    try {
-      await syncAuditsFromServer(websiteId)
-    } catch { /* ignore */ }
-  }, [syncAuditsFromServer])
-
-  const loadAuditsWithBootstrap = useCallback(async (websiteId: string) => {
+  useEffect(() => {
+    if (!selectedWebsiteId) return
     setLoading(true)
+    loadAudits(selectedWebsiteId).finally(() => setLoading(false))
+  }, [selectedWebsiteId, loadAudits])
+
+  useEffect(() => {
+    if (!selectedWebsiteId) return
+    const active = audits.some((a) => a.status === "queued" || a.status === "running")
+    if (!active) return
+    const id = setInterval(() => void loadAudits(selectedWebsiteId), 5000)
+    return () => clearInterval(id)
+  }, [audits, selectedWebsiteId, loadAudits])
+
+  const runScan = async () => {
+    if (!selectedWebsiteId || running) return
+    setRunning(true)
     try {
-      await syncAuditsFromServer(websiteId)
-      const boot = await api.websiteAudits.bootstrap(websiteId) as {
-        data?: { triggered?: boolean }
-      }
-      if (boot?.data?.triggered) {
-        await syncAuditsFromServer(websiteId)
-      }
-    } catch { /* ignore */ }
-    setLoading(false)
-  }, [syncAuditsFromServer])
-
-  useEffect(() => {
-    void fetchWebsites()
-  }, [fetchWebsites])
-
-  useEffect(() => {
-    if (!selectedWebsite?.id) return
-    void loadAuditsWithBootstrap(selectedWebsite.id)
-  }, [selectedWebsite?.id, loadAuditsWithBootstrap])
-
-  // Poll while a scan is in progress (no full-page loading)
-  useEffect(() => {
-    const hasActive = audits.some((a) => a.status === "queued" || a.status === "running")
-    if (!hasActive || !selectedWebsite?.id) return
-    const id = selectedWebsite.id
-    const interval = setInterval(() => {
-      void silentRefresh(id)
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [audits, selectedWebsite?.id, silentRefresh])
-
-  const startScan = async () => {
-    if (!selectedWebsite || scanning) return
-    setScanning(true)
-    try {
-      await api.websiteAudits.create(selectedWebsite.id, { formFactor })
-      await syncAuditsFromServer(selectedWebsite.id)
-    } catch (err: any) {
-      console.error("Scan failed:", err.message)
+      await api.websiteAudits.create(selectedWebsiteId)
+      await loadAudits(selectedWebsiteId)
+    } finally {
+      setRunning(false)
     }
-    setScanning(false)
   }
 
-  const summary = latestDetail?.summary as AuditSummary | null
-  const metrics = latestDetail?.metrics as AuditDetail["metrics"] | null
-
-  const trendData = audits
-    .filter(
-      (a) =>
-        a.status === "completed" &&
-        a.summary &&
-        (a.path === "/" || a.path === "" || a.path == null),
-    )
-    .slice()
-    .reverse()
-    .map((a) => ({
-      date: formatDate(a.completedAt!),
-      score: (a.summary as AuditSummary).performanceScore,
-    }))
-
-  const resourceData = metrics?.resources ? [
-    { name: "JS", value: metrics.resources.jsBytes, fill: "#f59e0b" },
-    { name: "CSS", value: metrics.resources.cssBytes, fill: "#3b82f6" },
-    { name: "Images", value: metrics.resources.imageBytes, fill: "#10b981" },
-    { name: "Fonts", value: metrics.resources.fontBytes, fill: "#8b5cf6" },
-    { name: "Other", value: metrics.resources.otherBytes, fill: "#6b7280" },
-  ].filter((r) => r.value > 0) : []
-
-  if (orgLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  if (!organization) return null
+  const pageResults = selectedAudit?.metrics?.pageResults ?? []
+  const summary = selectedAudit?.summary as (AuditSummary & { pagesDiscovered?: number; runsCompleted?: number; runsFailed?: number }) | null
 
   return (
-    <TooltipProvider>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Site Audits</h1>
-            <p className="text-muted-foreground">
-              Full-site scans discover URLs from your sitemap (with a homepage link fallback), then run Lighthouse per page.
-              New sites get a mobile scan automatically when you open this page. Daily scheduled scans use the same discovery when cron is configured.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {websites.length > 1 && (
-              <Select
-                value={selectedWebsite?.id ?? ""}
-                onValueChange={(v) => setSelectedWebsite(websites.find((w) => w.id === v) ?? null)}
-              >
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Select website" />
-                </SelectTrigger>
-                <SelectContent>
-                  {websites.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      <Globe className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
-                      {w.domain}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Select value={formFactor} onValueChange={(v) => setFormFactor(v as "mobile" | "desktop")}>
-              <SelectTrigger className="w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="mobile">
-                  <Smartphone className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />Mobile
-                </SelectItem>
-                <SelectItem value="desktop">
-                  <Monitor className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />Desktop
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <Button onClick={startScan} disabled={scanning || !selectedWebsite}>
-                    {scanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Gauge className="h-4 w-4 mr-2" />}
-                    {scanning ? "Scanning..." : "Run full-site scan"}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs">
-                Enqueues Lighthouse for each discovered URL (sitemap + link crawl, capped). Subject to rate limits.
-              </TooltipContent>
-            </Tooltip>
-          </div>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Website Growth Audit</h1>
+          <p className="text-muted-foreground">
+            One professional audit run covers all discovered pages with both mobile and desktop.
+          </p>
         </div>
-
-        {/* No website state */}
-        {websites.length === 0 && !loading && (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Globe className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No websites configured</h3>
-              <p className="text-muted-foreground mb-4">Add a website in your organization settings to start running audits.</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Active scan banner */}
-        {audits.some((a) => a.status === "queued" || a.status === "running") && (
-          <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
-            <CardContent className="py-3 flex items-center gap-3">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />
-              <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                Audit in progress — results will appear automatically
-              </span>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Pages — select a route to view metrics below */}
-        {audits.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                Pages
-              </CardTitle>
-              <CardDescription>
-                One row per URL. Click a row to load Lighthouse scores and timings for that page.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y rounded-md border">
-                {audits.map((a) => {
-                  const s = a.summary as AuditSummary | null
-                  return (
-                    <div
-                      key={a.id}
-                      role="button"
-                      tabIndex={0}
-                      className={cn(
-                        "py-3 px-3 first:pt-3 last:pb-3 flex items-center gap-4 cursor-pointer text-left w-full transition-colors",
-                        selectedAuditId === a.id ? "bg-muted/80" : "hover:bg-muted/50",
-                      )}
-                      onClick={() => void selectAudit(a.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault()
-                          void selectAudit(a.id)
-                        }
-                      }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-mono font-medium truncate">{a.path || "/"}</p>
-                        <p className="text-xs text-muted-foreground truncate">{a.targetUrl}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {formatDate(a.createdAt)} · {a.formFactor}
-                          {a.scanBatchId ? " · multi-page scan" : ""}
-                        </p>
-                      </div>
-                      {a.status === "completed" && s && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-sm font-bold tabular-nums">{s.performanceScore}</span>
-                          <Badge className={`text-xs ${GRADE_COLORS[s.grade]}`}>{s.grade}</Badge>
-                        </div>
-                      )}
-                      {a.status === "failed" && (
-                        <Badge variant="destructive" className="text-xs shrink-0">Failed</Badge>
-                      )}
-                      {(a.status === "queued" || a.status === "running") && (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
-                      )}
-                      {a.status === "failed" && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="shrink-0"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                void (async () => {
-                                  await api.websiteAudits.retry(a.id)
-                                  if (selectedWebsite) void syncAuditsFromServer(selectedWebsite.id)
-                                })()
-                              }}
-                            >
-                              <RefreshCw className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Re-run full-site scan</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {latestDetail?.status === "failed" && (
-          <Card className="border-destructive/40">
-            <CardHeader>
-              <CardTitle className="text-base text-destructive">Scan failed</CardTitle>
-              <CardDescription className="font-mono text-xs">{latestDetail.path || latestDetail.targetUrl}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm">{latestDetail.errorMessage ?? "Unknown error"}</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Overview cards — selected route */}
-        {summary && latestDetail && (
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Metrics for{" "}
-              <span className="font-mono font-medium text-foreground">{latestDetail.path || "/"}</span>
-            </p>
-            <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardContent className="pt-6 flex items-center gap-6">
-                <ScoreRing score={summary.overallScore} label="Overall" />
-                <div>
-                  <Badge className={`text-lg px-3 py-1 ${GRADE_COLORS[summary.grade]}`}>
-                    {summary.grade}
-                  </Badge>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Scoring v{summary.scoringVersion}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-6">
-                <ScoreRing score={summary.performanceScore} size={96} label="Performance" />
-                <p className="text-sm text-muted-foreground mt-2 text-center">Lighthouse Performance</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                  Top Issues
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {summary.bottlenecks.length === 0 ? (
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                    No major issues detected
-                  </p>
-                ) : (
-                  summary.bottlenecks.slice(0, 4).map((b) => (
-                    <Tooltip key={b.id}>
-                      <TooltipTrigger asChild>
-                        <div className="flex items-start gap-2 text-sm cursor-default">
-                          <div className={`mt-0.5 h-2 w-2 rounded-full shrink-0 ${b.severity === "poor" ? "bg-red-500" : "bg-yellow-500"}`} />
-                          <span className="line-clamp-1">{b.title}</span>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="left" className="max-w-xs">
-                        <p>{b.description}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </div>
-          </div>
-        )}
-
-        {/* Core Web Vitals + Timings */}
-        {metrics && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Core Web Vitals</CardTitle>
-                <CardDescription>Key user experience metrics</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {metrics.cwv.map((m) => (
-                  <div key={m.name} className="flex items-center justify-between">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-sm font-medium cursor-default">{m.name}</span>
-                      </TooltipTrigger>
-                      <TooltipContent><p>{m.label}</p></TooltipContent>
-                    </Tooltip>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono">{m.displayValue}</span>
-                      <Badge variant="secondary" className={`text-xs ${STATUS_COLORS[m.status]}`}>
-                        {STATUS_LABELS[m.status]}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Performance Timings</CardTitle>
-                <CardDescription>Page load milestones</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {metrics.timings.map((m) => (
-                  <div key={m.name} className="flex items-center justify-between">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-sm font-medium cursor-default">{m.name}</span>
-                      </TooltipTrigger>
-                      <TooltipContent><p>{m.label}</p></TooltipContent>
-                    </Tooltip>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono">{m.displayValue}</span>
-                      <Badge variant="secondary" className={`text-xs ${STATUS_COLORS[m.status]}`}>
-                        {STATUS_LABELS[m.status]}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Charts row */}
-        {(trendData.length > 1 || resourceData.length > 0) && (
-          <div className="grid gap-4 md:grid-cols-2">
-            {trendData.length > 1 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Homepage performance trend</CardTitle>
-                  <CardDescription>Completed audits for path / only</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ChartContainer config={trendChartConfig} className="h-[220px] w-full">
-                    <AreaChart data={trendData}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" />
-                      <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <Area
-                        type="monotone"
-                        dataKey="score"
-                        stroke="#3b82f6"
-                        fill="#3b82f6"
-                        fillOpacity={0.15}
-                        strokeWidth={2}
-                      />
-                    </AreaChart>
-                  </ChartContainer>
-                </CardContent>
-              </Card>
-            )}
-
-            {resourceData.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Resource Breakdown</CardTitle>
-                  <CardDescription>
-                    {metrics?.resources ? `${formatBytes(metrics.resources.totalBytes)} total · ${metrics.resources.totalRequests} requests` : ""}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ChartContainer config={resourceChartConfig} className="h-[220px] w-full">
-                    <BarChart data={resourceData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" />
-                      <XAxis type="number" tickFormatter={(v) => formatBytes(v)} tick={{ fontSize: 11 }} />
-                      <YAxis dataKey="name" type="category" width={60} tick={{ fontSize: 11 }} />
-                      <ChartTooltip
-                        content={({ payload }) => {
-                          if (!payload?.[0]) return null
-                          const d = payload[0].payload
-                          return (
-                            <div className="rounded-lg border bg-background p-2 shadow-md text-sm">
-                              <p className="font-medium">{d.name}</p>
-                              <p className="text-muted-foreground">{formatBytes(d.value)}</p>
-                            </div>
-                          )
-                        }}
-                      />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                        {resourceData.map((entry, i) => (
-                          <Cell key={i} fill={entry.fill} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ChartContainer>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {/* Bottlenecks detail */}
-        {summary && summary.bottlenecks.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Zap className="h-4 w-4 text-yellow-500" />
-                Detected Bottlenecks
-              </CardTitle>
-              <CardDescription>Issues that may be slowing down your site</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y">
-                {summary.bottlenecks.map((b) => (
-                  <div key={b.id} className="py-3 first:pt-0 last:pb-0 flex items-start gap-3">
-                    <div className={`mt-1 h-2.5 w-2.5 rounded-full shrink-0 ${b.severity === "poor" ? "bg-red-500" : "bg-yellow-500"}`} />
-                    <div>
-                      <p className="text-sm font-medium">{b.title}</p>
-                      <p className="text-sm text-muted-foreground">{b.description}</p>
-                    </div>
-                    <Badge variant="secondary" className={`ml-auto shrink-0 text-xs ${STATUS_COLORS[b.severity]}`}>
-                      {STATUS_LABELS[b.severity]}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Empty state */}
-        {selectedWebsite && audits.length === 0 && !loading && (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Gauge className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No audits yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Run your first performance scan for <span className="font-medium">{selectedWebsite.domain}</span>
-              </p>
-              <Button onClick={startScan} disabled={scanning}>
-                {scanning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Gauge className="h-4 w-4 mr-2" />}
-                Run First Scan
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        <div className="flex items-center gap-2">
+          <Select value={selectedWebsiteId} onValueChange={setSelectedWebsiteId}>
+            <SelectTrigger className="w-[240px]"><SelectValue placeholder="Select website" /></SelectTrigger>
+            <SelectContent>
+              {websites.map((w) => <SelectItem key={w.id} value={w.id}><Globe className="inline h-3 w-3 mr-1" />{w.domain}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button onClick={runScan} disabled={!selectedWebsiteId || running}>
+            {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Gauge className="mr-2 h-4 w-4" />}
+            {running ? "Running..." : "Run full audit"}
+          </Button>
+        </div>
       </div>
-    </TooltipProvider>
+
+      {loading && <div className="py-10 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></div>}
+
+      {!loading && selectedAudit && summary && (
+        <>
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card><CardHeader><CardDescription>Overall Score</CardDescription><CardTitle>{summary.overallScore}</CardTitle></CardHeader></Card>
+            <Card><CardHeader><CardDescription>Grade</CardDescription><CardTitle><Badge className={gradeColor(summary.grade)}>{summary.grade}</Badge></CardTitle></CardHeader></Card>
+            <Card><CardHeader><CardDescription>Pages Discovered</CardDescription><CardTitle>{summary.pagesDiscovered ?? "-"}</CardTitle></CardHeader></Card>
+            <Card><CardHeader><CardDescription>Runs</CardDescription><CardTitle>{summary.runsCompleted ?? 0} completed / {summary.runsFailed ?? 0} failed</CardTitle></CardHeader></Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" />Top Growth Bottlenecks</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(summary.bottlenecks ?? []).slice(0, 8).map((b) => (
+                <div key={b.id} className="rounded-md border p-3">
+                  <div className="font-medium">{b.title}</div>
+                  <div className="text-sm text-muted-foreground">{b.description}</div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Trophy className="h-4 w-4" />Top / Worst Page-Device Results</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-2">
+              <div>
+                <div className="mb-2 text-sm font-medium">Top performers</div>
+                <div className="space-y-2">
+                  {(selectedAudit.metrics?.topPages ?? []).slice(0, 8).map((p, i) => (
+                    <div key={`t-${i}`} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+                      <span className="truncate font-mono">{p.path}</span>
+                      <span className="ml-2 flex items-center gap-2">{p.device === "mobile" ? <Smartphone className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}{p.score}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-sm font-medium">Worst performers</div>
+                <div className="space-y-2">
+                  {(selectedAudit.metrics?.worstPages ?? []).slice(0, 8).map((p, i) => (
+                    <div key={`w-${i}`} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+                      <span className="truncate font-mono">{p.path}</span>
+                      <span className="ml-2 flex items-center gap-2">{p.device === "mobile" ? <Smartphone className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}{p.score}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Per-page details (mobile + desktop)</CardTitle>
+              <CardDescription>Highly detailed results for optimization, UX, and conversion growth.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pageResults.map((r, idx) => (
+                <div key={`${r.path}-${r.device}-${idx}`} className="rounded-md border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-mono text-sm">{r.path} <span className="text-muted-foreground">({r.url})</span></div>
+                    <div className="flex items-center gap-2 text-xs">
+                      {r.device === "mobile" ? <Smartphone className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}
+                      <Badge variant={r.status === "completed" ? "secondary" : "destructive"}>{r.status}</Badge>
+                      {r.summary && <Badge className={gradeColor(r.summary.grade)}>{r.summary.performanceScore}</Badge>}
+                    </div>
+                  </div>
+                  {r.error && <div className="mt-2 text-sm text-destructive">{r.error}</div>}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {!loading && audits.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Audit Runs</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {audits.map((a) => (
+              <div key={a.id} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+                <div>
+                  <div className="font-medium">{fmtDate(a.createdAt)}</div>
+                  <div className="text-xs text-muted-foreground">{a.status} • {a.triggerSource}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {a.summary && <Badge className={gradeColor((a.summary as any)?.grade)}>{(a.summary as any)?.performanceScore}</Badge>}
+                  <Button variant="ghost" size="sm" onClick={async () => {
+                    const d = await api.websiteAudits.getById(a.id) as any
+                    setSelectedAudit(d?.data ?? null)
+                  }}>View</Button>
+                  <Button variant="ghost" size="sm" onClick={async () => {
+                    await api.websiteAudits.retry(a.id)
+                    if (selectedWebsite) await loadAudits(selectedWebsite.id)
+                  }}><RefreshCw className="h-3.5 w-3.5" /></Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }

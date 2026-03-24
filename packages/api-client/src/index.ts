@@ -237,10 +237,8 @@ function createApiClient(baseUrl: string = "") {
     getAdminWebsites: (params?: Record<string, any>) =>
       get("/api/admin/websites", params),
     getAdminWebsiteStats: () => get("/api/admin/websites/stats"),
-    runWebsiteAudit: (
-      websiteId: string,
-      body?: { path?: string; formFactor?: "mobile" | "desktop" },
-    ) => post(`/api/admin/websites/${encodeURIComponent(websiteId)}/run-audit`, body ?? {}),
+    runWebsiteAudit: (websiteId: string) =>
+      post(`/api/admin/websites/${encodeURIComponent(websiteId)}/run-audit`, {}),
     getAdminFormSubmissions: (params?: Record<string, any>) =>
       get("/api/admin/forms/submissions", params),
     getAdminFormStats: () => get("/api/admin/forms/stats"),
@@ -703,8 +701,8 @@ function createApiClient(baseUrl: string = "") {
 
   // ─── Website Audits ──────────────────────────────────────
   const websiteAudits = {
-    create: (websiteId: string, opts?: { formFactor?: "mobile" | "desktop" }) =>
-      post("/api/website-audits", { websiteId, ...opts }),
+    create: (websiteId: string) =>
+      post("/api/website-audits", { websiteId }),
     bootstrap: (websiteId: string) =>
       post("/api/website-audits/bootstrap", { websiteId }),
     list: (params: { websiteId?: string; organizationId?: string; page?: number; limit?: number }) =>

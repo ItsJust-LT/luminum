@@ -47,7 +47,7 @@ export default function AdminWebsitesPage() {
     setAuditRunningId(websiteId)
     setError(null)
     try {
-      const res = await api.admin.runWebsiteAudit(websiteId, { formFactor: "mobile" }) as {
+      const res = await api.admin.runWebsiteAudit(websiteId) as {
         success?: boolean
         error?: string
       }

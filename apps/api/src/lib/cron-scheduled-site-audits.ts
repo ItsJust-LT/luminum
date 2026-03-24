@@ -50,7 +50,6 @@ export async function runScheduledSiteAudits(): Promise<{
         websiteId: w.id,
         organizationId: w.organization_id,
         domain: w.domain,
-        formFactor: "mobile",
         triggerSource: "scheduled",
       });
       enqueued++;

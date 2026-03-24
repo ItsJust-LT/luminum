@@ -17,7 +17,6 @@ router.use(adminOnly);
 router.post("/:websiteId/run-audit", async (req: Request, res: Response) => {
   try {
     const websiteId = pathParam(req, "websiteId")!;
-    const { formFactor } = (req.body ?? {}) as { formFactor?: string };
 
     const website = await prisma.websites.findUnique({
       where: { id: websiteId },
@@ -25,20 +24,17 @@ router.post("/:websiteId/run-audit", async (req: Request, res: Response) => {
     });
     if (!website) return res.status(404).json({ success: false, error: "Website not found" });
 
-    const factor = formFactor === "desktop" ? "desktop" : "mobile";
     const batch = await createFullSiteScan(prisma, {
       websiteId: website.id,
       organizationId: website.organization_id,
       domain: website.domain,
-      formFactor: factor,
       triggerSource: "manual",
     });
 
     res.json({
       success: true,
-      scanBatchId: batch.scanBatchId,
-      auditIds: batch.auditIds,
-      count: batch.auditIds.length,
+      auditId: batch.auditId,
+      pagesDiscovered: batch.pagesDiscovered,
     });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message ?? "Failed to enqueue audit" });

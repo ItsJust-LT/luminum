@@ -91,6 +91,6 @@ export interface NetworkRequestEntry {
 export interface AuditJobPayload {
   auditId: string;
   websiteId: string;
-  targetUrl: string;
-  formFactor: "mobile" | "desktop";
+  domain: string;
+  paths: string[];
 }
