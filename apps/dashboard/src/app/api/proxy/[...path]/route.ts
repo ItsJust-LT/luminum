@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { copyProxyResponseHeaders } from "@/lib/api-proxy-headers"
 
 const API_URL =
   process.env.API_URL ||
@@ -12,6 +13,8 @@ async function proxyData(req: NextRequest) {
 
   const headers = new Headers(req.headers)
   headers.delete("host")
+  // Avoid gzip on API → Node fetch decompresses body but may keep Content-Encoding; browser then fails to decode.
+  headers.set("accept-encoding", "identity")
 
   const body = ["GET", "HEAD"].includes(req.method)
     ? undefined
@@ -24,10 +27,13 @@ async function proxyData(req: NextRequest) {
     redirect: "manual",
   })
 
+  const outHeaders = new Headers()
+  copyProxyResponseHeaders(apiRes.headers, outHeaders)
+
   return new NextResponse(apiRes.body, {
     status: apiRes.status,
     statusText: apiRes.statusText,
-    headers: apiRes.headers,
+    headers: outHeaders,
   })
 }
 

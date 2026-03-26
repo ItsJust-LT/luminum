@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { copyProxyResponseHeaders } from "@/lib/api-proxy-headers"
 
 const API_URL =
   process.env.API_URL ||
@@ -25,6 +26,7 @@ async function proxyAuth(req: NextRequest) {
 
   const headers = new Headers(req.headers)
   headers.delete("host")
+  headers.set("accept-encoding", "identity")
   headers.set("x-forwarded-host", req.headers.get("host") || "")
   headers.set("origin", APP_ORIGIN)
 
@@ -44,9 +46,7 @@ async function proxyAuth(req: NextRequest) {
     statusText: apiRes.statusText,
   })
 
-  apiRes.headers.forEach((v, k) => {
-    if (k.toLowerCase() !== "set-cookie") res.headers.set(k, v)
-  })
+  copyProxyResponseHeaders(apiRes.headers, res.headers, { skipSetCookie: true })
 
   for (const cookie of rewriteCookies(apiRes)) {
     res.headers.append("set-cookie", cookie)
