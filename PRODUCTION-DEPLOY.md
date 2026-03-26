@@ -46,6 +46,8 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 **Org email (inbox):** To receive and send mail for your domain, configure MX, SPF, and optionally DKIM as described in [docs/EMAIL.md](docs/EMAIL.md). The mail service runs in-repo (apps/mail) and listens on port 25 on the host; ensure port 25 is open for inbound SMTP.
 
+**Branded customer domains** (Admin → Organizations → custom domain): The client must create an **A** record from their full hostname (e.g. `admin.client.com`) to your **server’s public IPv4** — not a CNAME to `app.yourdomain.com` if that hostname is behind Cloudflare proxy (traffic would hit Cloudflare without a matching custom hostname). Set **`PROD_SERVER_IP`** (variable) to that IPv4 so the dashboard build shows the correct value; the API verifies the domain by resolving the A record to **`SERVER_IP`** or **`MAIL_SEND_IP`**.
+
 ---
 
 ## Step 2: GitHub Secrets and Variables
@@ -88,6 +90,7 @@ Under **Variables**:
 | `PROD_API_WS_URL` | `https://api.luminum.agency` | Public URL of the API (e.g. for WebSockets). |
 | `PROD_DASHBOARD_NEXT_PUBLIC_APP_URL` | `https://app.luminum.agency` | Baked into the dashboard build. |
 | `PROD_DASHBOARD_NEXT_PUBLIC_ANALYTICS_URL` | `https://analytics.luminum.agency` | Baked into the dashboard build. |
+| `PROD_SERVER_IP` | e.g. `203.0.113.50` | Host public IPv4: branded-domain DNS instructions in Admin (`NEXT_PUBLIC_SERVER_IP` at build) and optional API `SERVER_IP`. If unset, the dashboard build uses `PROD_MAIL_SEND_IP` when that secret is set. |
 | `PROD_DASHBOARD_API_URL` | `http://api:4000` | (Optional) Internal API URL for dashboard build. |
 
 ---

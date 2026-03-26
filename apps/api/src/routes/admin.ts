@@ -557,8 +557,8 @@ router.post("/remove-organization-custom-domain", adminOnly, async (req: Request
   }
 });
 
-const PRIMARY_CNAME_TARGET = process.env.PRIMARY_DOMAIN || "app.luminum.agency";
-const SERVER_IP = process.env.SERVER_IP || process.env.MAIL_SEND_IP || "";
+/** Public IPv4 of the host that serves HTTPS (Caddy). Must match branded-domain A records; do not rely on CNAME to a CDN-proxied app hostname. */
+const SERVER_IP = (process.env.SERVER_IP || process.env.MAIL_SEND_IP || "").trim();
 
 router.post("/verify-organization-custom-domain", adminOnly, async (req: Request, res: Response) => {
   try {
@@ -572,18 +572,22 @@ router.post("/verify-organization-custom-domain", adminOnly, async (req: Request
     if (!org?.custom_domain) return res.status(400).json({ success: false, error: "No custom domain set" });
 
     const domain = org.custom_domain;
+
+    if (!SERVER_IP) {
+      return res.json({
+        success: true,
+        verified: false,
+        message:
+          "Set SERVER_IP (or MAIL_SEND_IP) on the API service to this server’s public IPv4. Branded domains must use an A record to that address.",
+      });
+    }
+
     let verified = false;
-
     try {
-      const cnames = await dns.promises.resolveCname(domain);
-      if (cnames.some((c) => c.replace(/\.$/, "") === PRIMARY_CNAME_TARGET)) verified = true;
-    } catch {}
-
-    if (!verified && SERVER_IP) {
-      try {
-        const ips = await dns.promises.resolve4(domain);
-        if (ips.includes(SERVER_IP)) verified = true;
-      } catch {}
+      const ips = await dns.promises.resolve4(domain);
+      if (ips.includes(SERVER_IP)) verified = true;
+    } catch {
+      /* no A record yet */
     }
 
     if (verified) {
@@ -598,7 +602,7 @@ router.post("/verify-organization-custom-domain", adminOnly, async (req: Request
     res.json({
       success: true,
       verified: false,
-      message: `DNS not yet pointing to ${PRIMARY_CNAME_TARGET}. Please add a CNAME record and wait for propagation.`,
+      message: `Add an A record: ${domain} → ${SERVER_IP}. Do not CNAME to your main app hostname if it is behind Cloudflare (or similar); that sends traffic to the CDN, which will not serve this customer hostname. Wait for DNS propagation, then verify again.`,
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });

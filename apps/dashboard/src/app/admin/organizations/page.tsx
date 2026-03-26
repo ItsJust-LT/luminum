@@ -64,6 +64,10 @@ import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-org
 import { formatDate, formatNumber } from "@/lib/utils"
 import { toast } from "sonner"
 
+/** Shown in DNS instructions; must match API SERVER_IP (or MAIL_SEND_IP) for Verify Domain to succeed. */
+const BRANDED_DOMAIN_ORIGIN_IP =
+  (typeof process.env.NEXT_PUBLIC_SERVER_IP === "string" && process.env.NEXT_PUBLIC_SERVER_IP.trim()) || ""
+
 export default function AdminOrganizationsPage() {
   const router = useRouter()
   const [organizations, setOrganizations] = useState<any[]>([])
@@ -156,7 +160,7 @@ export default function AdminOrganizationsPage() {
       if (result.success === false) {
         toast.error(result.error || "Failed to set domain")
       } else {
-        toast.success(`Custom domain set: ${domainPrefix}.${domainBase}`)
+        toast.success(`Custom domain set: ${domainPrefix}.${domainBase}. Add an A record to the server IP (DNS Setup), then verify.`)
         setDomainDialogOrg(null)
         fetchOrganizations()
       }
@@ -575,9 +579,12 @@ export default function AdminOrganizationsPage() {
               />
             </div>
             {domainPrefix && domainBase && (
-              <div className="rounded-md bg-muted p-3">
+              <div className="rounded-md bg-muted p-3 space-y-1">
                 <p className="text-sm font-medium">Preview</p>
-                <p className="text-lg font-mono mt-1">{domainPrefix}.{domainBase}</p>
+                <p className="text-lg font-mono">{domainPrefix}.{domainBase}</p>
+                <p className="text-xs text-muted-foreground">
+                  After saving, add an <strong>A</strong> record at the client&apos;s DNS host pointing this hostname to your platform server IP (see Show DNS Setup). Avoid CNAME to your primary app URL if it uses Cloudflare proxy.
+                </p>
               </div>
             )}
             <Button
@@ -601,7 +608,7 @@ export default function AdminOrganizationsPage() {
           <DialogHeader>
             <DialogTitle>DNS Setup for {dnsDialogOrg?.name}</DialogTitle>
             <DialogDescription>
-              Add one of these DNS records at the client&apos;s domain registrar.
+              The client must point the full hostname at your platform server with an <strong>A</strong> record. Verification checks that this hostname resolves to the same IPv4 as <code className="text-xs">SERVER_IP</code> on the API.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -616,32 +623,40 @@ export default function AdminOrganizationsPage() {
               <span className="text-sm font-mono text-muted-foreground">{dnsDialogOrg?.custom_domain}</span>
             </div>
 
+            {!BRANDED_DOMAIN_ORIGIN_IP && (
+              <p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100">
+                Set <code className="text-xs">NEXT_PUBLIC_SERVER_IP</code> when building the dashboard so this panel shows the correct IP. It must match <code className="text-xs">SERVER_IP</code> (or <code className="text-xs">MAIL_SEND_IP</code>) on the API or verification will not match what operators see here.
+              </p>
+            )}
+
             <Card>
               <CardContent className="pt-4 pb-3 space-y-2">
-                <p className="text-sm font-semibold">Option 1: CNAME record (recommended)</p>
+                <p className="text-sm font-semibold">A record (required)</p>
+                <p className="text-xs text-muted-foreground">
+                  At the client&apos;s DNS (e.g. registrar), create an <strong>A</strong> record for the full hostname below. Use your origin IPv4 — the same value as API <code className="text-xs">SERVER_IP</code>.
+                </p>
                 <div className="flex items-center gap-2 bg-muted rounded-md p-2">
-                  <code className="text-sm flex-1 font-mono">CNAME {dnsDialogOrg?.custom_domain} &rarr; app.luminum.agency</code>
-                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard("app.luminum.agency")}>
+                  <code className="text-sm flex-1 font-mono break-all">
+                    A {dnsDialogOrg?.custom_domain} &rarr; {BRANDED_DOMAIN_ORIGIN_IP || "« set NEXT_PUBLIC_SERVER_IP »"}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!BRANDED_DOMAIN_ORIGIN_IP}
+                    onClick={() => BRANDED_DOMAIN_ORIGIN_IP && copyToClipboard(BRANDED_DOMAIN_ORIGIN_IP)}
+                  >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
-            <Card>
-              <CardContent className="pt-4 pb-3 space-y-2">
-                <p className="text-sm font-semibold">Option 2: A record</p>
-                <div className="flex items-center gap-2 bg-muted rounded-md p-2">
-                  <code className="text-sm flex-1 font-mono">A {dnsDialogOrg?.custom_domain} &rarr; {process.env.NEXT_PUBLIC_SERVER_IP || "your-server-ip"}</code>
-                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(process.env.NEXT_PUBLIC_SERVER_IP || "your-server-ip")}>
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <p className="text-xs text-muted-foreground border-l-2 border-muted-foreground/30 pl-3">
+              Do <strong>not</strong> use a CNAME from the customer domain to your primary dashboard hostname (e.g. <code className="text-xs">app.example.com</code>) when that hostname is proxied through Cloudflare. DNS will resolve to Cloudflare&apos;s anycast IPs, and their edge cannot serve arbitrary customer hostnames without Custom Hostnames (SSL for SaaS). An <strong>A</strong> record to your server IP lets Caddy obtain certificates and route traffic correctly.
+            </p>
 
             <p className="text-xs text-muted-foreground">
-              The client needs to add this DNS record at their domain registrar. Once propagated (usually 5-30 minutes), click Verify Domain DNS from the organizations menu.
+              After propagation (often 5–30 minutes), use <strong>Verify Domain DNS</strong> or <strong>Verify Now</strong> below.
             </p>
 
             <Button
