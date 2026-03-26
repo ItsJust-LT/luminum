@@ -268,8 +268,19 @@ router.get("/profile-photo", async (req: Request, res: Response) => {
     const managed = getManagedClientIfReady(organizationId);
     if (!managed) return res.status(404).end();
 
-    const waUrl = await (managed.client as any).getProfilePicUrl?.(jid);
-    if (!waUrl || typeof waUrl !== "string") return res.status(404).end();
+    let waUrl: string | null = null;
+    try {
+      const raw = await (managed.client as any).getProfilePicUrl?.(jid);
+      waUrl = typeof raw === "string" && raw.trim() ? raw.trim() : null;
+    } catch (err) {
+      logger.warn("WhatsApp profile photo lookup failed", {
+        organizationId,
+        jid,
+        error: String(err),
+      });
+      return res.status(404).end();
+    }
+    if (!waUrl) return res.status(404).end();
 
     const imgRes = await fetch(waUrl, {
       redirect: "follow",
@@ -362,10 +373,17 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     // Filter out lid messages
     messages = messages.filter((m) => !(m.from_number ?? "").toLowerCase().includes("@lid"));
 
-    // If Redis has no messages, backfill from WhatsApp
-    if (messages.length === 0 && !cursor) {
-      const history = await fetchChatHistory(organizationId, contactId, 100);
-      messages = history.filter((m) => !(m.from_number ?? "").toLowerCase().includes("@lid"));
+    // Backfill from WhatsApp when Redis does not have enough history yet.
+    // We progressively increase fetch depth so users can page older chats.
+    if (messages.length < limit) {
+      const currentCount = await getChatMessageCount(organizationId, contactId);
+      const target = Math.min(5000, Math.max(limit + 100, currentCount + limit + 100));
+      if (target > currentCount) {
+        await fetchChatHistory(organizationId, contactId, target, { includeMedia: true });
+        const refreshed = await redisGetMessages(organizationId, contactId, { limit, beforeTimestamp });
+        messages = refreshed.messages.filter((m) => !(m.from_number ?? "").toLowerCase().includes("@lid"));
+        hasMore = refreshed.hasMore;
+      }
     }
 
     const uniqueJids = [...new Set(messages.map((m) => m.from_number).filter(Boolean) as string[])];

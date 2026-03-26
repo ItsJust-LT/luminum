@@ -41,6 +41,12 @@ import {
   Eye,
   Copy,
   Users,
+  Download,
+  ExternalLink,
+  FileText,
+  Music2,
+  Film,
+  Image as ImageIcon,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -203,6 +209,83 @@ function mediaLabel(type?: string | null): string {
   if (t === "document") return "Document"
   if (t === "sticker") return "Sticker"
   return "Media"
+}
+
+function renderMediaContent(msg: WhatsAppMessage, fromMe: boolean) {
+  if (!msg.media_url) return null
+  const mime = (msg.mime_type || "").toLowerCase()
+  const shellClass = cn(
+    "mt-2 overflow-hidden rounded-xl border backdrop-blur-sm",
+    fromMe ? "border-white/30 bg-white/10" : "border-border/80 bg-background/80"
+  )
+
+  if (mime.startsWith("image/")) {
+    return (
+      <div className={shellClass}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={msg.media_url} alt="Image attachment" className="max-h-[340px] w-auto max-w-full object-contain" />
+      </div>
+    )
+  }
+
+  if (mime.startsWith("video/")) {
+    return (
+      <div className={shellClass}>
+        <video controls preload="metadata" className="max-h-[340px] w-full bg-black/80">
+          <source src={msg.media_url} type={msg.mime_type || undefined} />
+        </video>
+      </div>
+    )
+  }
+
+  if (mime.startsWith("audio/")) {
+    return (
+      <div className={cn(shellClass, "p-2")}>
+        <div className="mb-2 flex items-center gap-2 text-xs opacity-80">
+          <Music2 className="h-3.5 w-3.5" />
+          Audio attachment
+        </div>
+        <audio controls preload="metadata" className="w-full min-w-[230px]">
+          <source src={msg.media_url} type={msg.mime_type || undefined} />
+        </audio>
+      </div>
+    )
+  }
+
+  const label = mime.startsWith("application/")
+    ? "Document"
+    : mime.includes("pdf")
+      ? "PDF"
+      : "File attachment"
+
+  return (
+    <div className={cn(shellClass, "p-3")}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <FileText className="h-4 w-4" />
+            {label}
+          </p>
+          <p className={cn("truncate text-[11px]", fromMe ? "text-white/80" : "text-muted-foreground")}>
+            {msg.mime_type || "Unknown type"}
+          </p>
+        </div>
+        <a
+          href={msg.media_url}
+          download
+          target="_blank"
+          rel="noreferrer"
+          className={cn(
+            "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+            fromMe ? "bg-white/20 text-white hover:bg-white/30" : "bg-muted hover:bg-muted/80"
+          )}
+        >
+          <Download className="h-3.5 w-3.5" />
+          Open
+        </a>
+      </div>
+    </div>
+  )
 }
 
 /** Format contact_id (e.g. 1234567890@s.whatsapp.net) as +1234567890 for display. Status/lid IDs show as Status. */
@@ -1247,7 +1330,7 @@ export default function WhatsAppPage() {
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <div
               ref={messagesScrollRef}
-              className="flex-1 h-full min-h-0 px-4 py-3 overflow-auto"
+              className="flex-1 h-full min-h-0 overflow-auto bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.08),transparent_45%),radial-gradient(circle_at_bottom,rgba(59,130,246,0.08),transparent_45%)] px-4 py-3"
               onScroll={handleMessagesScroll}
             >
             {messagesLoading && messages.length === 0 ? (
@@ -1260,7 +1343,7 @@ export default function WhatsAppPage() {
                 <p className="text-sm text-muted-foreground">No messages yet</p>
               </div>
             ) : (
-              <div className="space-y-1.5 max-w-3xl mx-auto pb-4">
+              <div className="space-y-2.5 max-w-3xl mx-auto pb-4">
                 {loadingOlder && (
                   <div className="sticky top-0 z-10 flex justify-center py-2">
                     <div className="inline-flex items-center gap-2 rounded-full border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm animate-in fade-in">
@@ -1303,17 +1386,17 @@ export default function WhatsAppPage() {
                         )}
                         <div
                           className={cn(
-                            "flex group/msg",
+                            "flex group/msg animate-in fade-in-0 slide-in-from-bottom-1 duration-200",
                             msg.from_me ? "justify-end" : "justify-start"
                           )}
                         >
                           <div className={cn("flex items-start gap-1 max-w-[80%]", msg.from_me ? "flex-row-reverse" : "flex-row")}>
                             <div
                               className={cn(
-                                "relative rounded-2xl px-3.5 py-2 shadow-sm",
+                                "relative rounded-2xl px-3.5 py-2.5 shadow-md transition-all duration-200",
                                 msg.from_me
-                                  ? "bg-green-500 text-white rounded-br-sm"
-                                  : "bg-muted rounded-bl-sm",
+                                  ? "rounded-br-sm border border-emerald-400/40 bg-gradient-to-br from-emerald-500 via-green-500 to-lime-500 text-white"
+                                  : "rounded-bl-sm border border-border/70 bg-card/95 text-card-foreground",
                                 msg.is_deleted && "opacity-60 italic"
                               )}
                             >
@@ -1346,22 +1429,15 @@ export default function WhatsAppPage() {
                                         : (selectedChat?.display_name ?? selectedChat?.name ?? msg.sender_display_name ?? formatContactIdAsNumber(msg.from_number))}
                                     </p>
                                   )}
-                                  {(msg.media_url && msg.mime_type?.startsWith("image/")) && (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={msg.media_url} alt="Image" className="mt-1 max-h-64 w-auto rounded-lg object-contain" />
-                                  )}
-                                  {(msg.media_url && msg.mime_type?.startsWith("audio/")) && (
-                                    <audio controls className="mt-1 w-full max-w-[280px]">
-                                      <source src={msg.media_url} type={msg.mime_type || undefined} />
-                                    </audio>
-                                  )}
-                                  {(msg.media_url && msg.mime_type?.startsWith("video/")) && (
-                                    <video controls className="mt-1 max-h-64 w-auto rounded-lg">
-                                      <source src={msg.media_url} type={msg.mime_type || undefined} />
-                                    </video>
-                                  )}
+                                  {renderMediaContent(msg, !!msg.from_me)}
                                   {(msg.type !== "text" && msg.type !== "chat" && !msg.body && !msg.media_url) && (
-                                    <p className="text-xs italic opacity-80">{mediaLabel(msg.type)}</p>
+                                    <p className="mt-1 flex items-center gap-1 text-xs italic opacity-80">
+                                      {msg.type === "image" && <ImageIcon className="h-3.5 w-3.5" />}
+                                      {msg.type === "video" && <Film className="h-3.5 w-3.5" />}
+                                      {msg.type === "audio" && <Music2 className="h-3.5 w-3.5" />}
+                                      {(msg.type !== "image" && msg.type !== "video" && msg.type !== "audio") && <FileText className="h-3.5 w-3.5" />}
+                                      {mediaLabel(msg.type)}
+                                    </p>
                                   )}
                                   {msg.body && (
                                     <p className="text-sm whitespace-pre-wrap break-words">{msg.body}</p>
@@ -1382,6 +1458,9 @@ export default function WhatsAppPage() {
                                           {preview.siteName && <p className={cn("text-[10px] uppercase tracking-wide", msg.from_me ? "text-white/70" : "text-muted-foreground")}>{preview.siteName}</p>}
                                           {preview.title && <p className="text-xs font-semibold line-clamp-2">{preview.title}</p>}
                                           {preview.description && <p className={cn("text-[11px] line-clamp-2", msg.from_me ? "text-white/80" : "text-muted-foreground")}>{preview.description}</p>}
+                                          <p className={cn("mt-1 inline-flex items-center gap-1 text-[11px]", msg.from_me ? "text-white/75" : "text-muted-foreground")}>
+                                            Open link <ExternalLink className="h-3 w-3" />
+                                          </p>
                                         </div>
                                       </a>
                                     )

@@ -51,6 +51,7 @@ const WAIT_READY_MS = Math.max(15_000, parseInt(process.env.WHATSAPP_WAIT_READY_
 const WAIT_READY_ALWAYS_ON_MS = Math.max(WAIT_READY_MS, parseInt(process.env.WHATSAPP_ALWAYS_ON_WAIT_READY_MS || "240000", 10));
 const READY_POLL_MS = Math.max(200, parseInt(process.env.WHATSAPP_READY_POLL_MS || "400", 10));
 const ALWAYS_ON_RECONNECT_DELAY_MS = Math.max(2000, parseInt(process.env.WHATSAPP_ALWAYS_ON_RECONNECT_MS || "5000", 10));
+const MAX_INLINE_MEDIA_BYTES = Math.max(256_000, parseInt(process.env.WHATSAPP_MAX_INLINE_MEDIA_BYTES || "1500000", 10));
 
 function formatUnknownError(err: unknown): { message: string; details?: string } {
   if (err instanceof Error) {
@@ -1091,13 +1092,47 @@ async function enrichChatForBroadcast(
   } catch {
     /* privacy / throttle */
   }
-  try {
-    const url = await (managed.client as any).getProfilePicUrl?.(contactId);
-    if (typeof url === "string" && url.trim()) profile_picture_url = url.trim();
-  } catch {
-    /* no pic / blocked */
-  }
+  profile_picture_url = await safeGetProfilePictureUrl(managed, contactId);
   return { ...chat, display_name, profile_picture_url };
+}
+
+async function safeGetProfilePictureUrl(managed: ManagedClient, jid: string): Promise<string | null> {
+  if (!jid || jid.toLowerCase().includes("@lid")) return null;
+  try {
+    const fromClient = await (managed.client as any).getProfilePicUrl?.(jid);
+    if (typeof fromClient === "string" && fromClient.trim()) return fromClient.trim();
+  } catch {
+    // Fall back to contact object helpers when WA internal store shape changes.
+  }
+  try {
+    const contact: any = await managed.client.getContactById(jid);
+    const fromContact =
+      (typeof contact?.getProfilePicUrl === "function" ? await contact.getProfilePicUrl().catch(() => null) : null) ??
+      (typeof contact?.profilePicUrl === "string" ? contact.profilePicUrl : null);
+    if (typeof fromContact === "string" && fromContact.trim()) return fromContact.trim();
+  } catch {
+    /* no picture / unavailable */
+  }
+  return null;
+}
+
+async function attachInlineMediaIfSmall(
+  msg: WAWebJS.Message,
+  base: Partial<RedisMessage> & { wa_message_id: string; timestamp: string }
+): Promise<Partial<RedisMessage> & { wa_message_id: string; timestamp: string }> {
+  if (!(msg as any).hasMedia) return base;
+  try {
+    const media = await (msg as any).downloadMedia?.();
+    if (media?.data && typeof media.data === "string" && typeof media.mimetype === "string") {
+      const approxBytes = Math.floor((media.data.length * 3) / 4);
+      if (approxBytes <= MAX_INLINE_MEDIA_BYTES) {
+        return { ...base, media_url: `data:${media.mimetype};base64,${media.data}`, mime_type: media.mimetype, media_size: approxBytes };
+      }
+    }
+  } catch {
+    // Historical media may be unavailable/expired; keep the message metadata.
+  }
+  return base;
 }
 
 async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message) {
@@ -1115,18 +1150,7 @@ async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message
 
   const mapped = mapWaMessageToRedis(msg, contactId);
   let msgData: Partial<RedisMessage> & { wa_message_id: string; timestamp: string } = mapped;
-
-  if ((msg as any).hasMedia) {
-    try {
-      const media = await (msg as any).downloadMedia?.();
-      if (media?.data && typeof media.data === "string" && typeof media.mimetype === "string") {
-        const approxBytes = Math.floor((media.data.length * 3) / 4);
-        if (approxBytes <= 1_500_000) {
-          msgData = { ...mapped, media_url: `data:${media.mimetype};base64,${media.data}`, mime_type: media.mimetype, media_size: approxBytes };
-        }
-      }
-    } catch { }
-  }
+  msgData = await attachInlineMediaIfSmall(msg, msgData);
 
   const message = await upsertMessage(orgId, contactId, msgData);
   const chatPayload = await enrichChatForBroadcast(managed, chat, contactId);
@@ -1145,18 +1169,7 @@ async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS
 
   const mapped = mapWaMessageToRedis(msg, contactId);
   let msgData: any = { ...mapped, sent_at: new Date().toISOString() };
-
-  if ((msg as any).hasMedia) {
-    try {
-      const media = await (msg as any).downloadMedia?.();
-      if (media?.data && typeof media.data === "string" && typeof media.mimetype === "string") {
-        const approxBytes = Math.floor((media.data.length * 3) / 4);
-        if (approxBytes <= 1_500_000) {
-          msgData = { ...msgData, media_url: `data:${media.mimetype};base64,${media.data}`, mime_type: media.mimetype, media_size: approxBytes };
-        }
-      }
-    } catch { }
-  }
+  msgData = await attachInlineMediaIfSmall(msg, msgData);
 
   const message = await upsertMessage(orgId, contactId, msgData);
   const chatPayload = await enrichChatForBroadcast(managed, chat, contactId);
@@ -1246,8 +1259,8 @@ export async function getContactProfilePictures(
   const pairs = await Promise.all(
     unique.map(async (jid) => {
       try {
-        const url = await (managed.client as any).getProfilePicUrl?.(jid);
-        return [jid, typeof url === "string" && url.trim() ? url.trim() : null] as const;
+        const url = await safeGetProfilePictureUrl(managed, jid);
+        return [jid, url] as const;
       } catch {
         return [jid, null] as const;
       }
@@ -1270,7 +1283,7 @@ export async function getContactDetails(organizationId: string, jid: string): Pr
   }
   try {
     const contact: any = await managed.client.getContactById(jid);
-    const profilePictureUrl = await (managed.client as any).getProfilePicUrl?.(jid).catch(() => null);
+    const profilePictureUrl = await safeGetProfilePictureUrl(managed, jid);
     const about = typeof contact?.getAbout === "function" ? await contact.getAbout().catch(() => null) : null;
     const countryCode = typeof contact?.getCountryCode === "function" ? await contact.getCountryCode().catch(() => null) : null;
     const formattedNumber = typeof contact?.getFormattedNumber === "function" ? await contact.getFormattedNumber().catch(() => null) : null;
@@ -1317,7 +1330,12 @@ export async function setContactBlocked(organizationId: string, jid: string, blo
 }
 
 /** Fetch recent message history from WhatsApp and cache in Redis. */
-export async function fetchChatHistory(organizationId: string, contactId: string, limit = 50): Promise<RedisMessage[]> {
+export async function fetchChatHistory(
+  organizationId: string,
+  contactId: string,
+  limit = 50,
+  opts?: { includeMedia?: boolean }
+): Promise<RedisMessage[]> {
   let managed: ManagedClient;
   try {
     managed = await getReadyClient(organizationId, "fetchChatHistory");
@@ -1332,7 +1350,8 @@ export async function fetchChatHistory(organizationId: string, contactId: string
     for (const msg of waMessages) {
       const from = (msg as any).from ?? (msg as any).author ?? "";
       if (typeof from === "string" && from.toLowerCase().includes("@lid")) continue;
-      const mapped = mapWaMessageToRedis(msg, contactId);
+      const mappedBase = mapWaMessageToRedis(msg, contactId);
+      const mapped = opts?.includeMedia ? await attachInlineMediaIfSmall(msg, mappedBase) : mappedBase;
       const stored = await upsertMessage(organizationId, contactId, mapped);
       saved.push(stored);
     }

@@ -7,7 +7,10 @@ import { getRedisClient } from "../lib/redis.js";
 import { logger } from "../lib/logger.js";
 
 const TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
-const MAX_MESSAGES_PER_CHAT = 500;
+const MAX_MESSAGES_PER_CHAT = Math.max(
+  500,
+  parseInt(process.env.WHATSAPP_MAX_MESSAGES_PER_CHAT || "5000", 10)
+);
 
 // ── Key helpers ──────────────────────────────────────────────────────────────
 
