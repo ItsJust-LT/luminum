@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-export { PrismaClient } from "@prisma/client";
+export { PrismaClient, Prisma } from "@prisma/client";
 export type * from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
