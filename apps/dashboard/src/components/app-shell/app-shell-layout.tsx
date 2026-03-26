@@ -64,7 +64,7 @@ export function AppShellLayout({
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <div className="flex shrink-0 items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/10">
-              <Image src="/images/logo.png" alt="Luminum" width={18} height={18} className="h-4 w-4" />
+              <Image src={organizationLogo || "/images/logo.png"} alt={organizationName || "Luminum"} width={18} height={18} className="h-4 w-4 object-contain" unoptimized={!!organizationLogo} />
             </div>
             <span className="truncate text-[15px] font-semibold text-foreground tracking-tight">{organizationName}</span>
           </div>

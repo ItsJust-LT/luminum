@@ -38,12 +38,7 @@ export const auth = betterAuth({
     fallback: API_URL,
     protocol: process.env.NODE_ENV === "development" ? "http" : "https",
   },
-  advanced: {
-    crossSubDomainCookies: {
-      enabled: true,
-      domain: ".luminum.agency",
-    },
-  },
+  advanced: {},
   trustedOrigins: [
     ...new Set([
       APP_URL,

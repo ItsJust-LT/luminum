@@ -161,12 +161,26 @@ export async function sendNotification({
   }
 }
 
+const DEFAULT_ICON = "https://luminum.agency/logo.png";
+
+async function getOrgBranding(orgId: string | undefined): Promise<{ name: string; logo: string | null } | null> {
+  if (!orgId) return null;
+  try {
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { name: true, logo: true, branded_dashboard_enabled: true },
+    });
+    if (org?.branded_dashboard_enabled && org.logo) return { name: org.name, logo: org.logo };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function sendPushNotifications(notifications: any[]) {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
     return;
   }
-  // Deploy writes PEM keys into server .env as single-line values with literal "\n".
-  // Convert those escape sequences back to real newlines before passing into the web-push lib.
   const vapidPublicKey = process.env.VAPID_PUBLIC_KEY!.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
   const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY!.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
   const webpush = (await import("web-push")).default;
@@ -183,6 +197,9 @@ async function sendPushNotifications(notifications: any[]) {
       select: { id: true, subscription: true },
     });
 
+    const branding = await getOrgBranding(notif.data?.organizationId);
+    const icon = branding?.logo || DEFAULT_ICON;
+
     for (const sub of subs) {
       try {
         const subscription =
@@ -195,8 +212,9 @@ async function sendPushNotifications(notifications: any[]) {
           type: notif.type,
           data: notif.data || {},
           url: notif.data?.url || "/dashboard",
-          icon: "https://luminum.agency/logo.png",
-          badge: "https://luminum.agency/logo.png",
+          icon,
+          badge: icon,
+          organizationName: branding?.name || undefined,
           tag: notif.id,
           timestamp: Date.now(),
         });

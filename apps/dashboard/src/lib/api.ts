@@ -2,7 +2,7 @@ import { createApiClient, type ApiClient } from "@luminum/api-client";
 
 const API_BASE =
   typeof window !== "undefined"
-    ? (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000")
+    ? "/api/proxy"
     : (process.env.API_URL || "http://localhost:4000");
 
 // Ensure get/post/patch/del and analytics are in the type so CI (Docker) type-check passes when package return type is inferred incompletely

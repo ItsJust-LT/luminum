@@ -2,6 +2,13 @@
 # Copy to /etc/caddy/Caddyfile (or run: caddy adapt --config ./Caddyfile)
 # With Cloudflare: use SSL Full (strict); Caddy will obtain Let's Encrypt certs.
 
+{
+  on_demand_tls {
+    ask http://127.0.0.1:4000/api/domain-lookup/verify
+  }
+}
+
+# Primary dashboard domain (explicit cert, not on-demand)
 app.luminum.agency {
   reverse_proxy 127.0.0.1:3000
 }
@@ -12,4 +19,13 @@ api.luminum.agency {
 
 analytics.luminum.agency {
   reverse_proxy 127.0.0.1:8080
+}
+
+# Custom org domains (on-demand TLS)
+# Caddy validates each domain via the `ask` endpoint above before issuing certs.
+https:// {
+  tls {
+    on_demand
+  }
+  reverse_proxy 127.0.0.1:3000
 }

@@ -1,7 +1,6 @@
 import { authClient } from "@/lib/auth/client";
 
-const APP_BASE = process.env.NEXT_PUBLIC_APP_URL || ""
-const DASHBOARD_CALLBACK = APP_BASE ? `${APP_BASE.replace(/\/$/, "")}/dashboard` : "/dashboard"
+const DASHBOARD_CALLBACK = "/dashboard"
 
 export async function signUpUser({
   email,

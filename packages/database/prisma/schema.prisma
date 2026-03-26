@@ -240,6 +240,10 @@ model organization {
   analytics_enabled                                                 Boolean                   @default(false)
   blogs_enabled                                                    Boolean                   @default(false)
   invoices_enabled                                                  Boolean                   @default(false)
+  branded_dashboard_enabled                                         Boolean                   @default(false)
+  custom_domain                                                     String?                   @unique @db.VarChar(255)
+  custom_domain_prefix                                              String?                   @default("admin") @db.VarChar(63)
+  custom_domain_verified                                            Boolean                   @default(false)
   emails                                                            email[]
   images                                                            images[]
   invitations                                                       invitation[]

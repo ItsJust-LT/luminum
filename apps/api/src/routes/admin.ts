@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import dns from "node:dns";
 import { pathParam } from "../lib/req-params.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
@@ -10,6 +11,7 @@ import { sendOwnerInvitationEmail, sendInvitationEmail } from "../lib/email.js";
 import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 import { getAdminSystemEnvironmentSnapshot } from "../lib/system-environment.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
+import { cacheDel } from "../lib/redis-cache.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -462,6 +464,142 @@ router.post("/disable-organization-invoices", adminOnly, async (req: Request, re
       data: { invoices_enabled: false },
     });
     res.json({ success: true, message: "Invoices disabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// ─── Branded Dashboard ─────────────────────────────────────────────────
+
+router.post("/enable-organization-branded-dashboard", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { branded_dashboard_enabled: true },
+    });
+    res.json({ success: true, message: "Branded dashboard enabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+router.post("/disable-organization-branded-dashboard", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { branded_dashboard_enabled: false },
+    });
+    res.json({ success: true, message: "Branded dashboard disabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+const SUBDOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const HOSTNAME_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
+
+router.post("/set-organization-custom-domain", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId, prefix, baseDomain } = req.body as {
+      organizationId: string;
+      prefix: string;
+      baseDomain: string;
+    };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+
+    const p = (prefix || "admin").toLowerCase().trim();
+    const d = (baseDomain || "").toLowerCase().trim();
+    if (!SUBDOMAIN_RE.test(p)) return res.status(400).json({ success: false, error: "Invalid subdomain prefix" });
+    if (!HOSTNAME_RE.test(d)) return res.status(400).json({ success: false, error: "Invalid base domain" });
+
+    const fullDomain = `${p}.${d}`;
+
+    const existing = await prisma.organization.findFirst({
+      where: { custom_domain: fullDomain, id: { not: organizationId } },
+    });
+    if (existing) return res.status(409).json({ success: false, error: "Domain already in use by another organization" });
+
+    const org = await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        custom_domain: fullDomain,
+        custom_domain_prefix: p,
+        custom_domain_verified: false,
+      },
+    });
+
+    await cacheDel(`domain-lookup:${fullDomain}`);
+    res.json({ success: true, domain: org.custom_domain, prefix: org.custom_domain_prefix });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+router.post("/remove-organization-custom-domain", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { custom_domain: true } });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { custom_domain: null, custom_domain_prefix: null, custom_domain_verified: false },
+    });
+
+    if (org?.custom_domain) await cacheDel(`domain-lookup:${org.custom_domain}`);
+    res.json({ success: true, message: "Custom domain removed" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+const PRIMARY_CNAME_TARGET = process.env.PRIMARY_DOMAIN || "app.luminum.agency";
+const SERVER_IP = process.env.SERVER_IP || process.env.MAIL_SEND_IP || "";
+
+router.post("/verify-organization-custom-domain", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { custom_domain: true },
+    });
+    if (!org?.custom_domain) return res.status(400).json({ success: false, error: "No custom domain set" });
+
+    const domain = org.custom_domain;
+    let verified = false;
+
+    try {
+      const cnames = await dns.promises.resolveCname(domain);
+      if (cnames.some((c) => c.replace(/\.$/, "") === PRIMARY_CNAME_TARGET)) verified = true;
+    } catch {}
+
+    if (!verified && SERVER_IP) {
+      try {
+        const ips = await dns.promises.resolve4(domain);
+        if (ips.includes(SERVER_IP)) verified = true;
+      } catch {}
+    }
+
+    if (verified) {
+      await prisma.organization.update({
+        where: { id: organizationId },
+        data: { custom_domain_verified: true },
+      });
+      await cacheDel(`domain-lookup:${domain}`);
+      return res.json({ success: true, verified: true, message: "Domain verified" });
+    }
+
+    res.json({
+      success: true,
+      verified: false,
+      message: `DNS not yet pointing to ${PRIMARY_CNAME_TARGET}. Please add a CNAME record and wait for propagation.`,
+    });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }

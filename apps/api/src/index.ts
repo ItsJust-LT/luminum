@@ -49,6 +49,7 @@ import { blogRouter } from "./routes/blog.js";
 import { invoicesRouter } from "./routes/invoices.js";
 import { adminInvoicesRouter } from "./routes/admin-invoices.js";
 import { websiteAuditsRouter } from "./routes/website-audits.js";
+import { domainLookupRouter } from "./routes/domain-lookup.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
 import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
 
@@ -121,6 +122,7 @@ app.use("/api/notifications", webhookNotificationsRouter);
 app.use("/api/images", imagesRouter);
 app.use("/api/analytics", analyticsWebhookRouter);
 app.use("/api/public/blog-assets", blogPublicAssetsRouter);
+app.use("/api/domain-lookup", domainLookupRouter);
 
 // ─── Protected API routes ─────────────────────────────────────────────────
 app.use("/api/emails", emailsRouter);

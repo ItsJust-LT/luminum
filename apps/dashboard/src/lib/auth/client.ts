@@ -5,7 +5,7 @@ import { jwtClient } from "better-auth/client/plugins"
 import { appInviteClient } from "@better-auth-kit/app-invite/client"
 
 const client = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000",
+  baseURL: "",
   plugins: [
     adminClient(),
     organizationClient(),

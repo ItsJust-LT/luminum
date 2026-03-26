@@ -8,70 +8,76 @@ import { NotificationToastManager } from "@/components/notifications";
 import { EnhancedNotificationPopupContainer } from "@/components/notifications/enhanced-notification-popup";
 import { NotificationClickHandler } from "@/components/notifications/notification-click-handler";
 import { APP, METADATA } from "@/lib/constants";
+import { headers } from "next/headers";
 
-export const metadata: Metadata = {
-  title: {
-    default: METADATA.defaultTitle,
-    template: METADATA.titleTemplate,
-  },
-  description: APP.tagline,
-  keywords: ['PWA', 'Next.js', 'Progressive Web App', 'Analytics', 'Dashboard', 'Notifications'],
-  authors: [{ name: APP.name }],
-  creator: APP.name,
-  publisher: APP.name,
-  formatDetection: {
-    email: false,
-    address: false,
-    telephone: false,
-  },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
-  alternates: {
-    canonical: '/',
-  },
-  openGraph: {
-    type: 'website',
-    locale: 'en_US',
-    url: '/',
-    title: METADATA.openGraphTitle,
-    description: APP.tagline,
-    siteName: METADATA.siteName,
-    images: [
-      {
-        url: '/og-image.png',
-        width: 1200,
-        height: 630,
-        alt: `${APP.name} PWA`,
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: METADATA.openGraphTitle,
-    description: APP.tagline,
-    images: ['/og-image.png'],
-    creator: '@luminum',
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+export async function generateMetadata(): Promise<Metadata> {
+  const hdrs = await headers()
+  const isCustomDomain = hdrs.get("x-custom-domain") === "true"
+  const orgName = hdrs.get("x-org-name")
+  const orgLogo = hdrs.get("x-org-logo")
+
+  const appName = isCustomDomain && orgName ? orgName : APP.name
+  const title = isCustomDomain && orgName ? `${orgName} - Dashboard` : METADATA.defaultTitle
+  const description = isCustomDomain && orgName ? `${orgName} Dashboard` : APP.tagline
+
+  return {
+    title: {
+      default: title,
+      template: isCustomDomain && orgName ? `%s | ${orgName}` : METADATA.titleTemplate,
     },
-  },
-  manifest: '/manifest.json',
-  other: {
-    'mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-status-bar-style': 'black-translucent',
-    'apple-mobile-web-app-title': 'Luminum',
-    'application-name': 'Luminum',
-    'msapplication-TileColor': '#000000',
-    'msapplication-config': '/browserconfig.xml',
-  },
+    description,
+    keywords: ['PWA', 'Dashboard'],
+    authors: [{ name: appName }],
+    creator: appName,
+    publisher: appName,
+    formatDetection: {
+      email: false,
+      address: false,
+      telephone: false,
+    },
+    metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+    alternates: {
+      canonical: '/',
+    },
+    openGraph: {
+      type: 'website',
+      locale: 'en_US',
+      url: '/',
+      title,
+      description,
+      siteName: appName,
+      images: orgLogo
+        ? [{ url: orgLogo, width: 512, height: 512, alt: appName }]
+        : [{ url: '/og-image.png', width: 1200, height: 630, alt: `${APP.name} PWA` }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: orgLogo ? [orgLogo] : ['/og-image.png'],
+    },
+    robots: {
+      index: !isCustomDomain,
+      follow: !isCustomDomain,
+      googleBot: {
+        index: !isCustomDomain,
+        follow: !isCustomDomain,
+        'max-video-preview': -1,
+        'max-image-preview': 'large' as const,
+        'max-snippet': -1,
+      },
+    },
+    manifest: '/manifest.json',
+    other: {
+      'mobile-web-app-capable': 'yes',
+      'apple-mobile-web-app-capable': 'yes',
+      'apple-mobile-web-app-status-bar-style': 'black-translucent',
+      'apple-mobile-web-app-title': appName,
+      'application-name': appName,
+      'msapplication-TileColor': '#000000',
+      'msapplication-config': '/browserconfig.xml',
+    },
+  }
 }
 
 export const viewport: Viewport = {

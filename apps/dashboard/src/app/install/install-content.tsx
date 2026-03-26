@@ -60,7 +60,7 @@ function getSteps(platform: Platform): Step[] {
       },
       {
         title: 'Tap "Add"',
-        description: 'The Luminum icon will appear on your home screen. Open it to get started!',
+        description: 'The app icon will appear on your home screen. Open it to get started!',
         icon: <Check className="h-5 w-5" />,
       },
     ]
@@ -84,7 +84,7 @@ function getSteps(platform: Platform): Step[] {
       },
       {
         title: 'Confirm installation',
-        description: 'Tap "Install" in the dialog. Luminum will appear in your app drawer.',
+        description: 'Tap "Install" in the dialog. The app will appear in your app drawer.',
         icon: <Check className="h-5 w-5" />,
       },
     ]
@@ -103,7 +103,7 @@ function getSteps(platform: Platform): Step[] {
     },
     {
       title: 'Confirm installation',
-      description: 'Click "Install" in the dialog. Luminum will open in its own window like a native app.',
+      description: 'Click "Install" in the dialog. The app will open in its own window like a native app.',
       icon: <Check className="h-5 w-5" />,
     },
   ]
@@ -121,7 +121,13 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0, 0, 0.2, 1] as const } },
 }
 
-export default function InstallContent() {
+interface InstallContentProps {
+  orgName?: string
+  orgLogo?: string
+}
+
+export default function InstallContent({ orgName, orgLogo }: InstallContentProps) {
+  const appName = orgName || 'Luminum'
   const [platform, setPlatform] = useState<Platform>('ios')
   const [detected, setDetected] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
@@ -167,13 +173,13 @@ export default function InstallContent() {
           className="flex flex-col items-center text-center mt-4 mb-8 w-full max-w-sm"
         >
           <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-5 ring-1 ring-primary/20">
-            <Image src="/images/logo.png" alt="Luminum" width={36} height={36} className="h-9 w-9" />
+            <Image src={orgLogo || "/images/logo.png"} alt={appName} width={36} height={36} className="h-9 w-9 object-contain" unoptimized={!!orgLogo} />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight mb-2">
-            Install Luminum
+            Install {appName}
           </h1>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-xs">
-            Add Luminum to your home screen for instant access, notifications, and the best experience.
+            Add {appName} to your home screen for instant access, notifications, and the best experience.
           </p>
         </motion.div>
 

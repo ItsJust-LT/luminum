@@ -50,6 +50,7 @@ import { UserNotificationProvider } from "@/components/realtime/user-notificatio
 import { useDisplayMode } from "@/lib/hooks/use-display-mode"
 import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
 import { cn } from "@/lib/utils"
+import { CustomDomainCtx, type CustomDomainContext } from "@/lib/hooks/use-custom-domain"
 
 interface Organization {
   id: string
@@ -104,6 +105,18 @@ export default function SlugLayout({
   const { isStandalone, isReady } = useDisplayMode()
 
   const slug = params.slug as string
+
+  const isCustomDomain = typeof window !== "undefined"
+    ? !["localhost", "127.0.0.1", new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").hostname].includes(window.location.hostname)
+    : false
+
+  const customDomainCtx: CustomDomainContext = {
+    isCustomDomain,
+    orgSlug: isCustomDomain ? slug : null,
+    orgName: isCustomDomain ? (state.organization?.name ?? null) : null,
+    orgLogo: isCustomDomain ? (state.organization?.logo ?? null) : null,
+    orgId: isCustomDomain ? (state.organization?.id ?? null) : null,
+  }
   const isWhatsappRoute = pathname?.includes(`/${slug}/whatsapp`)
 
   useEffect(() => {
@@ -505,6 +518,7 @@ export default function SlugLayout({
   // PWA standalone: app shell with bottom tab bar (no sidebar)
   if (isReady && isStandalone) {
     return (
+      <CustomDomainCtx.Provider value={customDomainCtx}>
       <OrganizationProvider
         organization={state.organization}
         userRole={state.userRole}
@@ -532,10 +546,12 @@ export default function SlugLayout({
           </EmailsProvider>
         </UserNotificationProvider>
       </OrganizationProvider>
+      </CustomDomainCtx.Provider>
     )
   }
 
   return (
+    <CustomDomainCtx.Provider value={customDomainCtx}>
     <OrganizationProvider
       organization={state.organization}
       userRole={state.userRole}
@@ -582,22 +598,25 @@ export default function SlugLayout({
               {/* Mobile Menu Trigger */}
               <MobileMenu />
 
-              {/* Enhanced Brand Section */}
+              {/* Brand Section */}
               <div className="flex items-center gap-3 min-w-0">
                 <div className="p-2 bg-gradient-to-br from-primary/15 to-primary/5 rounded-xl flex-shrink-0 ring-1 ring-primary/10">
                   <Image
-                    src="/images/logo.png"
-                    alt="Luminum"
+                    src={isCustomDomain && state.organization?.logo ? state.organization.logo : "/images/logo.png"}
+                    alt={isCustomDomain && state.organization?.name ? state.organization.name : "Luminum"}
                     width={20}
                     height={20}
-                    className="h-4 w-4 md:h-5 md:w-5"
+                    className="h-4 w-4 md:h-5 md:w-5 object-contain"
+                    unoptimized={isCustomDomain && !!state.organization?.logo}
                   />
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="font-semibold text-foreground text-sm md:text-base tracking-tight truncate">
-                    Luminum Agency
+                    {isCustomDomain ? (state.organization?.name || "Dashboard") : "Luminum Agency"}
                   </span>
-                  <span className="text-xs text-muted-foreground/80 font-medium hidden sm:block">Dashboard</span>
+                  {!isCustomDomain && (
+                    <span className="text-xs text-muted-foreground/80 font-medium hidden sm:block">Dashboard</span>
+                  )}
                 </div>
               </div>
 
@@ -680,10 +699,12 @@ export default function SlugLayout({
                       <Settings className="mr-2 h-4 w-4" />
                       <span>Account Settings</span>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
-                      <Building2 className="mr-2 h-4 w-4" />
-                      <span>Switch Organization</span>
-                    </DropdownMenuItem>
+                    {!isCustomDomain && (
+                      <DropdownMenuItem onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
+                        <Building2 className="mr-2 h-4 w-4" />
+                        <span>Switch Organization</span>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={handleSignOut}
@@ -709,5 +730,6 @@ export default function SlugLayout({
         </EmailsProvider>
       </UserNotificationProvider>
     </OrganizationProvider>
+    </CustomDomainCtx.Provider>
   )
 }

@@ -14,7 +14,11 @@ import { SkeletonLoader } from "@/components/ui/skeleton-loader"
 
 
 
-export function SignInForm() {
+interface SignInFormProps {
+  orgBranding?: { name: string; logo: string | null } | null
+}
+
+export function SignInForm({ orgBranding }: SignInFormProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -79,7 +83,14 @@ export function SignInForm() {
     <Card className="w-full max-w-md mx-auto shadow-2xl border bg-card/50 backdrop-blur-xl">
       <CardHeader className="space-y-6 text-center pb-8">
         <div className="flex justify-center mb-4">
-          <Image src="/images/logo.png" alt="Luminum Agency" width={32} height={32} className="rounded-md shadow-sm" />
+          <Image
+            src={orgBranding?.logo || "/images/logo.png"}
+            alt={orgBranding?.name || "Luminum Agency"}
+            width={32}
+            height={32}
+            className="rounded-md shadow-sm object-contain"
+            unoptimized={!!orgBranding?.logo}
+          />
         </div>
         <div className="space-y-3">
           <CardTitle className="text-3xl font-bold tracking-tight text-foreground">Welcome back</CardTitle>

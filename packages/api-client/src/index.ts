@@ -146,6 +146,8 @@ function createApiClient(baseUrl: string = "") {
       del(`/api/organization-settings/logo?organizationId=${organizationId}`),
     getStorage: (organizationId: string) =>
       get("/api/organization-settings/storage", { organizationId }),
+    getBrandedDashboardEnabled: (organizationId: string) =>
+      get("/api/organization-settings/branded-dashboard-enabled", { organizationId }),
   };
 
   // ─── Organization Actions ─────────────────────────────────
@@ -278,6 +280,16 @@ function createApiClient(baseUrl: string = "") {
       post("/api/admin/enable-organization-invoices", { organizationId }),
     disableInvoices: (organizationId: string) =>
       post("/api/admin/disable-organization-invoices", { organizationId }),
+    enableBrandedDashboard: (organizationId: string) =>
+      post("/api/admin/enable-organization-branded-dashboard", { organizationId }),
+    disableBrandedDashboard: (organizationId: string) =>
+      post("/api/admin/disable-organization-branded-dashboard", { organizationId }),
+    setCustomDomain: (organizationId: string, prefix: string, baseDomain: string) =>
+      post("/api/admin/set-organization-custom-domain", { organizationId, prefix, baseDomain }),
+    removeCustomDomain: (organizationId: string) =>
+      post("/api/admin/remove-organization-custom-domain", { organizationId }),
+    verifyCustomDomain: (organizationId: string) =>
+      post("/api/admin/verify-organization-custom-domain", { organizationId }),
     getAdminInvoiceStats: () => get("/api/admin/invoices/stats"),
     getAdminInvoices: (params?: Record<string, any>) =>
       get("/api/admin/invoices", params),

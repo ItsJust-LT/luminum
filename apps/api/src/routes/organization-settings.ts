@@ -267,4 +267,28 @@ router.delete("/logo", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/organization-settings/branded-dashboard-enabled?organizationId=...
+router.get("/branded-dashboard-enabled", async (req: Request, res: Response) => {
+  try {
+    const org = await prisma.organization.findUnique({
+      where: { id: req.query.organizationId as string },
+      select: {
+        branded_dashboard_enabled: true,
+        custom_domain: true,
+        custom_domain_prefix: true,
+        custom_domain_verified: true,
+      },
+    });
+    if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
+    res.json({
+      enabled: org.branded_dashboard_enabled,
+      customDomain: org.custom_domain,
+      customDomainPrefix: org.custom_domain_prefix,
+      verified: org.custom_domain_verified,
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
 export { router as organizationSettingsRouter };

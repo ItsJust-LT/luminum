@@ -14,7 +14,7 @@ self.addEventListener("push", function (event) {
     data = { title: "New notification", body: event.data?.text() || "" };
   }
 
-  const title = data.title || "Luminum";
+  const title = data.title || data.organizationName || "Notification";
 
   // Use the tag from the server (notification id), fallback to timestamp
   const tag = data.tag && data.tag.trim() !== "" ? data.tag : `notif-${Date.now()}`;
