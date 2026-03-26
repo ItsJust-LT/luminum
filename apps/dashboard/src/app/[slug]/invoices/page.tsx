@@ -13,47 +13,21 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Receipt,
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Trash2,
-  FileDown,
-  Eye,
-  Pencil,
-  Send,
-  CheckCircle,
-  DollarSign,
-  Clock,
-  FileText,
-  AlertCircle,
+  Receipt, Loader2, MoreHorizontal, Plus, Search, Trash2,
+  FileDown, Eye, Pencil, Send, CheckCircle, Clock, FileText,
+  AlertCircle, TrendingUp, DollarSign, ArrowUpRight,
 } from "lucide-react";
 
 type InvoiceRow = {
@@ -83,17 +57,21 @@ type InvoiceStats = {
 
 type StatusFilter = "all" | "draft" | "sent" | "paid" | "overdue" | "cancelled";
 
-const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof Receipt }> = {
+const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof Receipt; className?: string }> = {
   draft: { label: "Draft", variant: "secondary", icon: FileText },
-  sent: { label: "Sent", variant: "default", icon: Send },
-  paid: { label: "Paid", variant: "default", icon: CheckCircle },
+  sent: { label: "Sent", variant: "default", icon: Send, className: "bg-blue-500 hover:bg-blue-600" },
+  paid: { label: "Paid", variant: "default", icon: CheckCircle, className: "bg-green-500 hover:bg-green-600" },
   overdue: { label: "Overdue", variant: "destructive", icon: AlertCircle },
   cancelled: { label: "Cancelled", variant: "outline", icon: Clock },
 };
 
 function formatMoney(amount: number | string, currency: string = "ZAR") {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency }).format(num);
+  try {
+    return new Intl.NumberFormat("en-ZA", { style: "currency", currency }).format(num);
+  } catch {
+    return `${currency} ${num.toFixed(2)}`;
+  }
 }
 
 export default function OrgInvoicesListPage() {
@@ -182,60 +160,92 @@ export default function OrgInvoicesListPage() {
     { value: "sent", label: "Sent", count: stats?.sent },
     { value: "paid", label: "Paid", count: stats?.paid },
     { value: "overdue", label: "Overdue", count: stats?.overdue },
-    { value: "cancelled", label: "Cancelled", count: stats?.cancelled },
   ];
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto w-full">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-5 sm:gap-6 max-w-7xl mx-auto w-full">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Invoices</h1>
-          <p className="text-muted-foreground text-sm mt-1">Create, manage, and track invoices</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Invoices</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Create, manage, and track your invoices</p>
         </div>
-        <Button asChild>
+        <Button asChild size="sm" className="w-full sm:w-auto">
           <Link href={`/${slug}/invoices/new`}>
             <Plus className="h-4 w-4 mr-2" /> New Invoice
           </Link>
         </Button>
       </div>
 
+      {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="text-xs text-muted-foreground font-medium">Total Invoices</div>
-              <div className="text-2xl font-bold mt-1">{stats.total}</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">Total Invoices</p>
+                  <p className="text-2xl font-bold mt-0.5 tabular-nums">{stats.total}</p>
+                </div>
+                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Receipt className="h-4 w-4 text-primary" />
+                </div>
+              </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="text-xs text-muted-foreground font-medium">Total Revenue</div>
-              <div className="text-2xl font-bold mt-1">{formatMoney(stats.totalRevenue, currency)}</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">Revenue</p>
+                  <p className="text-xl sm:text-2xl font-bold mt-0.5 tabular-nums truncate">{formatMoney(stats.totalRevenue, currency)}</p>
+                </div>
+                <div className="h-9 w-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <TrendingUp className="h-4 w-4 text-blue-500" />
+                </div>
+              </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="text-xs text-muted-foreground font-medium flex items-center gap-1"><CheckCircle className="h-3 w-3 text-green-500" /> Paid</div>
-              <div className="text-2xl font-bold mt-1 text-green-600">{formatMoney(stats.paidRevenue, currency)}</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3 text-green-500" /> Paid
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold mt-0.5 text-green-600 tabular-nums truncate">
+                    {formatMoney(stats.paidRevenue, currency)}
+                  </p>
+                </div>
+                <div className="h-9 w-9 rounded-lg bg-green-500/10 flex items-center justify-center shrink-0">
+                  <DollarSign className="h-4 w-4 text-green-500" />
+                </div>
+              </div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="text-xs text-muted-foreground font-medium flex items-center gap-1"><Clock className="h-3 w-3 text-yellow-500" /> Outstanding</div>
-              <div className="text-2xl font-bold mt-1 text-yellow-600">{formatMoney(stats.outstandingRevenue, currency)}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="text-xs text-muted-foreground font-medium flex items-center gap-1"><AlertCircle className="h-3 w-3 text-red-500" /> Overdue</div>
-              <div className="text-2xl font-bold mt-1 text-red-600">{stats.overdue}</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                    <Clock className="h-3 w-3 text-amber-500" /> Outstanding
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold mt-0.5 text-amber-600 tabular-nums truncate">
+                    {formatMoney(stats.outstandingRevenue, currency)}
+                  </p>
+                </div>
+                <div className="h-9 w-9 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
       )}
 
+      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1 w-full sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search invoices..."
@@ -244,33 +254,45 @@ export default function OrgInvoicesListPage() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-1 flex-wrap">
+        <div className="flex gap-1 flex-wrap w-full sm:w-auto overflow-x-auto pb-0.5">
           {statusTabs.map((tab) => (
             <Button
               key={tab.value}
               variant={statusFilter === tab.value ? "default" : "ghost"}
               size="sm"
               onClick={() => setStatusFilter(tab.value)}
-              className="text-xs"
+              className="text-xs shrink-0"
             >
               {tab.label}
               {tab.count != null && tab.count > 0 && (
-                <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">{tab.count}</Badge>
+                <Badge
+                  variant={statusFilter === tab.value ? "outline" : "secondary"}
+                  className="ml-1.5 text-[10px] px-1.5 py-0 h-4"
+                >
+                  {tab.count}
+                </Badge>
               )}
             </Button>
           ))}
         </div>
       </div>
 
+      {/* Content */}
       {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : filtered.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <Receipt className="h-12 w-12 text-muted-foreground/30 mb-4" />
+          <CardContent className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="h-14 w-14 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+              <Receipt className="h-7 w-7 text-muted-foreground/30" />
+            </div>
             <h3 className="text-lg font-semibold">No invoices found</h3>
-            <p className="text-muted-foreground text-sm mt-1 mb-4">
-              {query || statusFilter !== "all" ? "Try adjusting your filters" : "Create your first invoice to get started"}
+            <p className="text-muted-foreground text-sm mt-1 mb-5 max-w-sm">
+              {query || statusFilter !== "all"
+                ? "Try adjusting your search or filter"
+                : "Create your first invoice to get started tracking your billing"}
             </p>
             {!query && statusFilter === "all" && (
               <Button asChild size="sm">
@@ -280,89 +302,142 @@ export default function OrgInvoicesListPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Due Date</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-10"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <AnimatePresence>
-                {filtered.map((inv) => {
-                  const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft!;
-                  return (
-                    <motion.tr
-                      key={inv.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+        <>
+          {/* Desktop table */}
+          <Card className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="hidden md:table-cell">Due Date</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-10"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <AnimatePresence>
+                  {filtered.map((inv) => {
+                    const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft!;
+                    return (
+                      <motion.tr
+                        key={inv.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => router.push(`/${slug}/invoices/${inv.id}`)}
+                      >
+                        <TableCell className="font-medium font-mono text-sm">{inv.invoice_number}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{inv.client_name}</div>
+                          {inv.client_email && <div className="text-xs text-muted-foreground truncate max-w-[200px]">{inv.client_email}</div>}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{new Date(inv.date).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
+                          {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">{formatMoney(inv.grand_total, inv.currency)}</TableCell>
+                        <TableCell>
+                          <Badge variant={cfg.variant} className={`text-xs gap-1 ${cfg.className || ""}`}>
+                            <cfg.icon className="h-3 w-3" /> {cfg.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/${inv.id}`)}><Eye className="h-4 w-4 mr-2" /> View</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/${inv.id}/edit`)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+                              {inv.pdf_storage_key && (
+                                <DropdownMenuItem onClick={() => window.open(api.invoices.getPdfUrl(inv.id), "_blank")}><FileDown className="h-4 w-4 mr-2" /> Download PDF</DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              {inv.status === "draft" && (
+                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}><Send className="h-4 w-4 mr-2" /> Mark as Sent</DropdownMenuItem>
+                              )}
+                              {(inv.status === "sent" || inv.status === "overdue") && (
+                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}><CheckCircle className="h-4 w-4 mr-2" /> Mark as Paid</DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteId(inv.id)}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </motion.tr>
+                    );
+                  })}
+                </AnimatePresence>
+              </TableBody>
+            </Table>
+          </Card>
+
+          {/* Mobile cards */}
+          <div className="sm:hidden space-y-3">
+            <AnimatePresence>
+              {filtered.map((inv) => {
+                const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft!;
+                return (
+                  <motion.div
+                    key={inv.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                  >
+                    <Card
+                      className="cursor-pointer hover:border-primary/30 transition-colors active:scale-[0.99]"
                       onClick={() => router.push(`/${slug}/invoices/${inv.id}`)}
                     >
-                      <TableCell className="font-medium">{inv.invoice_number}</TableCell>
-                      <TableCell>
-                        <div>{inv.client_name}</div>
-                        {inv.client_email && <div className="text-xs text-muted-foreground">{inv.client_email}</div>}
-                      </TableCell>
-                      <TableCell className="text-sm">{new Date(inv.date).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-sm">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}</TableCell>
-                      <TableCell className="text-right font-semibold">{formatMoney(inv.grand_total, inv.currency)}</TableCell>
-                      <TableCell>
-                        <Badge variant={cfg.variant} className="text-xs gap-1">
-                          <cfg.icon className="h-3 w-3" /> {cfg.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/${inv.id}`)}>
-                              <Eye className="h-4 w-4 mr-2" /> View
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/${inv.id}/edit`)}>
-                              <Pencil className="h-4 w-4 mr-2" /> Edit
-                            </DropdownMenuItem>
-                            {inv.pdf_storage_key && (
-                              <DropdownMenuItem onClick={() => window.open(api.invoices.getPdfUrl(inv.id), "_blank")}>
-                                <FileDown className="h-4 w-4 mr-2" /> Download PDF
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            {inv.status === "draft" && (
-                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}>
-                                <Send className="h-4 w-4 mr-2" /> Mark as Sent
-                              </DropdownMenuItem>
-                            )}
-                            {(inv.status === "sent" || inv.status === "overdue") && (
-                              <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}>
-                                <CheckCircle className="h-4 w-4 mr-2" /> Mark as Paid
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(inv.id)}>
-                              <Trash2 className="h-4 w-4 mr-2" /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </motion.tr>
-                  );
-                })}
-              </AnimatePresence>
-            </TableBody>
-          </Table>
-        </Card>
+                      <CardContent className="pt-4 pb-3 px-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-medium text-sm">{inv.invoice_number}</span>
+                              <Badge variant={cfg.variant} className={`text-[10px] h-5 gap-0.5 ${cfg.className || ""}`}>
+                                <cfg.icon className="h-2.5 w-2.5" /> {cfg.label}
+                              </Badge>
+                            </div>
+                            <p className="font-medium mt-1">{inv.client_name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {new Date(inv.date).toLocaleDateString()}
+                              {inv.due_date && ` · Due ${new Date(inv.due_date).toLocaleDateString()}`}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-bold tabular-nums">{formatMoney(inv.grand_total, inv.currency)}</p>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 mt-1"><MoreHorizontal className="h-4 w-4" /></Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/${inv.id}`)}><Eye className="h-4 w-4 mr-2" /> View</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/${inv.id}/edit`)}><Pencil className="h-4 w-4 mr-2" /> Edit</DropdownMenuItem>
+                                {inv.pdf_storage_key && (
+                                  <DropdownMenuItem onClick={() => window.open(api.invoices.getPdfUrl(inv.id), "_blank")}><FileDown className="h-4 w-4 mr-2" /> Download</DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                {inv.status === "draft" && <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}><Send className="h-4 w-4 mr-2" /> Mark Sent</DropdownMenuItem>}
+                                {(inv.status === "sent" || inv.status === "overdue") && <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}><CheckCircle className="h-4 w-4 mr-2" /> Mark Paid</DropdownMenuItem>}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(inv.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        </>
       )}
 
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>

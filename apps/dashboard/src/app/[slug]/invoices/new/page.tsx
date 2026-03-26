@@ -9,10 +9,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useCallback, useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { currencies } from "@/lib/currencies";
 import {
   ArrowLeft,
   Plus,
@@ -20,14 +29,48 @@ import {
   Loader2,
   Save,
   FileDown,
+  CalendarIcon,
+  ChevronsUpDown,
+  Check,
+  Building2,
+  User,
+  ImageIcon,
+  X,
+  Upload,
+  Receipt,
+  GripVertical,
+  Info,
+  Hash,
+  Globe,
 } from "lucide-react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface ItemRow {
+  id: string;
   description: string;
   quantity: number;
   unit_price: number;
   tax_percent: number;
+}
+
+const POPULAR_CURRENCIES = ["USD", "EUR", "GBP", "ZAR", "CAD", "AUD", "JPY", "CHF", "INR", "BRL", "NGN", "KES"];
+
+const LANGUAGES = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "it", label: "Italian" },
+  { value: "pt", label: "Portuguese" },
+  { value: "ja", label: "Japanese" },
+  { value: "zh", label: "Chinese" },
+  { value: "ru", label: "Russian" },
+  { value: "ar", label: "Arabic" },
+];
+
+function generateId() {
+  return Math.random().toString(36).substring(2, 10);
 }
 
 export default function NewInvoicePage() {
@@ -36,20 +79,24 @@ export default function NewInvoicePage() {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]!);
-  const [dueDate, setDueDate] = useState("");
+  const [date, setDate] = useState<Date>(new Date());
+  const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [currency, setCurrency] = useState("ZAR");
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const [language, setLanguage] = useState("en");
 
   const [companyName, setCompanyName] = useState("");
   const [companyEmail, setCompanyEmail] = useState("");
   const [companyPhone, setCompanyPhone] = useState("");
   const [companyVat, setCompanyVat] = useState("");
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
@@ -58,7 +105,9 @@ export default function NewInvoicePage() {
   const [clientCity, setClientCity] = useState("");
   const [clientCountry, setClientCountry] = useState("");
 
-  const [items, setItems] = useState<ItemRow[]>([{ description: "", quantity: 1, unit_price: 0, tax_percent: 0 }]);
+  const [items, setItems] = useState<ItemRow[]>([
+    { id: generateId(), description: "", quantity: 1, unit_price: 0, tax_percent: 0 },
+  ]);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [shippingAmount, setShippingAmount] = useState(0);
   const [taxInclusive, setTaxInclusive] = useState(false);
@@ -69,9 +118,15 @@ export default function NewInvoicePage() {
     if (!organization?.id) return;
     setCompanyName(organization.name || "");
     setCurrency((organization as any).currency || "ZAR");
-    api.invoices.getNextNumber(organization.id).then((res: any) => {
-      if (res.nextNumber) setInvoiceNumber(res.nextNumber);
-    }).catch(() => {});
+    if ((organization as any).logo) {
+      setCompanyLogo((organization as any).logo);
+    }
+    api.invoices
+      .getNextNumber(organization.id)
+      .then((res: any) => {
+        if (res.nextNumber) setInvoiceNumber(res.nextNumber);
+      })
+      .catch(() => {});
   }, [organization?.id, organization?.name]);
 
   const subtotal = items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0);
@@ -84,16 +139,22 @@ export default function NewInvoicePage() {
     ? subtotal + shippingAmount - discountAmount
     : subtotal + totalTax + shippingAmount - discountAmount;
 
+  const currencyData = currencies[currency as keyof typeof currencies];
+
   function formatMoney(amt: number) {
-    return new Intl.NumberFormat("en-ZA", { style: "currency", currency }).format(amt);
+    try {
+      return new Intl.NumberFormat("en-ZA", { style: "currency", currency }).format(amt);
+    } catch {
+      return `${currency} ${amt.toFixed(2)}`;
+    }
   }
 
-  function updateItem(index: number, field: keyof ItemRow, value: string | number) {
+  function updateItem(index: number, field: keyof Omit<ItemRow, "id">, value: string | number) {
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, [field]: value } : it)));
   }
 
   function addItem() {
-    setItems((prev) => [...prev, { description: "", quantity: 1, unit_price: 0, tax_percent: 0 }]);
+    setItems((prev) => [...prev, { id: generateId(), description: "", quantity: 1, unit_price: 0, tax_percent: 0 }]);
   }
 
   function removeItem(index: number) {
@@ -101,35 +162,90 @@ export default function NewInvoicePage() {
     setItems((prev) => prev.filter((_, i) => i !== index));
   }
 
-  const buildPayload = useCallback(() => ({
-    organizationId: organization?.id,
-    invoiceNumber,
-    date,
-    dueDate: dueDate || undefined,
-    currency,
-    language,
-    companyName,
-    companyEmail: companyEmail || undefined,
-    companyPhone: companyPhone || undefined,
-    companyVat: companyVat || undefined,
-    clientName,
-    clientEmail: clientEmail || undefined,
-    clientPhone: clientPhone || undefined,
-    clientAddress: clientAddressLine1 || clientCity || clientCountry
-      ? { line1: clientAddressLine1, city: clientCity, country: clientCountry }
-      : undefined,
-    items: items.map((it) => ({
-      description: it.description,
-      quantity: it.quantity,
-      unit_price: it.unit_price,
-      tax_percent: it.tax_percent || undefined,
-    })),
-    discountAmount,
-    shippingAmount,
-    taxInclusive,
-    notes: notes || undefined,
-    terms: terms || undefined,
-  }), [organization?.id, invoiceNumber, date, dueDate, currency, language, companyName, companyEmail, companyPhone, companyVat, clientName, clientEmail, clientPhone, clientAddressLine1, clientCity, clientCountry, items, discountAmount, shippingAmount, taxInclusive, notes, terms]);
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Logo must be under 5MB");
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]!);
+      }
+      const logoBase64 = btoa(binary);
+
+      if (organization?.id) {
+        const res = (await api.uploads.uploadLogo({
+          logoBase64,
+          fileName: file.name,
+          contentType: file.type,
+          organizationName: organization.name,
+          organizationId: organization.id,
+        })) as any;
+        setCompanyLogo(res.url);
+      } else {
+        const reader = new FileReader();
+        reader.onload = () => setCompanyLogo(reader.result as string);
+        reader.readAsDataURL(file);
+      }
+      toast.success("Logo uploaded");
+    } catch {
+      toast.error("Failed to upload logo");
+    } finally {
+      setLogoUploading(false);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+    }
+  }
+
+  const buildPayload = useCallback(
+    () => ({
+      organizationId: organization?.id,
+      invoiceNumber,
+      date: format(date, "yyyy-MM-dd"),
+      dueDate: dueDate ? format(dueDate, "yyyy-MM-dd") : undefined,
+      currency,
+      language,
+      companyName,
+      companyEmail: companyEmail || undefined,
+      companyPhone: companyPhone || undefined,
+      companyVat: companyVat || undefined,
+      companyLogo: companyLogo || undefined,
+      clientName,
+      clientEmail: clientEmail || undefined,
+      clientPhone: clientPhone || undefined,
+      clientAddress:
+        clientAddressLine1 || clientCity || clientCountry
+          ? { line1: clientAddressLine1, city: clientCity, country: clientCountry }
+          : undefined,
+      items: items.map((it) => ({
+        description: it.description,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        tax_percent: it.tax_percent || undefined,
+      })),
+      discountAmount,
+      shippingAmount,
+      taxInclusive,
+      notes: notes || undefined,
+      terms: terms || undefined,
+    }),
+    [
+      organization?.id, invoiceNumber, date, dueDate, currency, language,
+      companyName, companyEmail, companyPhone, companyVat, companyLogo,
+      clientName, clientEmail, clientPhone, clientAddressLine1, clientCity, clientCountry,
+      items, discountAmount, shippingAmount, taxInclusive, notes, terms,
+    ]
+  );
 
   async function handleSave() {
     if (!organization?.id) return;
@@ -139,8 +255,8 @@ export default function NewInvoicePage() {
 
     setSaving(true);
     try {
-      const res = await api.invoices.create(buildPayload()) as any;
-      toast.success("Invoice created");
+      const res = (await api.invoices.create(buildPayload())) as any;
+      toast.success("Invoice saved as draft");
       router.push(`/${slug}/invoices/${res.invoice.id}`);
     } catch (err: any) {
       toast.error(err?.message || "Failed to create invoice");
@@ -157,9 +273,9 @@ export default function NewInvoicePage() {
     setSaving(true);
     setGenerating(true);
     try {
-      const res = await api.invoices.create(buildPayload()) as any;
+      const res = (await api.invoices.create(buildPayload())) as any;
       await api.invoices.generatePdf(res.invoice.id);
-      toast.success("Invoice created and PDF generated");
+      toast.success("Invoice created & PDF generated");
       router.push(`/${slug}/invoices/${res.invoice.id}`);
     } catch (err: any) {
       toast.error(err?.message || "Failed to create invoice");
@@ -170,163 +286,748 @@ export default function NewInvoicePage() {
   }
 
   if (sessionPending || orgLoading) return <LoadingAnimation />;
-  if (!session) { router.push("/sign-in"); return null; }
+  if (!session) {
+    router.push("/sign-in");
+    return null;
+  }
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto w-full">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href={`/${slug}/invoices`}><ArrowLeft className="h-4 w-4" /></Link>
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold tracking-tight">New Invoice</h1>
-          <p className="text-muted-foreground text-sm">Fill in the details to create a new invoice</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleSave} disabled={saving}>
-            {saving && !generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Save Draft
+    <div className="min-h-screen pb-8">
+      {/* Header */}
+      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
+            <Link href={`/${slug}/invoices`}>
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
           </Button>
-          <Button onClick={handleSaveAndGenerate} disabled={saving}>
-            {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileDown className="h-4 w-4 mr-2" />}
-            Save & Generate PDF
-          </Button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">New Invoice</h1>
+            <p className="text-muted-foreground text-xs sm:text-sm hidden sm:block">
+              Fill in the details below to create a new invoice
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={handleSave} disabled={saving} className="hidden sm:flex">
+              {saving && !generating ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save Draft
+            </Button>
+            <Button size="sm" onClick={handleSaveAndGenerate} disabled={saving}>
+              {generating ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <FileDown className="h-4 w-4 mr-2" />
+              )}
+              <span className="hidden sm:inline">Save & Generate PDF</span>
+              <span className="sm:hidden">Generate</span>
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-base">Invoice Details</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Invoice Number</Label>
-                <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="INV-0001" />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} placeholder="ZAR" maxLength={3} />
-              </div>
-              <div>
-                <Label>Date</Label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              </div>
-              <div>
-                <Label>Due Date</Label>
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Main form */}
+          <div className="lg:col-span-8 flex flex-col gap-6">
+            {/* Invoice Details */}
             <Card>
-              <CardHeader className="pb-4"><CardTitle className="text-base">From (Company)</CardTitle></CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <div><Label>Company Name *</Label><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} /></div>
-                <div><Label>Email</Label><Input value={companyEmail} onChange={(e) => setCompanyEmail(e.target.value)} type="email" /></div>
-                <div><Label>Phone</Label><Input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)} /></div>
-                <div><Label>VAT Number</Label><Input value={companyVat} onChange={(e) => setCompanyVat(e.target.value)} /></div>
-              </CardContent>
-            </Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Receipt className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Invoice Details</CardTitle>
+                    <CardDescription>Basic information for your invoice</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Invoice Number */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Hash className="h-3.5 w-3.5 text-muted-foreground" />
+                    Invoice Number
+                  </Label>
+                  <Input
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                    placeholder="INV-0001"
+                    className="font-mono"
+                  />
+                </div>
 
-            <Card>
-              <CardHeader className="pb-4"><CardTitle className="text-base">Bill To (Client)</CardTitle></CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <div><Label>Client Name *</Label><Input value={clientName} onChange={(e) => setClientName(e.target.value)} /></div>
-                <div><Label>Email</Label><Input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} type="email" /></div>
-                <div><Label>Phone</Label><Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} /></div>
-                <div><Label>Address</Label><Input value={clientAddressLine1} onChange={(e) => setClientAddressLine1(e.target.value)} placeholder="Street address" /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><Label>City</Label><Input value={clientCity} onChange={(e) => setClientCity(e.target.value)} /></div>
-                  <div><Label>Country</Label><Input value={clientCountry} onChange={(e) => setClientCountry(e.target.value)} /></div>
+                {/* Currency */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                    Currency
+                  </Label>
+                  <Popover open={currencyOpen} onOpenChange={setCurrencyOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={currencyOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        <span className="flex items-center gap-2 truncate">
+                          <span className="text-base">{currencyData?.symbol || currency}</span>
+                          <span>{currency}</span>
+                          <span className="text-muted-foreground text-xs truncate">
+                            {currencyData?.name || ""}
+                          </span>
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[320px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search currencies..." />
+                        <CommandList>
+                          <CommandEmpty>No currency found.</CommandEmpty>
+                          <CommandGroup heading="Popular">
+                            {POPULAR_CURRENCIES.map((code) => {
+                              const c = currencies[code as keyof typeof currencies];
+                              if (!c) return null;
+                              return (
+                                <CommandItem
+                                  key={code}
+                                  value={`${code} ${c.name}`}
+                                  onSelect={() => {
+                                    setCurrency(code);
+                                    setCurrencyOpen(false);
+                                  }}
+                                >
+                                  <Check className={cn("mr-2 h-4 w-4", currency === code ? "opacity-100" : "opacity-0")} />
+                                  <span className="w-8 text-base">{c.symbol}</span>
+                                  <span className="font-medium">{code}</span>
+                                  <span className="ml-2 text-muted-foreground text-xs truncate">{c.name}</span>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                          <CommandGroup heading="All Currencies">
+                            {Object.entries(currencies)
+                              .filter(([code]) => !POPULAR_CURRENCIES.includes(code))
+                              .map(([code, c]) => (
+                                <CommandItem
+                                  key={code}
+                                  value={`${code} ${c.name}`}
+                                  onSelect={() => {
+                                    setCurrency(code);
+                                    setCurrencyOpen(false);
+                                  }}
+                                >
+                                  <Check className={cn("mr-2 h-4 w-4", currency === code ? "opacity-100" : "opacity-0")} />
+                                  <span className="w-8 text-base">{c.symbol}</span>
+                                  <span className="font-medium">{code}</span>
+                                  <span className="ml-2 text-muted-foreground text-xs truncate">{c.name}</span>
+                                </CommandItem>
+                              ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Invoice Date */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    Invoice Date
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start font-normal">
+                        <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                        {format(date, "PPP")}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={(d) => d && setDate(d)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Due Date */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1.5">
+                    <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    Due Date
+                    <span className="text-muted-foreground text-xs">(optional)</span>
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn("w-full justify-start font-normal", !dueDate && "text-muted-foreground")}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                        {dueDate ? format(dueDate, "PPP") : "Select a due date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={dueDate}
+                        onSelect={(d) => setDueDate(d ?? undefined)}
+                        initialFocus
+                      />
+                      {dueDate && (
+                        <div className="p-2 border-t">
+                          <Button variant="ghost" size="sm" className="w-full" onClick={() => setDueDate(undefined)}>
+                            Clear date
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Language */}
+                <div className="space-y-2 sm:col-span-2">
+                  <Label className="flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                    Language
+                  </Label>
+                  <Select value={language} onValueChange={setLanguage}>
+                    <SelectTrigger className="w-full sm:w-[220px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LANGUAGES.map((lang) => (
+                        <SelectItem key={lang.value} value={lang.value}>
+                          {lang.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>
+
+            {/* Company & Client side by side */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Company Card */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                      <Building2 className="h-4 w-4 text-blue-500" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">From</CardTitle>
+                      <CardDescription>Your company details</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  {/* Logo */}
+                  <div className="space-y-2">
+                    <Label>Company Logo</Label>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={cn(
+                          "h-16 w-16 rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden shrink-0 transition-colors",
+                          companyLogo ? "border-transparent bg-muted/30" : "border-muted-foreground/20 hover:border-muted-foreground/40 cursor-pointer"
+                        )}
+                        onClick={() => !companyLogo && logoInputRef.current?.click()}
+                      >
+                        {companyLogo ? (
+                          <img src={companyLogo} alt="Logo" className="h-full w-full object-contain p-1" />
+                        ) : logoUploading ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        ) : (
+                          <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleLogoUpload}
+                        />
+                        {companyLogo ? (
+                          <div className="flex gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => logoInputRef.current?.click()}
+                              disabled={logoUploading}
+                            >
+                              <Upload className="h-3 w-3 mr-1" /> Change
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                              onClick={() => setCompanyLogo(null)}
+                            >
+                              <X className="h-3 w-3 mr-1" /> Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => logoInputRef.current?.click()}
+                            disabled={logoUploading}
+                          >
+                            {logoUploading ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <Upload className="h-3 w-3 mr-1" />
+                            )}
+                            Upload Logo
+                          </Button>
+                        )}
+                        <span className="text-[10px] text-muted-foreground">PNG, JPG up to 5MB</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>
+                      Company Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Acme Corp" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Email</Label>
+                    <Input value={companyEmail} onChange={(e) => setCompanyEmail(e.target.value)} type="email" placeholder="billing@company.com" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Phone</Label>
+                    <Input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)} placeholder="+1 (555) 000-0000" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>VAT / Tax Number</Label>
+                    <Input value={companyVat} onChange={(e) => setCompanyVat(e.target.value)} placeholder="VAT123456" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Client Card */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <User className="h-4 w-4 text-emerald-500" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">Bill To</CardTitle>
+                      <CardDescription>Client / customer details</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  <div className="space-y-1.5">
+                    <Label>
+                      Client Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Jane Smith" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Email</Label>
+                    <Input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} type="email" placeholder="client@example.com" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Phone</Label>
+                    <Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+1 (555) 000-0000" />
+                  </div>
+                  <Separator />
+                  <div className="space-y-1.5">
+                    <Label>Street Address</Label>
+                    <Input
+                      value={clientAddressLine1}
+                      onChange={(e) => setClientAddressLine1(e.target.value)}
+                      placeholder="123 Main Street"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>City</Label>
+                      <Input value={clientCity} onChange={(e) => setClientCity(e.target.value)} placeholder="Cape Town" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Country</Label>
+                      <Input value={clientCountry} onChange={(e) => setClientCountry(e.target.value)} placeholder="South Africa" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Line Items */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                      <Receipt className="h-4 w-4 text-amber-500" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">Line Items</CardTitle>
+                      <CardDescription>{items.length} item{items.length !== 1 ? "s" : ""}</CardDescription>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={addItem}>
+                    <Plus className="h-4 w-4 mr-1" /> Add Item
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Desktop header */}
+                <div className="hidden sm:grid grid-cols-[1fr_80px_110px_80px_36px] gap-3 text-xs font-medium text-muted-foreground uppercase tracking-wider px-1 mb-3">
+                  <span>Description</span>
+                  <span>Qty</span>
+                  <span>Unit Price</span>
+                  <span>Tax %</span>
+                  <span></span>
+                </div>
+
+                <div className="space-y-3">
+                  {items.map((item, i) => (
+                    <div key={item.id} className="group">
+                      {/* Desktop row */}
+                      <div className="hidden sm:grid grid-cols-[1fr_80px_110px_80px_36px] gap-3 items-center">
+                        <Input
+                          value={item.description}
+                          onChange={(e) => updateItem(i, "description", e.target.value)}
+                          placeholder="Item description"
+                        />
+                        <Input
+                          type="number"
+                          min={1}
+                          value={item.quantity || ""}
+                          onChange={(e) => updateItem(i, "quantity", parseFloat(e.target.value) || 0)}
+                        />
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                            {currencyData?.symbol || currency}
+                          </span>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={item.unit_price || ""}
+                            onChange={(e) => updateItem(i, "unit_price", parseFloat(e.target.value) || 0)}
+                            className="pl-8"
+                          />
+                        </div>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          value={item.tax_percent || ""}
+                          onChange={(e) => updateItem(i, "tax_percent", parseFloat(e.target.value) || 0)}
+                        />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                              onClick={() => removeItem(i)}
+                              disabled={items.length <= 1}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Remove item</TooltipContent>
+                        </Tooltip>
+                      </div>
+
+                      {/* Mobile row */}
+                      <div className="sm:hidden rounded-lg border p-3 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">Item {i + 1}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                            onClick={() => removeItem(i)}
+                            disabled={items.length <= 1}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                        <Input
+                          value={item.description}
+                          onChange={(e) => updateItem(i, "description", e.target.value)}
+                          placeholder="Item description"
+                        />
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">Qty</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={item.quantity || ""}
+                              onChange={(e) => updateItem(i, "quantity", parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">Price</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={item.unit_price || ""}
+                              onChange={(e) => updateItem(i, "unit_price", parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground">Tax %</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={item.tax_percent || ""}
+                              onChange={(e) => updateItem(i, "tax_percent", parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Line total</span>
+                          <span className="font-medium">{formatMoney(item.quantity * item.unit_price)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Mobile add button */}
+                <Button variant="outline" size="sm" className="w-full mt-3 sm:hidden" onClick={addItem}>
+                  <Plus className="h-4 w-4 mr-1" /> Add Item
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Additional Settings */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                    <Info className="h-4 w-4 text-violet-500" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Additional Details</CardTitle>
+                    <CardDescription>Discounts, shipping, notes and terms</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Discount Amount</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                        {currencyData?.symbol || currency}
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={discountAmount || ""}
+                        onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                        className="pl-8"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Shipping</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                        {currencyData?.symbol || currency}
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={shippingAmount || ""}
+                        onChange={(e) => setShippingAmount(parseFloat(e.target.value) || 0)}
+                        className="pl-8"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="tax-inclusive" className="text-sm font-medium cursor-pointer">
+                      Tax Inclusive Pricing
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Prices already include tax</p>
+                  </div>
+                  <Switch id="tax-inclusive" checked={taxInclusive} onCheckedChange={setTaxInclusive} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Payment instructions, thank you note, bank details..."
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Terms & Conditions</Label>
+                  <Textarea
+                    value={terms}
+                    onChange={(e) => setTerms(e.target.value)}
+                    placeholder="Payment terms, late fees, etc."
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Mobile save */}
+            <div className="sm:hidden flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={handleSave} disabled={saving}>
+                {saving && !generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Draft
+              </Button>
+              <Button className="flex-1" onClick={handleSaveAndGenerate} disabled={saving}>
+                {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileDown className="h-4 w-4 mr-2" />}
+                Generate PDF
+              </Button>
+            </div>
           </div>
 
-          <Card>
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Line Items</CardTitle>
-                <Button variant="outline" size="sm" onClick={addItem}><Plus className="h-4 w-4 mr-1" /> Add Item</Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="grid grid-cols-[1fr_80px_100px_80px_36px] gap-2 text-xs font-medium text-muted-foreground px-1">
-                  <span>Description</span><span>Qty</span><span>Unit Price</span><span>Tax %</span><span></span>
-                </div>
-                {items.map((item, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_80px_100px_80px_36px] gap-2 items-center">
-                    <Input value={item.description} onChange={(e) => updateItem(i, "description", e.target.value)} placeholder="Item description" />
-                    <Input type="number" min={1} value={item.quantity} onChange={(e) => updateItem(i, "quantity", parseFloat(e.target.value) || 0)} />
-                    <Input type="number" min={0} step={0.01} value={item.unit_price} onChange={(e) => updateItem(i, "unit_price", parseFloat(e.target.value) || 0)} />
-                    <Input type="number" min={0} max={100} step={0.5} value={item.tax_percent} onChange={(e) => updateItem(i, "tax_percent", parseFloat(e.target.value) || 0)} />
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeItem(i)} disabled={items.length <= 1}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+          {/* Summary sidebar */}
+          <div className="lg:col-span-4">
+            <div className="sticky top-20">
+              <Card className="border-primary/20 shadow-md">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    Summary
+                    <Badge variant="secondary" className="text-[10px] font-normal">Live</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {/* Preview info */}
+                  {(companyLogo || companyName) && (
+                    <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-muted/50">
+                      {companyLogo && (
+                        <img src={companyLogo} alt="" className="h-8 w-8 rounded object-contain" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{companyName || "Your Company"}</p>
+                        {invoiceNumber && (
+                          <p className="text-xs text-muted-foreground font-mono">{invoiceNumber}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {clientName && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-muted-foreground">To:</span>
+                      <span className="font-medium truncate">{clientName}</span>
+                    </div>
+                  )}
+
+                  <Separator />
+
+                  {/* Itemized breakdown */}
+                  <div className="space-y-2">
+                    {items
+                      .filter((it) => it.description)
+                      .map((it, i) => (
+                        <div key={i} className="flex justify-between text-sm gap-2">
+                          <span className="text-muted-foreground truncate">{it.description}</span>
+                          <span className="font-medium shrink-0 tabular-nums">
+                            {formatMoney(it.quantity * it.unit_price)}
+                          </span>
+                        </div>
+                      ))}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader className="pb-4"><CardTitle className="text-base">Additional</CardTitle></CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div><Label>Discount</Label><Input type="number" min={0} step={0.01} value={discountAmount} onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)} /></div>
-                <div><Label>Shipping</Label><Input type="number" min={0} step={0.01} value={shippingAmount} onChange={(e) => setShippingAmount(parseFloat(e.target.value) || 0)} /></div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="taxInclusive" checked={taxInclusive} onChange={(e) => setTaxInclusive(e.target.checked)} className="rounded" />
-                <Label htmlFor="taxInclusive" className="text-sm font-normal cursor-pointer">Prices include tax (tax-inclusive)</Label>
-              </div>
-              <div><Label>Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Payment instructions, thank you note, etc." rows={3} /></div>
-              <div><Label>Terms</Label><Textarea value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="Terms and conditions" rows={3} /></div>
-            </CardContent>
-          </Card>
-        </div>
+                  <Separator />
 
-        <div className="lg:col-span-1">
-          <Card className="sticky top-6">
-            <CardHeader className="pb-4"><CardTitle className="text-base">Summary</CardTitle></CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-medium">{formatMoney(subtotal)}</span>
-              </div>
-              {totalTax > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tax{taxInclusive ? " (included)" : ""}</span>
-                  <span className="font-medium">{formatMoney(totalTax)}</span>
-                </div>
-              )}
-              {discountAmount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Discount</span>
-                  <span className="font-medium text-red-600">-{formatMoney(discountAmount)}</span>
-                </div>
-              )}
-              {shippingAmount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Shipping</span>
-                  <span className="font-medium">{formatMoney(shippingAmount)}</span>
-                </div>
-              )}
-              <Separator />
-              <div className="flex justify-between">
-                <span className="font-semibold">Grand Total</span>
-                <span className="text-xl font-bold">{formatMoney(Math.max(0, grandTotal))}</span>
-              </div>
-              <Separator />
-              <div className="text-xs text-muted-foreground space-y-1">
-                <div>{items.length} item{items.length !== 1 ? "s" : ""}</div>
-                {invoiceNumber && <div>#{invoiceNumber}</div>}
-                {clientName && <div>To: {clientName}</div>}
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="font-medium tabular-nums">{formatMoney(subtotal)}</span>
+                    </div>
+                    {totalTax > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Tax{taxInclusive ? " (included)" : ""}
+                        </span>
+                        <span className="font-medium tabular-nums">{formatMoney(totalTax)}</span>
+                      </div>
+                    )}
+                    {discountAmount > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Discount</span>
+                        <span className="font-medium text-red-500 tabular-nums">
+                          -{formatMoney(discountAmount)}
+                        </span>
+                      </div>
+                    )}
+                    {shippingAmount > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Shipping</span>
+                        <span className="font-medium tabular-nums">{formatMoney(shippingAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold">Grand Total</span>
+                    <span className="text-2xl font-bold tabular-nums tracking-tight">
+                      {formatMoney(Math.max(0, grandTotal))}
+                    </span>
+                  </div>
+
+                  {/* Date info */}
+                  <div className="text-xs text-muted-foreground space-y-1 pt-1">
+                    <div className="flex justify-between">
+                      <span>Date</span>
+                      <span>{format(date, "PP")}</span>
+                    </div>
+                    {dueDate && (
+                      <div className="flex justify-between">
+                        <span>Due</span>
+                        <span>{format(dueDate, "PP")}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Currency</span>
+                      <span>{currency}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>
