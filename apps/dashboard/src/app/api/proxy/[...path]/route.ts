@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { copyProxyResponseHeaders } from "@/lib/api-proxy-headers"
 
-const API_URL =
-  process.env.API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:4000"
+/** Upstream API for server-side proxy only — use internal URL in Docker (e.g. http://api:4000), not the public hostname. */
+const API_URL = process.env.API_URL || "http://localhost:4000"
 
 async function proxyData(req: NextRequest) {
   const segments = req.nextUrl.pathname.split("/").slice(3) // strip ["", "api", "proxy"]
