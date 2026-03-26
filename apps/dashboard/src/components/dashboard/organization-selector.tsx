@@ -188,20 +188,20 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
   }
 
   return (
-    <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-[100dvh] bg-background py-8 px-4 sm:py-12 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-12 space-y-6">
+        <div className="text-center mb-8 sm:mb-12 space-y-4 sm:space-y-6">
           <div className="relative inline-block">
             <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5 rounded-3xl blur-xl" />
-            <div className="relative p-6">
-              <Building2 className="w-20 h-20 text-primary mx-auto mb-6" />
-              <h1 className="text-4xl font-bold text-foreground mb-4">Select Organization</h1>
-              <p className="text-muted-foreground text-lg">Choose an organization to access your dashboard</p>
+            <div className="relative p-4 sm:p-6">
+              <Building2 className="w-14 h-14 sm:w-20 sm:h-20 text-primary mx-auto mb-4 sm:mb-6" />
+              <h1 className="text-2xl sm:text-4xl font-bold text-foreground mb-2 sm:mb-4">Select Organization</h1>
+              <p className="text-muted-foreground text-base sm:text-lg">Choose an organization to access your dashboard</p>
             </div>
           </div>
         </div>
 
-        <div className={`grid gap-8 ${
+        <div className={`grid gap-4 sm:gap-8 ${
           organizations.length === 1 
             ? 'grid-cols-1 max-w-2xl mx-auto' 
             : organizations.length === 2 
@@ -211,29 +211,29 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
           {organizations.map((org) => (
             <Card
               key={org.id}
-              className={`group hover:shadow-xl transition-all duration-300 cursor-pointer border-0 bg-gradient-to-br from-card to-muted/20 hover:scale-[1.02] ${
-                organizations.length <= 2 ? 'min-h-[400px]' : ''
+              className={`group hover:shadow-xl transition-all duration-300 cursor-pointer border-0 bg-gradient-to-br from-card to-muted/20 hover:scale-[1.02] active:scale-[0.98] ${
+                organizations.length <= 2 ? 'sm:min-h-[400px]' : ''
               }`}
               onClick={() => handleOrganizationSelect(org)}
             >
-              <CardHeader className="pb-4">
+              <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6">
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-4">
-                    <Avatar className="h-16 w-16 ring-2 ring-primary/10">
+                  <div className="flex items-center space-x-3 sm:space-x-4">
+                    <Avatar className="h-12 w-12 sm:h-16 sm:w-16 ring-2 ring-primary/10">
                       <AvatarImage src={org.logo || ""} />
-                      <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-bold text-lg">
+                      <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-bold text-base sm:text-lg">
                         {org.name.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="space-y-1">
-                      <CardTitle className="text-xl group-hover:text-primary transition-colors">{org.name}</CardTitle>
-                      <CardDescription className="text-base">@{org.slug}</CardDescription>
+                    <div className="space-y-0.5 sm:space-y-1 min-w-0">
+                      <CardTitle className="text-lg sm:text-xl group-hover:text-primary transition-colors truncate">{org.name}</CardTitle>
+                      <CardDescription className="text-sm sm:text-base">@{org.slug}</CardDescription>
                     </div>
                   </div>
                   <ChevronRight className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors group-hover:translate-x-1" />
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6">
                 <div className="flex items-center justify-between">
                   <Badge className={`${getRoleColor(org.role || "member")} px-3 py-1 font-medium`}>
                     {org.role || "member"}

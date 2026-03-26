@@ -56,22 +56,23 @@ export function AppShellLayout({
   const roleColor = getRoleColor(userRole)
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-[100dvh] flex-col bg-background">
       <header
-        className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-2 border-b border-border/40 bg-background/98 px-3 pt-[env(safe-area-inset-top)]"
+        className="sticky top-0 z-50 flex shrink-0 items-center gap-2.5 border-b border-border/40 bg-background/95 backdrop-blur-md px-4 pt-[env(safe-area-inset-top)]"
+        style={{ height: 'calc(3.25rem + env(safe-area-inset-top, 0px))' }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/10">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div className="flex shrink-0 items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/10">
               <Image src="/images/logo.png" alt="Luminum" width={18} height={18} className="h-4 w-4" />
             </div>
-            <span className="truncate text-sm font-semibold text-foreground">{organizationName}</span>
+            <span className="truncate text-[15px] font-semibold text-foreground tracking-tight">{organizationName}</span>
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           <ThemeToggle />
-          <div className="rounded-lg hover:bg-muted/50">
+          <div className="rounded-xl p-0.5 hover:bg-muted/50 transition-colors">
             <NotificationBell />
           </div>
           <Badge className={`${roleColor} hidden text-xs sm:inline-flex`} variant="secondary">
@@ -79,8 +80,8 @@ export function AppShellLayout({
           </Badge>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" aria-label="Account menu">
-                <Avatar className="h-8 w-8 ring-2 ring-background">
+              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full active:scale-95 transition-transform" aria-label="Account menu">
+                <Avatar className="h-8 w-8 ring-2 ring-background shadow-sm">
                   <AvatarImage src={sessionUser.image ?? ''} />
                   <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
                     {sessionUser.name?.charAt(0).toUpperCase() ?? 'U'}
@@ -89,16 +90,16 @@ export function AppShellLayout({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={() => router.push(`/${slug}/settings`)}>
+              <DropdownMenuItem onClick={() => router.push(`/${slug}/settings`)} className="py-2.5">
                 <Settings className="mr-2 h-4 w-4" />
                 Account Settings
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/dashboard')}>
+              <DropdownMenuItem onClick={() => router.push('/dashboard')} className="py-2.5">
                 <Building2 className="mr-2 h-4 w-4" />
                 Switch Organization
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onSignOut} className="text-destructive focus:text-destructive">
+              <DropdownMenuItem onClick={onSignOut} className="text-destructive focus:text-destructive py-2.5">
                 <LogOut className="mr-2 h-4 w-4" />
                 Sign Out
               </DropdownMenuItem>
@@ -107,7 +108,7 @@ export function AppShellLayout({
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-auto p-3 pb-24 bg-background/50">
+      <main className="min-h-0 flex-1 overflow-auto p-4 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] bg-background/50">
         {children}
       </main>
 

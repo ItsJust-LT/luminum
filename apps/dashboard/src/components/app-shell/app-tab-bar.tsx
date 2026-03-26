@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { motion } from 'framer-motion'
 import { LayoutDashboard, Mail, FileText, HelpCircle, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -25,7 +26,7 @@ export function AppTabBar({ slug, emailsEnabled = false }: AppTabBarProps) {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-border/40 bg-background/95 backdrop-blur supports-[padding:env(safe-area-inset-bottom)]:pb-[env(safe-area-inset-bottom)] pb-2 pt-2"
+      className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-around border-t border-border/40 bg-background/95 backdrop-blur-md pb-[env(safe-area-inset-bottom,0.5rem)] pt-1.5"
       role="tablist"
     >
       {visibleTabs.map((tab) => {
@@ -42,11 +43,18 @@ export function AppTabBar({ slug, emailsEnabled = false }: AppTabBarProps) {
             role="tab"
             aria-selected={isActive}
             className={cn(
-              'flex flex-col items-center justify-center gap-0.5 min-w-0 flex-1 py-1 text-xs font-medium transition-colors',
-              isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+              'relative flex flex-col items-center justify-center gap-0.5 min-w-0 flex-1 py-1.5 text-[11px] font-medium transition-colors active:scale-95',
+              isActive ? 'text-primary' : 'text-muted-foreground',
             )}
           >
-            <tab.icon className="h-5 w-5 shrink-0" />
+            {isActive && (
+              <motion.span
+                layoutId="tab-active-pill"
+                className="absolute -top-1.5 left-1/2 h-[3px] w-5 -translate-x-1/2 rounded-full bg-primary"
+                transition={{ type: 'spring', bounce: 0.25, duration: 0.4 }}
+              />
+            )}
+            <tab.icon className="h-[22px] w-[22px] shrink-0" strokeWidth={isActive ? 2.2 : 1.8} />
             <span className="truncate">{tab.label}</span>
           </Link>
         )

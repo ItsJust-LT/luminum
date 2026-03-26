@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
-import InstallPrompt from "@/components/install-prompt";
+import { MobilePwaGate } from "@/components/pwa/mobile-pwa-gate";
 import { NotificationToastManager } from "@/components/notifications";
 import { EnhancedNotificationPopupContainer } from "@/components/notifications/enhanced-notification-popup";
 import { NotificationClickHandler } from "@/components/notifications/notification-click-handler";
@@ -116,9 +116,9 @@ export default function RootLayout({
       <body
       >
 <Providers>
-
+        <MobilePwaGate>
         {children}
-        <InstallPrompt />
+        </MobilePwaGate>
         <PWAUpdatePrompt />
         <NotificationToastManager />
         <EnhancedNotificationPopupContainer />
@@ -194,34 +194,6 @@ function ServiceWorkerRegistration() {
             });
           }
 
-          // Handle app install prompt
-          let deferredPrompt;
-          window.addEventListener('beforeinstallprompt', function(e) {
-            e.preventDefault();
-            deferredPrompt = e;
-          });
-
-          // Handle iOS install instructions
-          function isIOS() {
-            return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-          }
-
-          function isStandalone() {
-            return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-          }
-
-          // Add to home screen functionality
-          window.addToHomeScreen = function() {
-            if (deferredPrompt) {
-              deferredPrompt.prompt();
-              deferredPrompt.userChoice.then(function(choiceResult) {
-                if (choiceResult.outcome === 'accepted') {
-                  console.log('User accepted the install prompt');
-                }
-                deferredPrompt = null;
-              });
-            }
-          };
         `,
       }}
     />
