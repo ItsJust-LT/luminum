@@ -723,6 +723,10 @@ function createApiClient(baseUrl: string = "") {
     updateStatus: (id: string, status: string) => post(`/api/invoices/${id}/status`, { status }),
     getNextNumber: (organizationId: string, documentType?: string) =>
       get("/api/invoices/next-number", { organizationId, document_type: documentType }),
+    searchClients: (organizationId: string, q?: string) =>
+      get("/api/invoices/clients", { organizationId, q }),
+    getLastCompany: (organizationId: string) =>
+      get("/api/invoices/last-company", { organizationId }),
     convertToInvoice: (id: string) => post(`/api/invoices/${id}/convert-to-invoice`),
   };
 

@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { currencies } from "@/lib/currencies";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Plus, Trash2, Loader2, Save, FileDown,
   CalendarIcon, ChevronsUpDown, Check, Building2, User,
@@ -29,6 +30,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+
+interface PreviousClient {
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: { line1?: string; city?: string; country?: string };
+}
 
 interface ItemRow {
   id: string;
@@ -64,6 +72,10 @@ export default function EditInvoicePage() {
   const slug = params.slug as string;
   const invoiceId = params.id as string;
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const clientInputRef = useRef<HTMLInputElement>(null);
+  const clientSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [previousClients, setPreviousClients] = useState<PreviousClient[]>([]);
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -141,6 +153,38 @@ export default function EditInvoicePage() {
       }
     })();
   }, [invoiceId]);
+
+  function handleClientNameChange(value: string) {
+    setClientName(value);
+    if (clientSearchTimer.current) clearTimeout(clientSearchTimer.current);
+    if (!organization?.id || value.trim().length < 2) {
+      setPreviousClients([]);
+      setShowClientSuggestions(false);
+      return;
+    }
+    clientSearchTimer.current = setTimeout(async () => {
+      try {
+        const res = (await api.invoices.searchClients(organization.id, value.trim())) as any;
+        const clients = (res?.clients || []) as PreviousClient[];
+        setPreviousClients(clients);
+        setShowClientSuggestions(clients.length > 0);
+      } catch {
+        setPreviousClients([]);
+      }
+    }, 250);
+  }
+
+  function selectClient(client: PreviousClient) {
+    setClientName(client.name);
+    setClientEmail(client.email || "");
+    setClientPhone(client.phone || "");
+    const addr = client.address as any;
+    setClientAddressLine1(addr?.line1 || "");
+    setClientCity(addr?.city || "");
+    setClientCountry(addr?.country || "");
+    setShowClientSuggestions(false);
+    setPreviousClients([]);
+  }
 
   const subtotal = items.reduce((s, it) => s + it.quantity * it.unit_price, 0);
   const totalTax = items.reduce((s, it) => {
@@ -402,7 +446,53 @@ export default function EditInvoicePage() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
-                  <div className="space-y-1.5"><Label>Client Name <span className="text-destructive">*</span></Label><Input value={clientName} onChange={(e) => setClientName(e.target.value)} /></div>
+                  <div className="space-y-1.5 relative">
+                    <Label>Client Name <span className="text-destructive">*</span></Label>
+                    <Input
+                      ref={clientInputRef}
+                      value={clientName}
+                      onChange={(e) => handleClientNameChange(e.target.value)}
+                      onFocus={() => previousClients.length > 0 && setShowClientSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+                      placeholder="Start typing to search..."
+                      autoComplete="off"
+                    />
+                    <AnimatePresence>
+                      {showClientSuggestions && previousClients.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-lg overflow-hidden"
+                        >
+                          <div className="px-3 py-2 border-b bg-muted/30">
+                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Previous Clients</p>
+                          </div>
+                          <div className="max-h-[200px] overflow-y-auto">
+                            {previousClients.map((client, i) => (
+                              <motion.button
+                                key={`${client.name}-${i}`}
+                                initial={{ opacity: 0, x: -8 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: i * 0.03 }}
+                                className="w-full px-3 py-2.5 text-left hover:bg-accent transition-colors flex items-center gap-3 cursor-pointer"
+                                onMouseDown={(e) => { e.preventDefault(); selectClient(client); }}
+                              >
+                                <div className="h-8 w-8 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
+                                  <User className="h-3.5 w-3.5 text-emerald-500" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium truncate">{client.name}</p>
+                                  {client.email && <p className="text-xs text-muted-foreground truncate">{client.email}</p>}
+                                </div>
+                              </motion.button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   <div className="space-y-1.5"><Label>Email</Label><Input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} type="email" /></div>
                   <div className="space-y-1.5"><Label>Phone</Label><Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} /></div>
                   <Separator />

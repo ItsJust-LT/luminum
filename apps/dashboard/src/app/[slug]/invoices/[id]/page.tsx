@@ -152,7 +152,7 @@ export default function InvoiceViewPage() {
               <h1 className="text-lg sm:text-xl font-bold tracking-tight">
                 {invoice.invoice_number}
               </h1>
-              <Badge variant="outline" className={`text-xs ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
+              <Badge variant="outline" className="text-xs">
                 {docLabel}
               </Badge>
               <Badge variant={cfg.variant} className={cfg.className}>
@@ -243,20 +243,38 @@ export default function InvoiceViewPage() {
           {/* PDF Preview */}
           <div className="lg:col-span-8">
             {hasPdf ? (
-              <Card className="overflow-hidden">
-                <div className="bg-muted/30 px-4 py-2 flex items-center justify-between border-b">
-                  <span className="text-xs text-muted-foreground font-medium">PDF Preview</span>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => window.open(api.invoices.getPdfUrl(invoiceId), "_blank")}>
-                    <ExternalLink className="h-3 w-3 mr-1" /> Open in new tab
-                  </Button>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-medium text-muted-foreground">PDF Preview</h2>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => window.open(api.invoices.getPdfUrl(invoiceId), "_blank")}>
+                      <ExternalLink className="h-3 w-3 mr-1.5" /> Open in new tab
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                      <a href={api.invoices.getPdfUrl(invoiceId)} download={`${invoice.invoice_number}.pdf`}>
+                        <FileDown className="h-3 w-3 mr-1.5" /> Download
+                      </a>
+                    </Button>
+                  </div>
                 </div>
-                <iframe
-                  src={api.invoices.getPdfUrl(invoiceId)}
-                  className="w-full border-0"
-                  style={{ height: "calc(100vh - 200px)", minHeight: 500 }}
-                  title={`${docLabel} PDF`}
-                />
-              </Card>
+                <div className="bg-muted/30 rounded-xl p-4 sm:p-6 lg:p-8">
+                  <div className="mx-auto shadow-2xl rounded-lg overflow-hidden bg-white" style={{ maxWidth: 794 }}>
+                    <object
+                      data={`${api.invoices.getPdfUrl(invoiceId)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+                      type="application/pdf"
+                      className="w-full"
+                      style={{ height: "calc(100vh - 180px)", minHeight: 600 }}
+                    >
+                      <iframe
+                        src={`${api.invoices.getPdfUrl(invoiceId)}#toolbar=0&navpanes=0&scrollbar=0`}
+                        className="w-full border-0"
+                        style={{ height: "calc(100vh - 180px)", minHeight: 600 }}
+                        title={`${docLabel} PDF`}
+                      />
+                    </object>
+                  </div>
+                </div>
+              </div>
             ) : (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-24 text-center">
@@ -279,14 +297,14 @@ export default function InvoiceViewPage() {
           {/* Sidebar details */}
           <div className="lg:col-span-4 space-y-4">
             {/* Amount card */}
-            <Card className={isQuote ? "border-blue-300/40" : "border-primary/20"}>
+            <Card className="border-primary/20">
               <CardContent className="pt-5 pb-4">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
                   {isQuote ? "Quote Total" : "Grand Total"}
                 </p>
                 <p className="text-3xl font-bold tracking-tight tabular-nums">{fmt(invoice.grand_total)}</p>
                 <div className="flex items-center gap-2 mt-2">
-                  <Badge variant="outline" className={`text-xs ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
+                  <Badge variant="outline" className="text-xs">
                     {docLabel}
                   </Badge>
                   <Badge variant={cfg.variant} className={cfg.className}>

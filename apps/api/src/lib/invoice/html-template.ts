@@ -60,8 +60,6 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
   const fc = (amount: number) => formatCurrency(amount, data.currency, data.language);
   const fd = (dateStr: string) => formatDate(dateStr, data.language);
 
-  const accentColor = isQuote ? "#2563eb" : "#111827";
-  const accentLight = isQuote ? "#eff6ff" : "#f9fafb";
   const docTitle = isQuote ? t(TranslationKey.quote) : t(TranslationKey.invoice);
   const numberLabel = isQuote ? t(TranslationKey.quoteNumber) : t(TranslationKey.invoiceNumber);
   const toLabel = isQuote ? t(TranslationKey.quoteTo) : t(TranslationKey.billTo);
@@ -153,26 +151,24 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
 
   .page { padding: 48px 56px 40px 56px; }
 
-  /* Header: accent bar */
   .accent-bar {
-    height: 6px;
-    background: ${accentColor};
+    height: 5px;
+    background: #111827;
     width: 100%;
   }
 
-  /* Header section */
   .header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 36px;
+    margin-bottom: 40px;
   }
   .header-left { flex: 1; }
   .company-name {
-    font-size: 22px;
-    font-weight: 800;
-    color: ${accentColor};
-    letter-spacing: -0.5px;
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.3px;
     margin-bottom: 6px;
   }
   .company-details {
@@ -181,61 +177,59 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     line-height: 1.7;
   }
   .logo {
-    max-width: 120px;
-    max-height: 80px;
+    max-width: 110px;
+    max-height: 70px;
     object-fit: contain;
     margin-left: 24px;
   }
 
-  /* Document title + meta */
   .doc-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    margin-bottom: 32px;
-    padding-bottom: 20px;
-    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 28px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #e5e7eb;
   }
   .doc-title {
-    font-size: 36px;
+    font-size: 32px;
     font-weight: 800;
-    color: ${accentColor};
-    letter-spacing: 1px;
+    color: #111827;
+    letter-spacing: 0.5px;
     line-height: 1;
+    text-transform: uppercase;
   }
-  .doc-meta {
-    text-align: right;
-  }
-  .meta-item {
-    margin-bottom: 4px;
-  }
+  .doc-meta { text-align: right; }
+  .meta-item { margin-bottom: 5px; }
   .meta-label {
-    font-size: 9px;
+    font-size: 8px;
     color: #9ca3af;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-right: 8px;
+    letter-spacing: 0.8px;
+    margin-right: 10px;
   }
   .meta-value {
     font-size: 12px;
     font-weight: 600;
-    color: #1f2937;
+    color: #111827;
   }
 
-  /* Bill-to / From section */
   .parties {
     display: flex;
-    gap: 40px;
+    gap: 48px;
     margin-bottom: 32px;
   }
   .party { flex: 1; }
   .party-label {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 700;
     color: #9ca3af;
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 1.2px;
     margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #111827;
+    display: inline-block;
   }
   .party-name {
     font-size: 14px;
@@ -249,32 +243,31 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     line-height: 1.7;
   }
 
-  /* Items table */
   .items-table {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 0;
   }
   .items-table thead th {
-    background: ${accentLight};
-    padding: 10px 14px;
-    font-size: 9px;
+    background: #f9fafb;
+    padding: 10px 16px;
+    font-size: 8px;
     font-weight: 700;
     color: #6b7280;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
     text-align: left;
     border-top: 1px solid #e5e7eb;
     border-bottom: 1px solid #e5e7eb;
   }
   .items-table thead th.num { text-align: right; }
   .items-table tbody td {
-    padding: 12px 14px;
+    padding: 12px 16px;
     border-bottom: 1px solid #f3f4f6;
     vertical-align: top;
   }
   .items-table tbody td.desc {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     color: #111827;
   }
@@ -290,18 +283,17 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     color: #111827;
   }
 
-  /* Totals */
   .totals-section {
     display: flex;
     justify-content: flex-end;
-    margin-top: 2px;
+    margin-top: 4px;
   }
   .totals-table {
     border-collapse: collapse;
     min-width: 280px;
   }
   .totals-table td {
-    padding: 8px 16px;
+    padding: 7px 16px;
     font-size: 11px;
   }
   .totals-table td:first-child {
@@ -321,32 +313,25 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     font-size: 9px;
   }
   .totals-table .grand-total td {
-    border-top: 2px solid #e5e7eb;
+    border-top: 2px solid #111827;
     padding: 14px 16px;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 800;
-  }
-  .totals-table .grand-total td:first-child {
     color: #111827;
   }
-  .totals-table .grand-total td:last-child {
-    color: ${accentColor};
-    font-size: 16px;
-  }
 
-  /* Notes / Terms */
   .bottom-section {
-    margin-top: 32px;
+    margin-top: 36px;
     display: flex;
-    gap: 32px;
+    gap: 36px;
   }
   .notes, .terms { flex: 1; }
   .section-label {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 700;
     color: #9ca3af;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
     margin-bottom: 6px;
   }
   .section-body {
@@ -356,15 +341,14 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     white-space: pre-wrap;
   }
 
-  /* Footer */
   .footer {
-    margin-top: 40px;
-    padding-top: 16px;
+    margin-top: 48px;
+    padding-top: 14px;
     border-top: 1px solid #e5e7eb;
     text-align: center;
   }
   .footer-text {
-    font-size: 11px;
+    font-size: 10px;
     color: #9ca3af;
     font-weight: 500;
   }

@@ -141,6 +141,76 @@ router.get("/next-number", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/invoices/clients?organizationId=&q=
+router.get("/clients", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+
+    const q = (req.query.q as string || "").trim();
+
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        organization_id: organizationId,
+        ...(q ? { client_name: { contains: q, mode: "insensitive" as const } } : {}),
+      },
+      select: {
+        client_name: true,
+        client_email: true,
+        client_phone: true,
+        client_address: true,
+        created_at: true,
+      },
+      orderBy: { created_at: "desc" },
+      take: 100,
+    });
+
+    const seen = new Map<string, any>();
+    for (const inv of invoices) {
+      const key = inv.client_name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, {
+          name: inv.client_name,
+          email: inv.client_email || undefined,
+          phone: inv.client_phone || undefined,
+          address: inv.client_address || undefined,
+        });
+      }
+    }
+
+    res.json({ success: true, clients: Array.from(seen.values()).slice(0, 20) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/invoices/last-company?organizationId=
+router.get("/last-company", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+
+    const last = await prisma.invoice.findFirst({
+      where: { organization_id: organizationId },
+      orderBy: { created_at: "desc" },
+      select: {
+        company_name: true,
+        company_email: true,
+        company_phone: true,
+        company_vat: true,
+        company_logo: true,
+        company_address: true,
+      },
+    });
+
+    res.json({ success: true, company: last || null });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/invoices/:id
 router.get("/:id", async (req: Request, res: Response) => {
   try {
