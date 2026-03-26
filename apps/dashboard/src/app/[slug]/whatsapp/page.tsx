@@ -217,6 +217,13 @@ function formatContactIdAsNumber(contactId: string): string {
   return local || "Unknown"
 }
 
+/** Same-origin image URL — session cookie is forwarded by the dashboard route to the API. */
+function whatsappAvatarSrc(organizationId: string | undefined, contactId: string | undefined): string | undefined {
+  if (!organizationId || !contactId) return undefined
+  if (contactId.toLowerCase().includes("@lid")) return undefined
+  return `/api/whatsapp-profile?organizationId=${encodeURIComponent(organizationId)}&jid=${encodeURIComponent(contactId)}`
+}
+
 /** Label for a message date (Today, Yesterday, or formatted with year when different). */
 function messageDateLabel(dateStr: string | Date): string {
   const d = new Date(dateStr)
@@ -236,11 +243,23 @@ function messageDateLabel(dateStr: string | Date): string {
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
 
-function ContactAvatar({ displayName, isGroup, photoUrl }: { displayName: string; isGroup: boolean; photoUrl?: string | null }) {
+function ContactAvatar({
+  displayName,
+  isGroup,
+  photoUrl,
+  avatarSrc,
+}: {
+  displayName: string
+  isGroup: boolean
+  photoUrl?: string | null
+  /** Prefer same-origin proxy so avatars load with auth and avoid CDN hotlink issues. */
+  avatarSrc?: string | null
+}) {
   const initial = isGroup ? "#" : (displayName.charAt(0).match(/\d/) ? displayName.replace(/\D/g, "").charAt(0) || "?" : displayName.charAt(0).toUpperCase())
+  const src = (avatarSrc && avatarSrc.trim()) || (photoUrl && photoUrl.trim()) || undefined
   return (
     <Avatar className="h-10 w-10 flex-shrink-0">
-      <AvatarImage src={photoUrl || undefined} alt={displayName} className="object-cover" />
+      <AvatarImage src={src || undefined} alt={displayName} className="object-cover" referrerPolicy="no-referrer" />
       <AvatarFallback className={cn(
         "text-white font-semibold text-sm",
         isGroup
@@ -487,6 +506,7 @@ export default function WhatsAppPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const chatsRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const loadingOlderRef = useRef(false)
   const hydratedPreviewRef = useRef<Set<string>>(new Set())
   const {
@@ -605,6 +625,27 @@ export default function WhatsAppPage() {
       loadChats()
     }
   }, [account?.status, loadChats])
+
+  // Light polling while connected — covers missed WS deliveries and races with new contacts.
+  useEffect(() => {
+    if (account?.status !== "CONNECTED" || !orgId || whatsappAccess !== true) {
+      if (chatsRefreshRef.current) {
+        clearInterval(chatsRefreshRef.current)
+        chatsRefreshRef.current = null
+      }
+      return
+    }
+    chatsRefreshRef.current = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+      loadChats()
+    }, 25_000)
+    return () => {
+      if (chatsRefreshRef.current) {
+        clearInterval(chatsRefreshRef.current)
+        chatsRefreshRef.current = null
+      }
+    }
+  }, [account?.status, orgId, whatsappAccess, loadChats])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -1089,6 +1130,7 @@ export default function WhatsAppPage() {
                       displayName={chat.display_name || formatChatDisplayName(chat)}
                       isGroup={chat.is_group}
                       photoUrl={chat.profile_picture_url}
+                      avatarSrc={whatsappAvatarSrc(orgId, chat.contact_id)}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
@@ -1157,6 +1199,7 @@ export default function WhatsAppPage() {
               displayName={selectedChat.display_name || formatChatDisplayName(selectedChat)}
               isGroup={selectedChat.is_group}
               photoUrl={selectedChat.profile_picture_url}
+              avatarSrc={whatsappAvatarSrc(orgId, selectedChat.contact_id)}
             />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-sm truncate">
@@ -1530,6 +1573,7 @@ export default function WhatsAppPage() {
             <DialogDescription>Select chats to forward this message to.</DialogDescription>
           </DialogHeader>
           <ForwardChatPicker
+            organizationId={orgId}
             chats={chats}
             onConfirm={handleForwardConfirm}
             onCancel={() => { setForwardModalOpen(false); setForwardingMessage(null) }}
@@ -1584,7 +1628,8 @@ export default function WhatsAppPage() {
   )
 }
 
-function ForwardChatPicker({ chats, onConfirm, onCancel }: {
+function ForwardChatPicker({ organizationId, chats, onConfirm, onCancel }: {
+  organizationId: string | undefined
   chats: WhatsAppChat[]
   onConfirm: (ids: string[]) => void
   onCancel: () => void
@@ -1623,6 +1668,7 @@ function ForwardChatPicker({ chats, onConfirm, onCancel }: {
                 displayName={chat.display_name || formatChatDisplayName(chat)}
                 isGroup={chat.is_group}
                 photoUrl={chat.profile_picture_url}
+                avatarSrc={whatsappAvatarSrc(organizationId, chat.contact_id)}
               />
               <span className="flex-1 truncate">{chat.display_name || formatChatDisplayName(chat)}</span>
               {selected.has(chat.id) && <Check className="h-4 w-4 text-green-600 flex-shrink-0" />}

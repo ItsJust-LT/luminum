@@ -20,6 +20,7 @@ import {
   deleteAllOrgData,
   isRedisAvailable,
   type RedisMessage,
+  type RedisChatMeta,
 } from "./redis-store.js";
 import {
   recordWhatsAppClientEvent,
@@ -102,7 +103,7 @@ export interface LiveClientEntry {
   alwaysOn: boolean;
 }
 
-interface ManagedClient {
+export interface ManagedClient {
   client: WAWebJS.Client;
   orgId: string;
   accountId: string;
@@ -501,8 +502,8 @@ export async function getGroupMetadata(organizationId: string, contactId: string
 
   const jids = participants.map((p: any) => p.id).filter(Boolean);
   const [names, pics] = await Promise.all([
-    getContactDisplayNames(organizationId, jids),
-    getContactProfilePictures(organizationId, jids),
+    getContactDisplayNames(organizationId, jids, { managed }),
+    getContactProfilePictures(organizationId, jids, { managed }),
   ]);
   const enriched = participants.map((p: any) => ({ ...p, displayName: names[p.id] ?? null, profilePictureUrl: pics[p.id] ?? null }));
 
@@ -644,6 +645,31 @@ function buildNotReadyDetail(
   return parts.join(" | ");
 }
 
+/**
+ * True when another API instance holds a non-expired lease with a recent heartbeat.
+ * Used to avoid false drift / CLIENT_START_FAILED noise when WA runs on one machine and HTTP/WS on others.
+ */
+function isLeaseHeldByOtherLiveInstance(acc: {
+  owner_instance_id: string | null;
+  lease_expires_at: Date | null;
+  owner_heartbeat_at: Date | null;
+} | null | undefined): boolean {
+  if (!acc?.owner_instance_id || acc.owner_instance_id === INSTANCE_ID) return false;
+  const now = Date.now();
+  if (!acc.lease_expires_at || acc.lease_expires_at.getTime() <= now) return false;
+  if (!acc.owner_heartbeat_at) return false;
+  const hbAge = now - acc.owner_heartbeat_at.getTime();
+  const maxHbAge = Math.max(LEASE_TTL_MS + HEARTBEAT_INTERVAL_MS * 3, 120_000);
+  return hbAge <= maxHbAge;
+}
+
+/** In-process client only if already ready — never starts Chrome or competes for the DB lease. */
+export function getManagedClientIfReady(organizationId: string): ManagedClient | null {
+  const m = clients.get(organizationId);
+  if (m?.ready && !m.destroying) return m;
+  return null;
+}
+
 function scheduleAlwaysOnReconnect(organizationId: string, reason: string) {
   lastAlwaysOnRecoveryAttempt.set(organizationId, 0);
   logger.info("WhatsApp always-on: scheduling reconnect", { orgId: organizationId, reason, delayMs: ALWAYS_ON_RECONNECT_DELAY_MS });
@@ -688,6 +714,20 @@ export async function getReadyClient(organizationId: string, context = "api"): P
   let managed = await ensureClient(organizationId);
   if (!managed) {
     const acc = await prisma.whatsapp_account.findUnique({ where: { organization_id: organizationId } });
+    if (acc && isLeaseHeldByOtherLiveInstance(acc)) {
+      const detail = buildNotReadyDetail(
+        "WhatsApp session is active on another API instance (peer holds lease)",
+        acc,
+        null,
+        `context=${context}`
+      );
+      throw new WhatsAppNotReadyError(
+        "CLIENT_ON_PEER_INSTANCE",
+        `WhatsApp client not ready: ${detail}`,
+        detail,
+        context
+      );
+    }
     const detail = buildNotReadyDetail(
       "Could not start or attach WhatsApp client (lease denied, max clients, or init exhausted)",
       acc,
@@ -1028,6 +1068,38 @@ function isStatusOrLidChat(contactId: string): boolean {
   return lower.endsWith("@lid") || lower.includes("status");
 }
 
+type RedisChatMetaBroadcast = RedisChatMeta & {
+  display_name: string | null;
+  profile_picture_url: string | null;
+};
+
+async function enrichChatForBroadcast(
+  managed: ManagedClient,
+  chat: RedisChatMeta,
+  contactId: string
+): Promise<RedisChatMetaBroadcast> {
+  let display_name: string | null = null;
+  let profile_picture_url: string | null = null;
+  try {
+    const contact: any = await managed.client.getContactById(contactId);
+    if (contact) {
+      display_name =
+        (typeof contact.name === "string" && contact.name.trim() ? contact.name.trim() : null) ||
+        (typeof contact.pushname === "string" && contact.pushname.trim() ? contact.pushname.trim() : null) ||
+        (typeof contact.shortName === "string" && contact.shortName.trim() ? contact.shortName.trim() : null);
+    }
+  } catch {
+    /* privacy / throttle */
+  }
+  try {
+    const url = await (managed.client as any).getProfilePicUrl?.(contactId);
+    if (typeof url === "string" && url.trim()) profile_picture_url = url.trim();
+  } catch {
+    /* no pic / blocked */
+  }
+  return { ...chat, display_name, profile_picture_url };
+}
+
 async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message) {
   const { orgId, accountId } = managed;
   const waChat = await msg.getChat();
@@ -1057,7 +1129,8 @@ async function handleInboundMessage(managed: ManagedClient, msg: WAWebJS.Message
   }
 
   const message = await upsertMessage(orgId, contactId, msgData);
-  broadcastToOrg(orgId, { type: "whatsapp:message", data: { chatId: contactId, message, chat } });
+  const chatPayload = await enrichChatForBroadcast(managed, chat, contactId);
+  broadcastToOrg(orgId, { type: "whatsapp:message", data: { chatId: contactId, message, chat: chatPayload } });
   recordAnalytics(orgId, msg.fromMe ? "sent" : "received", mapped.type !== "text");
 }
 
@@ -1086,7 +1159,8 @@ async function handleOutboundReconciliation(managed: ManagedClient, msg: WAWebJS
   }
 
   const message = await upsertMessage(orgId, contactId, msgData);
-  broadcastToOrg(orgId, { type: "whatsapp:message", data: { chatId: contactId, message, chat } });
+  const chatPayload = await enrichChatForBroadcast(managed, chat, contactId);
+  broadcastToOrg(orgId, { type: "whatsapp:message", data: { chatId: contactId, message, chat: chatPayload } });
   recordAnalytics(orgId, "sent", mapped.type !== "text");
 }
 
@@ -1136,15 +1210,14 @@ async function handleReactionEvent(managed: ManagedClient, reaction: any) {
 
 // ── Contact helpers ───────────────────────────────────────────────────────────
 
-export async function getContactDisplayNames(organizationId: string, jids: string[]): Promise<Record<string, string>> {
+export async function getContactDisplayNames(
+  organizationId: string,
+  jids: string[],
+  opts?: { managed?: ManagedClient }
+): Promise<Record<string, string>> {
   if (jids.length === 0) return {};
-  let managed: ManagedClient;
-  try {
-    managed = await getReadyClient(organizationId, "getContactDisplayNames");
-  } catch (e) {
-    if (e instanceof WhatsAppNotReadyError) return {};
-    throw e;
-  }
+  const managed = opts?.managed ?? getManagedClientIfReady(organizationId);
+  if (!managed) return {};
   const out: Record<string, string> = {};
   const unique = [...new Set(jids)].filter((j) => j && !j.toLowerCase().includes("@lid"));
   for (const jid of unique) {
@@ -1160,22 +1233,28 @@ export async function getContactDisplayNames(organizationId: string, jids: strin
   return out;
 }
 
-export async function getContactProfilePictures(organizationId: string, jids: string[]): Promise<Record<string, string>> {
+export async function getContactProfilePictures(
+  organizationId: string,
+  jids: string[],
+  opts?: { managed?: ManagedClient }
+): Promise<Record<string, string>> {
   if (jids.length === 0) return {};
-  let managed: ManagedClient;
-  try {
-    managed = await getReadyClient(organizationId, "getContactProfilePictures");
-  } catch (e) {
-    if (e instanceof WhatsAppNotReadyError) return {};
-    throw e;
-  }
+  const managed = opts?.managed ?? getManagedClientIfReady(organizationId);
+  if (!managed) return {};
   const out: Record<string, string> = {};
   const unique = [...new Set(jids)].filter((j) => j && !j.toLowerCase().includes("@lid"));
-  for (const jid of unique) {
-    try {
-      const url = await (managed.client as any).getProfilePicUrl?.(jid);
-      if (typeof url === "string" && url.trim()) out[jid] = url;
-    } catch { }
+  const pairs = await Promise.all(
+    unique.map(async (jid) => {
+      try {
+        const url = await (managed.client as any).getProfilePicUrl?.(jid);
+        return [jid, typeof url === "string" && url.trim() ? url.trim() : null] as const;
+      } catch {
+        return [jid, null] as const;
+      }
+    })
+  );
+  for (const [jid, url] of pairs) {
+    if (url) out[jid] = url;
   }
   return out;
 }
@@ -1377,6 +1456,9 @@ async function recoverAlwaysOnClients() {
         organization_id: true,
         status: true,
         next_retry_at: true,
+        owner_instance_id: true,
+        lease_expires_at: true,
+        owner_heartbeat_at: true,
       },
     });
 
@@ -1391,6 +1473,8 @@ async function recoverAlwaysOnClients() {
       }
 
       if (acc.status === "QR_PENDING") continue;
+
+      if (acc.status === "CONNECTED" && isLeaseHeldByOtherLiveInstance(acc)) continue;
 
       if (acc.next_retry_at && acc.next_retry_at.getTime() > nowMs) continue;
 
@@ -1425,14 +1509,26 @@ async function recoverAlwaysOnClients() {
 /** DB says CONNECTED + always-on but process has no ready client (crash, missed disconnect event). */
 async function detectDriftedAlwaysOnClients() {
   const now = Date.now();
-  let rows: { id: string; organization_id: string }[];
+  let rows: {
+    id: string;
+    organization_id: string;
+    owner_instance_id: string | null;
+    lease_expires_at: Date | null;
+    owner_heartbeat_at: Date | null;
+  }[];
   try {
     rows = await prisma.whatsapp_account.findMany({
       where: {
         status: "CONNECTED",
         organization: { whatsapp_enabled: true, whatsapp_always_on: true } as any,
       },
-      select: { id: true, organization_id: true },
+      select: {
+        id: true,
+        organization_id: true,
+        owner_instance_id: true,
+        lease_expires_at: true,
+        owner_heartbeat_at: true,
+      },
     });
   } catch (err) {
     logger.logError(err, "WhatsApp drift detection query failed");
@@ -1442,6 +1538,8 @@ async function detectDriftedAlwaysOnClients() {
   for (const row of rows) {
     const m = clients.get(row.organization_id);
     if (m?.ready) continue;
+
+    if (isLeaseHeldByOtherLiveInstance(row)) continue;
 
     const last = lastDriftEventLogged.get(row.organization_id) ?? 0;
     if (now - last < DRIFT_LOG_COOLDOWN_MS) continue;

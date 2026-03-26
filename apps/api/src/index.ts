@@ -48,6 +48,7 @@ import { blogPublicAssetsRouter } from "./routes/blog-public-assets.js";
 import { blogRouter } from "./routes/blog.js";
 import { websiteAuditsRouter } from "./routes/website-audits.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
+import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
 
 const app = express();
 
@@ -187,8 +188,9 @@ httpServer.listen(config.port, () => {
     appUrl: config.appUrl,
   });
 
-  // Initialize WhatsApp manager after server is listening
-  initWhatsAppManager({ prisma, broadcastToOrg, broadcastToAdmins }).catch((err) => {
+  // Initialize WhatsApp manager after server is listening (fan-out so multi-instance WS receive WA events)
+  const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);
+  initWhatsAppManager({ prisma, broadcastToOrg: broadcastToOrgForWhatsapp, broadcastToAdmins }).catch((err) => {
     logger.logError(err, "Failed to initialize WhatsApp Manager");
   });
 });

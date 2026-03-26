@@ -17,6 +17,7 @@ import {
   getContactDetails,
   setContactBlocked,
   clearSessionData,
+  getManagedClientIfReady,
   forwardMessage,
   starMessage,
   deleteMessage,
@@ -250,6 +251,41 @@ router.post("/reconnect", async (req: Request, res: Response) => {
     logger.logError(error, "POST /api/whatsapp/reconnect");
     if (handleWhatsAppError(res, error)) return;
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── GET /api/whatsapp/profile-photo — stream avatar bytes (for dashboard same-origin proxy) ──
+
+router.get("/profile-photo", async (req: Request, res: Response) => {
+  try {
+    const organizationId = await requireWhatsappEnabled(req, res);
+    if (!organizationId) return;
+    const jid = getQueryParam(req, "jid");
+    if (!jid?.trim()) return res.status(400).json({ error: "jid required" });
+    const lower = jid.toLowerCase();
+    if (lower.endsWith("@lid") || lower.includes("status")) return res.status(404).end();
+
+    const managed = getManagedClientIfReady(organizationId);
+    if (!managed) return res.status(404).end();
+
+    const waUrl = await (managed.client as any).getProfilePicUrl?.(jid);
+    if (!waUrl || typeof waUrl !== "string") return res.status(404).end();
+
+    const imgRes = await fetch(waUrl, {
+      redirect: "follow",
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Luminum/1.0)" },
+    });
+    if (!imgRes.ok) return res.status(imgRes.status).end();
+
+    const ct = imgRes.headers.get("content-type") || "image/jpeg";
+    res.setHeader("Content-Type", ct);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    res.send(buf);
+  } catch (error: any) {
+    logger.logError(error, "GET /api/whatsapp/profile-photo");
+    if (handleWhatsAppError(res, error)) return;
+    res.status(500).end();
   }
 });
 
