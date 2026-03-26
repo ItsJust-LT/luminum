@@ -599,6 +599,12 @@ router.post("/verify-organization-custom-domain", adminOnly, async (req: Request
       return res.json({ success: true, verified: true, message: "Domain verified" });
     }
 
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { custom_domain_verified: false },
+    });
+    await cacheDel(`domain-lookup:${domain}`);
+
     res.json({
       success: true,
       verified: false,
