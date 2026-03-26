@@ -35,4 +35,6 @@ COPY --from=builder /app/apps/dashboard ./apps/dashboard
 COPY --from=builder /app/packages ./packages
 EXPOSE 3000
 WORKDIR /app/apps/dashboard
+# Server-side proxy + middleware: always hit the API on the Docker network (see getInternalApiBaseUrl).
+ENV INTERNAL_API_URL=http://api:4000
 CMD ["pnpm", "start"]

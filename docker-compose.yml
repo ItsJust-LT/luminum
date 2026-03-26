@@ -111,6 +111,7 @@ services:
       - api
     environment:
       NODE_ENV: production
+      INTERNAL_API_URL: http://api:4000
       API_URL: http://api:4000
       NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:3000}
       NEXT_PUBLIC_ANALYTICS_URL: ${NEXT_PUBLIC_ANALYTICS_URL:-http://localhost:8080}

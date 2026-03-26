@@ -1,9 +1,5 @@
 import { NextRequest } from "next/server";
-
-const API_BASE = (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(
-  /\/$/,
-  ""
-);
+import { getInternalApiBaseUrl } from "@/lib/internal-api-url";
 
 /** Same-origin proxy so <img src> loads WhatsApp avatars with the user's session cookie. */
 export async function GET(req: NextRequest) {
@@ -14,7 +10,7 @@ export async function GET(req: NextRequest) {
   }
   const cookie = req.headers.get("cookie") ?? "";
   const upstream = await fetch(
-    `${API_BASE}/api/whatsapp/profile-photo?organizationId=${encodeURIComponent(orgId)}&jid=${encodeURIComponent(jid)}`,
+    `${getInternalApiBaseUrl()}/api/whatsapp/profile-photo?organizationId=${encodeURIComponent(orgId)}&jid=${encodeURIComponent(jid)}`,
     {
       headers: cookie ? { cookie } : {},
       cache: "no-store",

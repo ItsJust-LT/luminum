@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { getInternalApiBaseUrl } from "@/lib/internal-api-url"
 
 /** Session cookie names: default (dev) and __Secure- prefixed (prod HTTPS). */
 const SESSION_COOKIES = [
@@ -24,7 +25,6 @@ const PUBLIC_API_PREFIXES = [
   "/api/proxy",
 ]
 
-const API_URL = process.env.API_URL || "http://localhost:4000"
 const DOMAIN_LOOKUP_SECRET = process.env.DOMAIN_LOOKUP_SECRET || ""
 const PRIMARY_APP_URL = (
   process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
@@ -60,7 +60,7 @@ async function lookupCustomDomain(
   if (cached && cached.expiresAt > now) return cached.data
 
   try {
-    const url = `${API_URL}/api/domain-lookup?domain=${encodeURIComponent(hostname)}`
+    const url = `${getInternalApiBaseUrl()}/api/domain-lookup?domain=${encodeURIComponent(hostname)}`
     const headers: Record<string, string> = {}
     if (DOMAIN_LOOKUP_SECRET)
       headers["x-domain-lookup-secret"] = DOMAIN_LOOKUP_SECRET

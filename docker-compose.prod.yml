@@ -126,7 +126,8 @@ services:
       - api
     environment:
       NODE_ENV: production
-      # Server-side proxy + middleware must reach the API on the Docker network (not public DNS).
+      # Server-side proxy + middleware: INTERNAL_API_URL wins over .env API_URL (public hostname breaks DNS in-container).
+      INTERNAL_API_URL: http://api:4000
       API_URL: http://api:4000
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.luminum.agency}

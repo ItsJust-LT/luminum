@@ -1,6 +1,5 @@
 import { cookies } from "next/headers"
-
-const API_URL = process.env.API_URL || "http://localhost:4000"
+import { getInternalApiBaseUrl } from "@/lib/internal-api-url"
 
 /**
  * Get the current session from the API server. Use in server actions that require authentication.
@@ -9,7 +8,7 @@ export async function requireAuth() {
   const cookieStore = await cookies()
   const cookieHeader = cookieStore.toString()
 
-  const res = await fetch(`${API_URL}/api/me`, {
+  const res = await fetch(`${getInternalApiBaseUrl()}/api/me`, {
     headers: { cookie: cookieHeader },
     cache: "no-store",
   })

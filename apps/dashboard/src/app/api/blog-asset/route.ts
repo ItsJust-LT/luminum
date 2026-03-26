@@ -1,9 +1,5 @@
 import { NextRequest } from "next/server";
-
-const API_BASE = (process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(
-  /\/$/,
-  ""
-);
+import { getInternalApiBaseUrl } from "@/lib/internal-api-url";
 
 /**
  * Same-origin proxy so <img src> can load org blog assets with session cookies
@@ -16,7 +12,7 @@ export async function GET(req: NextRequest) {
   }
   const cookie = req.headers.get("cookie") ?? "";
   const upstream = await fetch(
-    `${API_BASE}/api/blog/asset?key=${encodeURIComponent(key)}`,
+    `${getInternalApiBaseUrl()}/api/blog/asset?key=${encodeURIComponent(key)}`,
     {
       headers: cookie ? { cookie } : {},
       cache: "no-store",

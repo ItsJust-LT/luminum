@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { copyProxyResponseHeaders } from "@/lib/api-proxy-headers"
-
-/** Upstream API for server-side proxy only — use internal URL in Docker (e.g. http://api:4000), not the public hostname. */
-const API_URL = process.env.API_URL || "http://localhost:4000"
+import { getInternalApiBaseUrl } from "@/lib/internal-api-url"
 const APP_ORIGIN = (
   process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 ).replace(/\/$/, "")
@@ -19,7 +17,7 @@ function rewriteCookies(apiRes: Response): string[] {
 async function proxyAuth(req: NextRequest) {
   const url = new URL(
     req.nextUrl.pathname + req.nextUrl.search,
-    API_URL,
+    getInternalApiBaseUrl(),
   )
 
   const headers = new Headers(req.headers)

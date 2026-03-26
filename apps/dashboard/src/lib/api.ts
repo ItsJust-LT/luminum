@@ -1,9 +1,10 @@
 import { createApiClient, type ApiClient } from "@luminum/api-client";
+import { getInternalApiBaseUrl } from "@/lib/internal-api-url";
 
 const API_BASE =
   typeof window !== "undefined"
     ? "/api/proxy"
-    : (process.env.API_URL || "http://localhost:4000");
+    : getInternalApiBaseUrl();
 
 // Ensure get/post/patch/del and analytics are in the type so CI (Docker) type-check passes when package return type is inferred incompletely
 type ApiWithLowLevel = ApiClient & {

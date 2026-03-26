@@ -1,6 +1,14 @@
 # Luminum production – reverse proxy for app / api / analytics
 # Copy to /etc/caddy/Caddyfile (or run: caddy adapt --config ./Caddyfile)
-# With Cloudflare: use SSL Full (strict); Caddy will obtain Let's Encrypt certs.
+#
+# TLS / browser "ERR_SSL_VERSION_OR_CIPHER_MISMATCH" or "unsupported protocol":
+# - Cloudflare: set SSL/TLS mode to Full or Full (strict). "Flexible" makes CF speak HTTPS to the
+#   client but HTTP to origin; mixed with HTTPS-only origin or wrong ports often breaks handshakes.
+# - DNS: custom hostnames (e.g. admin.example.com) must point to this Caddy box (A/AAAA), not only
+#   a CDN orange-cloud unless the CDN is configured to terminate TLS correctly to origin.
+# - On-demand certs: Caddy only issues after `ask` returns 200. From the server:
+#     curl -sS "http://127.0.0.1:4000/api/domain-lookup/verify?domain=HOST"
+#   Fix domain verification / branded dashboard settings if not 200.
 
 {
   on_demand_tls {
