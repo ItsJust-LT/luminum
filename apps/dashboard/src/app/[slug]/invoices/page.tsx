@@ -28,11 +28,13 @@ import {
   Receipt, Loader2, MoreHorizontal, Plus, Search, Trash2,
   FileDown, Eye, Pencil, Send, CheckCircle, Clock, FileText,
   AlertCircle, TrendingUp, DollarSign, ArrowUpRight,
+  ChevronDown, FileCheck, ArrowRightLeft,
 } from "lucide-react";
 
 type InvoiceRow = {
   id: string;
   invoice_number: string;
+  document_type: string;
   client_name: string;
   client_email?: string;
   date: string;
@@ -50,12 +52,14 @@ type InvoiceStats = {
   paid: number;
   overdue: number;
   cancelled: number;
+  accepted: number;
+  expired: number;
   totalRevenue: number;
   paidRevenue: number;
   outstandingRevenue: number;
 };
 
-type StatusFilter = "all" | "draft" | "sent" | "paid" | "overdue" | "cancelled";
+type StatusFilter = "all" | "draft" | "sent" | "paid" | "overdue" | "cancelled" | "accepted" | "expired";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof Receipt; className?: string }> = {
   draft: { label: "Draft", variant: "secondary", icon: FileText },
@@ -63,6 +67,9 @@ const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secon
   paid: { label: "Paid", variant: "default", icon: CheckCircle, className: "bg-green-500 hover:bg-green-600" },
   overdue: { label: "Overdue", variant: "destructive", icon: AlertCircle },
   cancelled: { label: "Cancelled", variant: "outline", icon: Clock },
+  accepted: { label: "Accepted", variant: "default", icon: FileCheck, className: "bg-emerald-500 hover:bg-emerald-600" },
+  expired: { label: "Expired", variant: "outline", icon: Clock },
+  rejected: { label: "Rejected", variant: "destructive", icon: AlertCircle },
 };
 
 function formatMoney(amount: number | string, currency: string = "ZAR") {
@@ -85,17 +92,22 @@ export default function OrgInvoicesListPage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [docTypeFilter, setDocTypeFilter] = useState<"all" | "invoice" | "quote">("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [converting, setConverting] = useState<string | null>(null);
 
   useEffect(() => {
     if (!organization?.id) return;
     let cancelled = false;
     (async () => {
       try {
+        const listParams: any = { page: 1, limit: 100 };
+        if (docTypeFilter !== "all") listParams.document_type = docTypeFilter;
+
         const [listRes, statsRes] = await Promise.all([
-          api.invoices.list(organization.id, { page: 1, limit: 100 }) as Promise<{ invoices: InvoiceRow[] }>,
-          api.invoices.getStats(organization.id) as Promise<{ stats: InvoiceStats }>,
+          api.invoices.list(organization.id, listParams) as Promise<{ invoices: InvoiceRow[] }>,
+          api.invoices.getStats(organization.id, docTypeFilter !== "all" ? docTypeFilter : undefined) as Promise<{ stats: InvoiceStats }>,
         ]);
         if (!cancelled) {
           setInvoices(listRes.invoices ?? []);
@@ -108,7 +120,7 @@ export default function OrgInvoicesListPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [organization?.id]);
+  }, [organization?.id, docTypeFilter]);
 
   const filtered = useMemo(() => {
     let list = invoices;
@@ -131,9 +143,9 @@ export default function OrgInvoicesListPage() {
     try {
       await api.invoices.delete(deleteId);
       setInvoices((prev) => prev.filter((i) => i.id !== deleteId));
-      toast.success("Invoice deleted");
+      toast.success("Deleted successfully");
     } catch {
-      toast.error("Failed to delete invoice");
+      toast.error("Failed to delete");
     } finally {
       setDeleting(false);
       setDeleteId(null);
@@ -144,9 +156,22 @@ export default function OrgInvoicesListPage() {
     try {
       await api.invoices.updateStatus(id, status);
       setInvoices((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)));
-      toast.success(`Invoice marked as ${status}`);
+      toast.success(`Marked as ${status}`);
     } catch {
       toast.error("Failed to update status");
+    }
+  }
+
+  async function handleConvertToInvoice(id: string) {
+    setConverting(id);
+    try {
+      const res = (await api.invoices.convertToInvoice(id)) as any;
+      toast.success("Quote converted to invoice");
+      router.push(`/${slug}/invoices/${res.invoice.id}`);
+    } catch {
+      toast.error("Failed to convert quote");
+    } finally {
+      setConverting(null);
     }
   }
 
@@ -154,27 +179,63 @@ export default function OrgInvoicesListPage() {
   if (!session) { router.push("/sign-in"); return null; }
 
   const currency = (organization as any)?.currency || "ZAR";
-  const statusTabs: { value: StatusFilter; label: string; count?: number }[] = [
-    { value: "all", label: "All", count: stats?.total },
-    { value: "draft", label: "Draft", count: stats?.draft },
-    { value: "sent", label: "Sent", count: stats?.sent },
-    { value: "paid", label: "Paid", count: stats?.paid },
-    { value: "overdue", label: "Overdue", count: stats?.overdue },
-  ];
+  const isQuoteView = docTypeFilter === "quote";
+  const docLabel = isQuoteView ? "Quote" : docTypeFilter === "invoice" ? "Invoice" : "Document";
+
+  const statusTabs: { value: StatusFilter; label: string; count?: number }[] = isQuoteView
+    ? [
+        { value: "all", label: "All", count: stats?.total },
+        { value: "draft", label: "Draft", count: stats?.draft },
+        { value: "sent", label: "Sent", count: stats?.sent },
+        { value: "accepted", label: "Accepted", count: stats?.accepted },
+        { value: "expired", label: "Expired", count: stats?.expired },
+      ]
+    : [
+        { value: "all", label: "All", count: stats?.total },
+        { value: "draft", label: "Draft", count: stats?.draft },
+        { value: "sent", label: "Sent", count: stats?.sent },
+        { value: "paid", label: "Paid", count: stats?.paid },
+        { value: "overdue", label: "Overdue", count: stats?.overdue },
+      ];
 
   return (
     <div className="flex flex-col gap-5 sm:gap-6 max-w-7xl mx-auto w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Invoices</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Create, manage, and track your invoices</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Invoices & Quotes</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Create, manage, and track your invoices and quotes</p>
         </div>
-        <Button asChild size="sm" className="w-full sm:w-auto">
-          <Link href={`/${slug}/invoices/new`}>
-            <Plus className="h-4 w-4 mr-2" /> New Invoice
-          </Link>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" className="w-full sm:w-auto">
+              <Plus className="h-4 w-4 mr-2" /> Create New <ChevronDown className="h-4 w-4 ml-2" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=invoice`)}>
+              <Receipt className="h-4 w-4 mr-2" /> New Invoice
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=quote`)}>
+              <FileText className="h-4 w-4 mr-2" /> New Quote
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Document type tabs */}
+      <div className="flex gap-1 bg-muted/50 rounded-lg p-1 w-fit">
+        {(["all", "invoice", "quote"] as const).map((t) => (
+          <Button
+            key={t}
+            variant={docTypeFilter === t ? "default" : "ghost"}
+            size="sm"
+            className="text-xs h-8 px-4"
+            onClick={() => { setDocTypeFilter(t); setStatusFilter("all"); setLoading(true); }}
+          >
+            {t === "all" ? "All" : t === "invoice" ? "Invoices" : "Quotes"}
+          </Button>
+        ))}
       </div>
 
       {/* Stats */}
@@ -184,7 +245,7 @@ export default function OrgInvoicesListPage() {
             <CardContent className="pt-4 pb-3 px-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground font-medium">Total Invoices</p>
+                  <p className="text-xs text-muted-foreground font-medium">Total</p>
                   <p className="text-2xl font-bold mt-0.5 tabular-nums">{stats.total}</p>
                 </div>
                 <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -248,7 +309,7 @@ export default function OrgInvoicesListPage() {
         <div className="relative flex-1 w-full sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search invoices..."
+            placeholder={`Search ${docTypeFilter === "all" ? "invoices & quotes" : docTypeFilter + "s"}...`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
@@ -288,16 +349,21 @@ export default function OrgInvoicesListPage() {
             <div className="h-14 w-14 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
               <Receipt className="h-7 w-7 text-muted-foreground/30" />
             </div>
-            <h3 className="text-lg font-semibold">No invoices found</h3>
+            <h3 className="text-lg font-semibold">No {docTypeFilter === "all" ? "documents" : docTypeFilter + "s"} found</h3>
             <p className="text-muted-foreground text-sm mt-1 mb-5 max-w-sm">
               {query || statusFilter !== "all"
                 ? "Try adjusting your search or filter"
-                : "Create your first invoice to get started tracking your billing"}
+                : `Create your first ${docTypeFilter === "quote" ? "quote" : "invoice"} to get started`}
             </p>
             {!query && statusFilter === "all" && (
-              <Button asChild size="sm">
-                <Link href={`/${slug}/invoices/new`}><Plus className="h-4 w-4 mr-2" /> New Invoice</Link>
-              </Button>
+              <div className="flex gap-2">
+                <Button asChild size="sm">
+                  <Link href={`/${slug}/invoices/new?type=invoice`}><Plus className="h-4 w-4 mr-2" /> New Invoice</Link>
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/${slug}/invoices/new?type=quote`}><Plus className="h-4 w-4 mr-2" /> New Quote</Link>
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -308,7 +374,8 @@ export default function OrgInvoicesListPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Invoice</TableHead>
+                  <TableHead>Number</TableHead>
+                  {docTypeFilter === "all" && <TableHead>Type</TableHead>}
                   <TableHead>Client</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="hidden md:table-cell">Due Date</TableHead>
@@ -321,6 +388,7 @@ export default function OrgInvoicesListPage() {
                 <AnimatePresence>
                   {filtered.map((inv) => {
                     const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft!;
+                    const isQuote = inv.document_type === "quote";
                     return (
                       <motion.tr
                         key={inv.id}
@@ -331,13 +399,20 @@ export default function OrgInvoicesListPage() {
                         onClick={() => router.push(`/${slug}/invoices/${inv.id}`)}
                       >
                         <TableCell className="font-medium font-mono text-sm">{inv.invoice_number}</TableCell>
+                        {docTypeFilter === "all" && (
+                          <TableCell>
+                            <Badge variant="outline" className={`text-[10px] ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
+                              {isQuote ? "Quote" : "Invoice"}
+                            </Badge>
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="font-medium">{inv.client_name}</div>
                           {inv.client_email && <div className="text-xs text-muted-foreground truncate max-w-[200px]">{inv.client_email}</div>}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{new Date(inv.date).toLocaleDateString()}</TableCell>
                         <TableCell className="text-sm text-muted-foreground hidden md:table-cell">
-                          {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "—"}
+                          {inv.due_date ? new Date(inv.due_date).toLocaleDateString() : "\u2014"}
                         </TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">{formatMoney(inv.grand_total, inv.currency)}</TableCell>
                         <TableCell>
@@ -357,11 +432,17 @@ export default function OrgInvoicesListPage() {
                                 <DropdownMenuItem onClick={() => window.open(api.invoices.getPdfUrl(inv.id), "_blank")}><FileDown className="h-4 w-4 mr-2" /> Download PDF</DropdownMenuItem>
                               )}
                               <DropdownMenuSeparator />
-                              {inv.status === "draft" && (
+                              {!isQuote && inv.status === "draft" && (
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}><Send className="h-4 w-4 mr-2" /> Mark as Sent</DropdownMenuItem>
                               )}
-                              {(inv.status === "sent" || inv.status === "overdue") && (
+                              {!isQuote && (inv.status === "sent" || inv.status === "overdue") && (
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}><CheckCircle className="h-4 w-4 mr-2" /> Mark as Paid</DropdownMenuItem>
+                              )}
+                              {isQuote && inv.status !== "accepted" && (
+                                <DropdownMenuItem onClick={() => handleConvertToInvoice(inv.id)} disabled={converting === inv.id}>
+                                  {converting === inv.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowRightLeft className="h-4 w-4 mr-2" />}
+                                  Convert to Invoice
+                                </DropdownMenuItem>
                               )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteId(inv.id)}>
@@ -383,6 +464,7 @@ export default function OrgInvoicesListPage() {
             <AnimatePresence>
               {filtered.map((inv) => {
                 const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft!;
+                const isQuote = inv.document_type === "quote";
                 return (
                   <motion.div
                     key={inv.id}
@@ -397,8 +479,11 @@ export default function OrgInvoicesListPage() {
                       <CardContent className="pt-4 pb-3 px-4">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono font-medium text-sm">{inv.invoice_number}</span>
+                              <Badge variant="outline" className={`text-[10px] h-5 ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
+                                {isQuote ? "Quote" : "Invoice"}
+                              </Badge>
                               <Badge variant={cfg.variant} className={`text-[10px] h-5 gap-0.5 ${cfg.className || ""}`}>
                                 <cfg.icon className="h-2.5 w-2.5" /> {cfg.label}
                               </Badge>
@@ -406,7 +491,7 @@ export default function OrgInvoicesListPage() {
                             <p className="font-medium mt-1">{inv.client_name}</p>
                             <p className="text-xs text-muted-foreground mt-0.5">
                               {new Date(inv.date).toLocaleDateString()}
-                              {inv.due_date && ` · Due ${new Date(inv.due_date).toLocaleDateString()}`}
+                              {inv.due_date && ` \u00b7 Due ${new Date(inv.due_date).toLocaleDateString()}`}
                             </p>
                           </div>
                           <div className="text-right shrink-0">
@@ -422,8 +507,13 @@ export default function OrgInvoicesListPage() {
                                   <DropdownMenuItem onClick={() => window.open(api.invoices.getPdfUrl(inv.id), "_blank")}><FileDown className="h-4 w-4 mr-2" /> Download</DropdownMenuItem>
                                 )}
                                 <DropdownMenuSeparator />
-                                {inv.status === "draft" && <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}><Send className="h-4 w-4 mr-2" /> Mark Sent</DropdownMenuItem>}
-                                {(inv.status === "sent" || inv.status === "overdue") && <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}><CheckCircle className="h-4 w-4 mr-2" /> Mark Paid</DropdownMenuItem>}
+                                {isQuote && inv.status !== "accepted" && (
+                                  <DropdownMenuItem onClick={() => handleConvertToInvoice(inv.id)} disabled={converting === inv.id}>
+                                    <ArrowRightLeft className="h-4 w-4 mr-2" /> Convert to Invoice
+                                  </DropdownMenuItem>
+                                )}
+                                {!isQuote && inv.status === "draft" && <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "sent")}><Send className="h-4 w-4 mr-2" /> Mark Sent</DropdownMenuItem>}
+                                {!isQuote && (inv.status === "sent" || inv.status === "overdue") && <DropdownMenuItem onClick={() => handleStatusChange(inv.id, "paid")}><CheckCircle className="h-4 w-4 mr-2" /> Mark Paid</DropdownMenuItem>}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(inv.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
                               </DropdownMenuContent>
@@ -443,8 +533,8 @@ export default function OrgInvoicesListPage() {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete this invoice and its PDF. This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>Delete Document</AlertDialogTitle>
+            <AlertDialogDescription>This will permanently delete this document and its PDF. This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>

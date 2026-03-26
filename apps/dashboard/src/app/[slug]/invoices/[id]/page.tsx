@@ -24,6 +24,7 @@ import {
   ArrowLeft, FileDown, Pencil, Trash2, Loader2, Send,
   CheckCircle, MoreHorizontal, RefreshCw, FileText, Clock,
   AlertCircle, Building2, User, Calendar, Receipt, ExternalLink,
+  ArrowRightLeft, FileCheck,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className?: string; icon: typeof Receipt }> = {
@@ -32,6 +33,9 @@ const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secon
   paid: { label: "Paid", variant: "default", className: "bg-green-500 hover:bg-green-600", icon: CheckCircle },
   overdue: { label: "Overdue", variant: "destructive", icon: AlertCircle },
   cancelled: { label: "Cancelled", variant: "outline", icon: Clock },
+  accepted: { label: "Accepted", variant: "default", className: "bg-emerald-500 hover:bg-emerald-600", icon: FileCheck },
+  expired: { label: "Expired", variant: "outline", icon: Clock },
+  rejected: { label: "Rejected", variant: "destructive", icon: AlertCircle },
 };
 
 export default function InvoiceViewPage() {
@@ -47,6 +51,7 @@ export default function InvoiceViewPage() {
   const [generating, setGenerating] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   useEffect(() => {
     if (!invoiceId) return;
@@ -55,12 +60,15 @@ export default function InvoiceViewPage() {
         const res = (await api.invoices.get(invoiceId)) as any;
         setInvoice(res.invoice);
       } catch {
-        toast.error("Failed to load invoice");
+        toast.error("Failed to load document");
       } finally {
         setLoading(false);
       }
     })();
   }, [invoiceId]);
+
+  const isQuote = invoice?.document_type === "quote";
+  const docLabel = isQuote ? "Quote" : "Invoice";
 
   async function handleGeneratePdf() {
     setGenerating(true);
@@ -80,9 +88,22 @@ export default function InvoiceViewPage() {
     try {
       const res = (await api.invoices.updateStatus(invoiceId, status)) as any;
       setInvoice(res.invoice);
-      toast.success(`Invoice marked as ${status}`);
+      toast.success(`${docLabel} marked as ${status}`);
     } catch {
       toast.error("Failed to update status");
+    }
+  }
+
+  async function handleConvertToInvoice() {
+    setConverting(true);
+    try {
+      const res = (await api.invoices.convertToInvoice(invoiceId)) as any;
+      toast.success("Quote converted to invoice successfully");
+      router.push(`/${slug}/invoices/${res.invoice.id}`);
+    } catch {
+      toast.error("Failed to convert quote to invoice");
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -90,7 +111,7 @@ export default function InvoiceViewPage() {
     setDeleting(true);
     try {
       await api.invoices.delete(invoiceId);
-      toast.success("Invoice deleted");
+      toast.success(`${docLabel} deleted`);
       router.push(`/${slug}/invoices`);
     } catch {
       toast.error("Failed to delete");
@@ -105,7 +126,7 @@ export default function InvoiceViewPage() {
   if (!invoice) return (
     <div className="flex flex-col items-center justify-center py-20">
       <FileText className="h-12 w-12 text-muted-foreground/30 mb-3" />
-      <p className="text-muted-foreground">Invoice not found</p>
+      <p className="text-muted-foreground">Document not found</p>
     </div>
   );
 
@@ -131,6 +152,9 @@ export default function InvoiceViewPage() {
               <h1 className="text-lg sm:text-xl font-bold tracking-tight">
                 {invoice.invoice_number}
               </h1>
+              <Badge variant="outline" className={`text-xs ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
+                {docLabel}
+              </Badge>
               <Badge variant={cfg.variant} className={cfg.className}>
                 <StatusIcon className="h-3 w-3 mr-1" /> {cfg.label}
               </Badge>
@@ -140,6 +164,12 @@ export default function InvoiceViewPage() {
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
+            {isQuote && invoice.status !== "accepted" && (
+              <Button size="sm" onClick={handleConvertToInvoice} disabled={converting} className="hidden sm:flex bg-emerald-600 hover:bg-emerald-700">
+                {converting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowRightLeft className="h-4 w-4 mr-2" />}
+                Convert to Invoice
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleGeneratePdf} disabled={generating} className="hidden sm:flex">
               {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               {hasPdf ? "Regenerate" : "Generate PDF"}
@@ -157,7 +187,7 @@ export default function InvoiceViewPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/${invoiceId}/edit`)}>
-                  <Pencil className="h-4 w-4 mr-2" /> Edit Invoice
+                  <Pencil className="h-4 w-4 mr-2" /> Edit {docLabel}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleGeneratePdf} disabled={generating} className="sm:hidden">
                   <RefreshCw className="h-4 w-4 mr-2" /> {hasPdf ? "Regenerate PDF" : "Generate PDF"}
@@ -168,19 +198,34 @@ export default function InvoiceViewPage() {
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                {invoice.status === "draft" && (
+                {isQuote && invoice.status !== "accepted" && (
+                  <DropdownMenuItem onClick={handleConvertToInvoice} disabled={converting} className="sm:hidden">
+                    <ArrowRightLeft className="h-4 w-4 mr-2" /> Convert to Invoice
+                  </DropdownMenuItem>
+                )}
+                {!isQuote && invoice.status === "draft" && (
                   <DropdownMenuItem onClick={() => handleStatusChange("sent")}>
                     <Send className="h-4 w-4 mr-2" /> Mark as Sent
                   </DropdownMenuItem>
                 )}
-                {(invoice.status === "sent" || invoice.status === "overdue") && (
+                {!isQuote && (invoice.status === "sent" || invoice.status === "overdue") && (
                   <DropdownMenuItem onClick={() => handleStatusChange("paid")}>
                     <CheckCircle className="h-4 w-4 mr-2" /> Mark as Paid
                   </DropdownMenuItem>
                 )}
-                {invoice.status !== "cancelled" && invoice.status !== "paid" && (
+                {isQuote && invoice.status === "draft" && (
+                  <DropdownMenuItem onClick={() => handleStatusChange("sent")}>
+                    <Send className="h-4 w-4 mr-2" /> Mark as Sent
+                  </DropdownMenuItem>
+                )}
+                {isQuote && invoice.status === "sent" && (
+                  <DropdownMenuItem onClick={() => handleStatusChange("accepted")}>
+                    <FileCheck className="h-4 w-4 mr-2" /> Mark Accepted
+                  </DropdownMenuItem>
+                )}
+                {invoice.status !== "cancelled" && invoice.status !== "paid" && invoice.status !== "accepted" && (
                   <DropdownMenuItem onClick={() => handleStatusChange("cancelled")}>
-                    <Clock className="h-4 w-4 mr-2" /> Cancel Invoice
+                    <Clock className="h-4 w-4 mr-2" /> Cancel {docLabel}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -209,7 +254,7 @@ export default function InvoiceViewPage() {
                   src={api.invoices.getPdfUrl(invoiceId)}
                   className="w-full border-0"
                   style={{ height: "calc(100vh - 200px)", minHeight: 500 }}
-                  title="Invoice PDF"
+                  title={`${docLabel} PDF`}
                 />
               </Card>
             ) : (
@@ -220,7 +265,7 @@ export default function InvoiceViewPage() {
                   </div>
                   <h3 className="text-lg font-semibold">No PDF generated yet</h3>
                   <p className="text-muted-foreground text-sm mt-1 mb-5 max-w-sm">
-                    Generate a PDF to preview and share your invoice with your client
+                    Generate a PDF to preview and share your {isQuote ? "quote" : "invoice"} with your client
                   </p>
                   <Button onClick={handleGeneratePdf} disabled={generating}>
                     {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileDown className="h-4 w-4 mr-2" />}
@@ -234,11 +279,16 @@ export default function InvoiceViewPage() {
           {/* Sidebar details */}
           <div className="lg:col-span-4 space-y-4">
             {/* Amount card */}
-            <Card className="border-primary/20">
+            <Card className={isQuote ? "border-blue-300/40" : "border-primary/20"}>
               <CardContent className="pt-5 pb-4">
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Grand Total</p>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
+                  {isQuote ? "Quote Total" : "Grand Total"}
+                </p>
                 <p className="text-3xl font-bold tracking-tight tabular-nums">{fmt(invoice.grand_total)}</p>
                 <div className="flex items-center gap-2 mt-2">
+                  <Badge variant="outline" className={`text-xs ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
+                    {docLabel}
+                  </Badge>
                   <Badge variant={cfg.variant} className={cfg.className}>
                     <StatusIcon className="h-3 w-3 mr-1" /> {cfg.label}
                   </Badge>
@@ -246,6 +296,22 @@ export default function InvoiceViewPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Convert to invoice CTA for quotes */}
+            {isQuote && invoice.status !== "accepted" && (
+              <Card className="border-emerald-300/40 bg-emerald-50/30 dark:bg-emerald-950/10">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-sm font-medium mb-1">Ready to convert?</p>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Convert this quote into an invoice to start billing your client.
+                  </p>
+                  <Button size="sm" onClick={handleConvertToInvoice} disabled={converting} className="w-full bg-emerald-600 hover:bg-emerald-700">
+                    {converting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowRightLeft className="h-4 w-4 mr-2" />}
+                    Convert to Invoice
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Company */}
             <Card>
@@ -271,7 +337,7 @@ export default function InvoiceViewPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <User className="h-3.5 w-3.5" /> Bill To
+                  <User className="h-3.5 w-3.5" /> {isQuote ? "Quote To" : "Bill To"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
@@ -350,7 +416,7 @@ export default function InvoiceViewPage() {
                 </div>
                 {invoice.due_date && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Due</span>
+                    <span className="text-muted-foreground">{isQuote ? "Valid Until" : "Due"}</span>
                     <span>{new Date(invoice.due_date).toLocaleDateString()}</span>
                   </div>
                 )}
@@ -395,9 +461,9 @@ export default function InvoiceViewPage() {
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
+            <AlertDialogTitle>Delete {docLabel}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete invoice <span className="font-mono font-medium">{invoice.invoice_number}</span> and its PDF. This cannot be undone.
+              This will permanently delete {isQuote ? "quote" : "invoice"} <span className="font-mono font-medium">{invoice.invoice_number}</span> and its PDF. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

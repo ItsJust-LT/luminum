@@ -25,7 +25,7 @@ async function ensureInvoicesEnabled(organizationId: string): Promise<boolean> {
   return org?.invoices_enabled === true;
 }
 
-// GET /api/invoices?organizationId=&status=&search=&page=&limit=
+// GET /api/invoices?organizationId=&status=&search=&page=&limit=&document_type=
 router.get("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
@@ -35,12 +35,14 @@ router.get("/", async (req: Request, res: Response) => {
 
     const status = req.query.status as string | undefined;
     const search = req.query.search as string | undefined;
+    const documentType = req.query.document_type as string | undefined;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 25));
     const offset = (page - 1) * limit;
 
     const where: any = { organization_id: organizationId };
     if (status && status !== "all") where.status = status;
+    if (documentType && documentType !== "all") where.document_type = documentType;
     if (search) {
       where.OR = [
         { invoice_number: { contains: search, mode: "insensitive" } },
@@ -66,21 +68,26 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/invoices/stats?organizationId=
+// GET /api/invoices/stats?organizationId=&document_type=
 router.get("/stats", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
 
-    const baseWhere = { organization_id: organizationId };
-    const [total, draft, sent, paid, overdue, cancelled, allInvoices] = await Promise.all([
+    const documentType = req.query.document_type as string | undefined;
+    const baseWhere: any = { organization_id: organizationId };
+    if (documentType && documentType !== "all") baseWhere.document_type = documentType;
+
+    const [total, draft, sent, paid, overdue, cancelled, accepted, expired, allRecords] = await Promise.all([
       prisma.invoice.count({ where: baseWhere }),
       prisma.invoice.count({ where: { ...baseWhere, status: "draft" } }),
       prisma.invoice.count({ where: { ...baseWhere, status: "sent" } }),
       prisma.invoice.count({ where: { ...baseWhere, status: "paid" } }),
       prisma.invoice.count({ where: { ...baseWhere, status: "overdue" } }),
       prisma.invoice.count({ where: { ...baseWhere, status: "cancelled" } }),
+      prisma.invoice.count({ where: { ...baseWhere, status: "accepted" } }),
+      prisma.invoice.count({ where: { ...baseWhere, status: "expired" } }),
       prisma.invoice.findMany({
         where: baseWhere,
         select: { grand_total: true, status: true, created_at: true },
@@ -90,7 +97,7 @@ router.get("/stats", async (req: Request, res: Response) => {
     let totalRevenue = 0;
     let paidRevenue = 0;
     let outstandingRevenue = 0;
-    for (const inv of allInvoices) {
+    for (const inv of allRecords) {
       const gt = Number(inv.grand_total);
       totalRevenue += gt;
       if (inv.status === "paid") paidRevenue += gt;
@@ -99,22 +106,25 @@ router.get("/stats", async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      stats: { total, draft, sent, paid, overdue, cancelled, totalRevenue, paidRevenue, outstandingRevenue },
+      stats: { total, draft, sent, paid, overdue, cancelled, accepted, expired, totalRevenue, paidRevenue, outstandingRevenue },
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/invoices/next-number?organizationId=
+// GET /api/invoices/next-number?organizationId=&document_type=
 router.get("/next-number", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
 
+    const documentType = (req.query.document_type as string) || "invoice";
+    const prefix = documentType === "quote" ? "QUO" : "INV";
+
     const last = await prisma.invoice.findFirst({
-      where: { organization_id: organizationId },
+      where: { organization_id: organizationId, document_type: documentType },
       orderBy: { created_at: "desc" },
       select: { invoice_number: true },
     });
@@ -125,7 +135,7 @@ router.get("/next-number", async (req: Request, res: Response) => {
       if (match) nextNum = parseInt(match[1]!) + 1;
     }
 
-    res.json({ success: true, nextNumber: `INV-${String(nextNum).padStart(4, "0")}` });
+    res.json({ success: true, nextNumber: `${prefix}-${String(nextNum).padStart(4, "0")}` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -183,10 +193,13 @@ router.post("/", async (req: Request, res: Response) => {
       customAdjustments: customAdj.length > 0 ? customAdj : undefined,
     });
 
+    const documentType = body.documentType === "quote" ? "quote" : "invoice";
+
     const invoice = await prisma.invoice.create({
       data: {
         organization_id: organizationId,
-        invoice_number: body.invoiceNumber || "INV-0001",
+        document_type: documentType,
+        invoice_number: body.invoiceNumber || (documentType === "quote" ? "QUO-0001" : "INV-0001"),
         status: "draft",
         date: body.date ? new Date(body.date) : new Date(),
         due_date: body.dueDate ? new Date(body.dueDate) : null,
@@ -364,6 +377,7 @@ router.post("/:id/generate-pdf", async (req: Request, res: Response) => {
     const invoiceWithItems = invoice as typeof invoice & { items: Array<{ description: string; quantity: number; unit_price: any; tax_percent: number | null; tax_exempt: boolean; special_tax_rate: number | null; sort_order: number }> };
 
     const templateData: InvoiceTemplateData = {
+      documentType: (invoice as any).document_type === "quote" ? "quote" : "invoice",
       company: {
         name: invoice.company_name,
         email: invoice.company_email || undefined,
@@ -436,7 +450,7 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
     const id = paramId(req);
     const invoice = await prisma.invoice.findUnique({
       where: { id },
-      select: { organization_id: true, pdf_storage_key: true, invoice_number: true },
+      select: { organization_id: true, pdf_storage_key: true, invoice_number: true, document_type: true },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
     if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
@@ -448,8 +462,9 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
     const obj = await s3.getObject(invoice.pdf_storage_key);
     if (!obj) return res.status(404).json({ error: "PDF file not found" });
 
+    const prefix = (invoice as any).document_type === "quote" ? "quote" : "invoice";
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="invoice-${invoice.invoice_number}.pdf"`);
+    res.setHeader("Content-Disposition", `inline; filename="${prefix}-${invoice.invoice_number}.pdf"`);
     if (obj.contentLength) res.setHeader("Content-Length", obj.contentLength);
     obj.stream.pipe(res);
   } catch (err: any) {
@@ -462,7 +477,7 @@ router.post("/:id/status", async (req: Request, res: Response) => {
   try {
     const id = paramId(req);
     const { status } = req.body;
-    const allowed = ["draft", "sent", "paid", "overdue", "cancelled"];
+    const allowed = ["draft", "sent", "paid", "overdue", "cancelled", "accepted", "expired", "rejected"];
     if (!allowed.includes(status)) return res.status(400).json({ error: `Invalid status. Must be one of: ${allowed.join(", ")}` });
 
     const invoice = await prisma.invoice.findUnique({
@@ -479,6 +494,85 @@ router.post("/:id/status", async (req: Request, res: Response) => {
     });
 
     res.json({ success: true, invoice: updated });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/invoices/:id/convert-to-invoice
+router.post("/:id/convert-to-invoice", async (req: Request, res: Response) => {
+  try {
+    const id = paramId(req);
+    const quote = await prisma.invoice.findUnique({
+      where: { id },
+      include: { items: { orderBy: { sort_order: "asc" } } },
+    });
+    if (!quote) return res.status(404).json({ error: "Quote not found" });
+    if (!(await canAccessOrganization(quote.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (quote.document_type !== "quote") return res.status(400).json({ error: "Only quotes can be converted to invoices" });
+
+    const lastInvoice = await prisma.invoice.findFirst({
+      where: { organization_id: quote.organization_id, document_type: "invoice" },
+      orderBy: { created_at: "desc" },
+      select: { invoice_number: true },
+    });
+    let nextNum = 1;
+    if (lastInvoice?.invoice_number) {
+      const match = lastInvoice.invoice_number.match(/(\d+)$/);
+      if (match) nextNum = parseInt(match[1]!) + 1;
+    }
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        organization_id: quote.organization_id,
+        document_type: "invoice",
+        invoice_number: `INV-${String(nextNum).padStart(4, "0")}`,
+        status: "draft",
+        date: new Date(),
+        due_date: quote.due_date,
+        currency: quote.currency,
+        language: quote.language,
+        company_name: quote.company_name,
+        company_email: quote.company_email,
+        company_phone: quote.company_phone,
+        company_vat: quote.company_vat,
+        company_logo: quote.company_logo,
+        company_address: quote.company_address ?? Prisma.JsonNull,
+        client_name: quote.client_name,
+        client_email: quote.client_email,
+        client_phone: quote.client_phone,
+        client_address: quote.client_address ?? Prisma.JsonNull,
+        subtotal: quote.subtotal,
+        total_tax: quote.total_tax,
+        discount_amount: quote.discount_amount,
+        shipping_amount: quote.shipping_amount,
+        grand_total: quote.grand_total,
+        tax_inclusive: quote.tax_inclusive,
+        global_tax_percent: quote.global_tax_percent,
+        custom_adjustments: quote.custom_adjustments ?? Prisma.JsonNull,
+        notes: quote.notes,
+        terms: quote.terms,
+        items: {
+          create: (quote as any).items.map((it: any, i: number) => ({
+            description: it.description,
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            tax_percent: it.tax_percent,
+            tax_exempt: it.tax_exempt,
+            special_tax_rate: it.special_tax_rate,
+            sort_order: i,
+          })),
+        },
+      },
+      include: { items: { orderBy: { sort_order: "asc" } } },
+    });
+
+    await prisma.invoice.update({
+      where: { id: quote.id },
+      data: { status: "accepted" },
+    });
+
+    res.json({ success: true, invoice });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

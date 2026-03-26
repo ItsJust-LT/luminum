@@ -708,11 +708,12 @@ function createApiClient(baseUrl: string = "") {
       get("/api/user-management/paystack-payments", { userId }),
   };
 
-  // ─── Invoices ───────────────────────────────────────────
+  // ─── Invoices & Quotes ─────────────────────────────────
   const invoices = {
-    list: (organizationId: string, params?: { page?: number; limit?: number; status?: string; search?: string }) =>
+    list: (organizationId: string, params?: { page?: number; limit?: number; status?: string; search?: string; document_type?: string }) =>
       get("/api/invoices", { organizationId, ...params }),
-    getStats: (organizationId: string) => get("/api/invoices/stats", { organizationId }),
+    getStats: (organizationId: string, documentType?: string) =>
+      get("/api/invoices/stats", { organizationId, document_type: documentType }),
     get: (id: string) => get(`/api/invoices/${id}`),
     create: (data: any) => post("/api/invoices", data),
     update: (id: string, data: any) => patch(`/api/invoices/${id}`, data),
@@ -720,7 +721,9 @@ function createApiClient(baseUrl: string = "") {
     generatePdf: (id: string) => post(`/api/invoices/${id}/generate-pdf`),
     getPdfUrl: (id: string) => `${baseUrl}/api/invoices/${id}/pdf`,
     updateStatus: (id: string, status: string) => post(`/api/invoices/${id}/status`, { status }),
-    getNextNumber: (organizationId: string) => get("/api/invoices/next-number", { organizationId }),
+    getNextNumber: (organizationId: string, documentType?: string) =>
+      get("/api/invoices/next-number", { organizationId, document_type: documentType }),
+    convertToInvoice: (id: string) => post(`/api/invoices/${id}/convert-to-invoice`),
   };
 
   // ─── Website Audits ──────────────────────────────────────

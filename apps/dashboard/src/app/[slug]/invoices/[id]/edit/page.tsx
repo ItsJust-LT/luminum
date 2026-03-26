@@ -68,6 +68,8 @@ export default function EditInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [documentType, setDocumentType] = useState<"invoice" | "quote">("invoice");
+  const isQuote = documentType === "quote";
 
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [date, setDate] = useState<Date>(new Date());
@@ -100,6 +102,7 @@ export default function EditInvoicePage() {
       try {
         const res = await api.invoices.get(invoiceId) as any;
         const inv = res.invoice;
+        setDocumentType(inv.document_type === "quote" ? "quote" : "invoice");
         setInvoiceNumber(inv.invoice_number || "");
         setDate(inv.date ? parseISO(inv.date.split("T")[0]) : new Date());
         setDueDate(inv.due_date ? parseISO(inv.due_date.split("T")[0]) : undefined);
@@ -217,9 +220,9 @@ export default function EditInvoicePage() {
     setSaving(true);
     try {
       await api.invoices.update(invoiceId, buildPayload());
-      toast.success("Invoice updated");
+      toast.success(`${isQuote ? "Quote" : "Invoice"} updated`);
       router.push(`/${slug}/invoices/${invoiceId}`);
-    } catch (err: any) { toast.error(err?.message || "Failed to update invoice"); }
+    } catch (err: any) { toast.error(err?.message || `Failed to update ${isQuote ? "quote" : "invoice"}`); }
     finally { setSaving(false); }
   }
 
@@ -230,9 +233,9 @@ export default function EditInvoicePage() {
     try {
       await api.invoices.update(invoiceId, buildPayload());
       await api.invoices.generatePdf(invoiceId);
-      toast.success("Invoice updated & PDF generated");
+      toast.success(`${isQuote ? "Quote" : "Invoice"} updated & PDF generated`);
       router.push(`/${slug}/invoices/${invoiceId}`);
-    } catch (err: any) { toast.error(err?.message || "Failed to update invoice"); }
+    } catch (err: any) { toast.error(err?.message || `Failed to update ${isQuote ? "quote" : "invoice"}`); }
     finally { setSaving(false); setGenerating(false); }
   }
 
@@ -247,7 +250,7 @@ export default function EditInvoicePage() {
             <Link href={`/${slug}/invoices/${invoiceId}`}><ArrowLeft className="h-4 w-4" /></Link>
           </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">Edit Invoice</h1>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">Edit {isQuote ? "Quote" : "Invoice"}</h1>
             <p className="text-muted-foreground text-xs sm:text-sm font-mono">{invoiceNumber}</p>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -272,13 +275,13 @@ export default function EditInvoicePage() {
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center"><Receipt className="h-4 w-4 text-primary" /></div>
-                  <div><CardTitle className="text-base">Invoice Details</CardTitle><CardDescription>Basic information for your invoice</CardDescription></div>
+                  <div><CardTitle className="text-base">{isQuote ? "Quote" : "Invoice"} Details</CardTitle><CardDescription>Basic information for your {isQuote ? "quote" : "invoice"}</CardDescription></div>
                 </div>
               </CardHeader>
               <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5"><Hash className="h-3.5 w-3.5 text-muted-foreground" />Invoice Number</Label>
-                  <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="INV-0001" className="font-mono" />
+                  <Label className="flex items-center gap-1.5"><Hash className="h-3.5 w-3.5 text-muted-foreground" />{isQuote ? "Quote" : "Invoice"} Number</Label>
+                  <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder={isQuote ? "QUO-0001" : "INV-0001"} className="font-mono" />
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5 text-muted-foreground" />Currency</Label>
@@ -329,7 +332,7 @@ export default function EditInvoicePage() {
                   </Popover>
                 </div>
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5"><CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />Due Date <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                  <Label className="flex items-center gap-1.5"><CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />{isQuote ? "Valid Until" : "Due Date"} <span className="text-muted-foreground text-xs">(optional)</span></Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-full justify-start font-normal", !dueDate && "text-muted-foreground")}>
@@ -395,7 +398,7 @@ export default function EditInvoicePage() {
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center"><User className="h-4 w-4 text-emerald-500" /></div>
-                    <div><CardTitle className="text-base">Bill To</CardTitle><CardDescription>Client / customer details</CardDescription></div>
+                    <div><CardTitle className="text-base">{isQuote ? "Quote To" : "Bill To"}</CardTitle><CardDescription>Client / customer details</CardDescription></div>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">

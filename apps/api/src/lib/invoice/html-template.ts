@@ -2,6 +2,7 @@ import { translate, formatCurrency, formatDate, TranslationKey } from "./locale.
 import type { InvoiceItem, CustomAdjustment } from "./calculations.js";
 
 export interface InvoiceTemplateData {
+  documentType?: "invoice" | "quote";
   company: {
     name: string;
     email?: string;
@@ -54,80 +55,82 @@ function formatAddress(addr?: InvoiceTemplateData["company"]["address"]): string
 }
 
 export function buildInvoiceHtml(data: InvoiceTemplateData): string {
+  const isQuote = data.documentType === "quote";
   const t = (key: string) => translate(data.language, key);
   const fc = (amount: number) => formatCurrency(amount, data.currency, data.language);
   const fd = (dateStr: string) => formatDate(dateStr, data.language);
 
+  const accentColor = isQuote ? "#2563eb" : "#111827";
+  const accentLight = isQuote ? "#eff6ff" : "#f9fafb";
+  const docTitle = isQuote ? t(TranslationKey.quote) : t(TranslationKey.invoice);
+  const numberLabel = isQuote ? t(TranslationKey.quoteNumber) : t(TranslationKey.invoiceNumber);
+  const toLabel = isQuote ? t(TranslationKey.quoteTo) : t(TranslationKey.billTo);
+  const dateLabel = isQuote ? t(TranslationKey.validUntil) : t(TranslationKey.dueDate);
+  const thankYou = isQuote ? t(TranslationKey.thankYouQuote) : t(TranslationKey.thankYou);
+
   const showQty = data.items.some((i) => i.quantity !== 1);
 
   const companyLines: string[] = [];
+  const companyAddr = formatAddress(data.company.address);
+  if (companyAddr) companyLines.push(companyAddr);
   if (data.company.phone) companyLines.push(escapeHtml(data.company.phone));
   if (data.company.email) companyLines.push(escapeHtml(data.company.email));
   if (data.company.vat) companyLines.push(`VAT: ${escapeHtml(data.company.vat)}`);
-  const companyAddr = formatAddress(data.company.address);
-  if (companyAddr) companyLines.push(companyAddr);
 
   const clientLines: string[] = [];
-  if (data.client.phone) clientLines.push(escapeHtml(data.client.phone));
-  if (data.client.email) clientLines.push(escapeHtml(data.client.email));
   const clientAddr = formatAddress(data.client.address);
   if (clientAddr) clientLines.push(clientAddr);
+  if (data.client.phone) clientLines.push(escapeHtml(data.client.phone));
+  if (data.client.email) clientLines.push(escapeHtml(data.client.email));
 
   const itemRows = data.items.map((item) => {
     const qty = Math.floor(item.quantity);
     const lineTotal = qty * item.unit_price;
     if (showQty) {
-      return `<tr class="item-row">
+      return `<tr>
         <td class="desc">${escapeHtml(item.description)}</td>
-        <td class="qty">${qty}</td>
-        <td class="rate">${fc(item.unit_price)}</td>
-        <td class="amt">${fc(lineTotal)}</td>
+        <td class="num">${qty}</td>
+        <td class="num">${fc(item.unit_price)}</td>
+        <td class="num amt">${fc(lineTotal)}</td>
       </tr>`;
     }
-    return `<tr class="item-row">
+    return `<tr>
       <td class="desc">${escapeHtml(item.description)}</td>
-      <td class="amt">${fc(lineTotal)}</td>
+      <td class="num amt">${fc(lineTotal)}</td>
     </tr>`;
   }).join("\n");
 
   const totalRows: string[] = [];
-  totalRows.push(`<tr><td class="total-label">${t(TranslationKey.subtotal)}</td><td class="total-value">${fc(data.subtotal)}</td></tr>`);
-
+  totalRows.push(`<tr><td>${t(TranslationKey.subtotal)}</td><td>${fc(data.subtotal)}</td></tr>`);
   if (data.totalTax > 0) {
     const taxLabel = data.taxInclusive
-      ? `${t(TranslationKey.tax)} <span class="tax-note">(included)</span>`
+      ? `${t(TranslationKey.tax)} <span class="note">(included)</span>`
       : t(TranslationKey.tax);
-    totalRows.push(`<tr><td class="total-label">${taxLabel}</td><td class="total-value">${fc(data.totalTax)}</td></tr>`);
+    totalRows.push(`<tr><td>${taxLabel}</td><td>${fc(data.totalTax)}</td></tr>`);
   }
-
-  if (data.shipping > 0) {
-    totalRows.push(`<tr><td class="total-label">${t(TranslationKey.shipping)}</td><td class="total-value">${fc(data.shipping)}</td></tr>`);
-  }
-
-  if (data.discount > 0) {
-    totalRows.push(`<tr><td class="total-label">${t(TranslationKey.discount)}</td><td class="total-value">-${fc(data.discount)}</td></tr>`);
-  }
-
+  if (data.shipping > 0) totalRows.push(`<tr><td>${t(TranslationKey.shipping)}</td><td>${fc(data.shipping)}</td></tr>`);
+  if (data.discount > 0) totalRows.push(`<tr><td>${t(TranslationKey.discount)}</td><td>-${fc(data.discount)}</td></tr>`);
   if (data.customAdjustments) {
     for (const adj of data.customAdjustments) {
-      const label = escapeHtml(adj.label);
       const val = adj.amount < 0 ? `-${fc(Math.abs(adj.amount))}` : fc(adj.amount);
-      totalRows.push(`<tr><td class="total-label">${label}</td><td class="total-value">${val}</td></tr>`);
+      totalRows.push(`<tr><td>${escapeHtml(adj.label)}</td><td>${val}</td></tr>`);
     }
   }
 
-  totalRows.push(`<tr class="grand-total"><td class="total-label">${t(TranslationKey.grandTotal)}</td><td class="total-value">${fc(data.grandTotal)}</td></tr>`);
-
   const logoHtml = data.company.logo
-    ? `<img src="${escapeHtml(data.company.logo)}" class="logo" />`
+    ? `<img src="${escapeHtml(data.company.logo)}" class="logo" crossorigin="anonymous" />`
+    : "";
+
+  const termsHtml = data.terms
+    ? `<div class="terms"><div class="section-label">${t(TranslationKey.terms)}</div><div class="section-body">${escapeHtml(data.terms)}</div></div>`
     : "";
 
   const notesHtml = data.notes
-    ? `<div class="notes-section"><div class="notes-heading">${t(TranslationKey.notes)}</div><div class="notes-body">${escapeHtml(data.notes)}</div></div>`
+    ? `<div class="notes"><div class="section-label">${t(TranslationKey.notes)}</div><div class="section-body">${escapeHtml(data.notes)}</div></div>`
     : "";
 
   const dueDateHtml = data.dueDate
-    ? `<div class="due-date-section"><span class="due-label">${t(TranslationKey.dueDate)}:</span> <span class="due-value">${fd(data.dueDate)}</span></div>`
+    ? `<div class="meta-item"><span class="meta-label">${dateLabel}</span><span class="meta-value">${fd(data.dueDate)}</span></div>`
     : "";
 
   return `<!DOCTYPE html>
@@ -138,117 +141,300 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-    color: #1a1a1a;
-    padding: 40px;
-    font-size: 10px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: #1f2937;
+    font-size: 11px;
     line-height: 1.5;
-    width: 595px;
-    min-height: 842px;
+    width: 794px;
+    min-height: 1123px;
     position: relative;
+    background: #fff;
   }
 
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-  .company-block { flex: 1; }
-  .company-name { font-size: 14px; font-weight: 700; color: #333; margin-bottom: 4px; }
-  .company-info { font-size: 10px; color: #666; line-height: 1.6; }
-  .logo { max-width: 100px; max-height: 75px; object-fit: contain; }
-  .header-rule { border: none; border-top: 1px solid #ddd; margin: 12px 0 20px 0; width: 220px; }
+  .page { padding: 48px 56px 40px 56px; }
 
-  .title { font-size: 28px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
-  .meta-line { font-size: 11px; color: #555; margin-bottom: 20px; }
+  /* Header: accent bar */
+  .accent-bar {
+    height: 6px;
+    background: ${accentColor};
+    width: 100%;
+  }
 
-  .bill-to-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-  .client-name { font-size: 13px; font-weight: 700; color: #222; margin-bottom: 4px; }
-  .client-info { font-size: 10px; color: #555; line-height: 1.6; margin-bottom: 24px; }
+  /* Header section */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 36px;
+  }
+  .header-left { flex: 1; }
+  .company-name {
+    font-size: 22px;
+    font-weight: 800;
+    color: ${accentColor};
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+  }
+  .company-details {
+    font-size: 10px;
+    color: #6b7280;
+    line-height: 1.7;
+  }
+  .logo {
+    max-width: 120px;
+    max-height: 80px;
+    object-fit: contain;
+    margin-left: 24px;
+  }
 
-  .items-table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
-  .items-table th {
-    background: #f5f5f5;
-    padding: 8px 10px;
+  /* Document title + meta */
+  .doc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 32px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .doc-title {
+    font-size: 36px;
+    font-weight: 800;
+    color: ${accentColor};
+    letter-spacing: 1px;
+    line-height: 1;
+  }
+  .doc-meta {
+    text-align: right;
+  }
+  .meta-item {
+    margin-bottom: 4px;
+  }
+  .meta-label {
     font-size: 9px;
-    font-weight: 600;
-    color: #555;
+    color: #9ca3af;
     text-transform: uppercase;
-    letter-spacing: 0.3px;
-    text-align: left;
-    border-bottom: 1px solid #e0e0e0;
+    letter-spacing: 0.5px;
+    margin-right: 8px;
   }
-  .items-table th.qty, .items-table th.rate, .items-table th.amt { text-align: right; }
-  .items-table td { padding: 10px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
-  .items-table td.desc { font-size: 12px; font-weight: 600; color: #222; }
-  .items-table td.qty, .items-table td.rate, .items-table td.amt { text-align: right; font-size: 11px; font-weight: 600; color: #333; white-space: nowrap; }
+  .meta-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1f2937;
+  }
 
-  .totals-wrapper { display: flex; justify-content: flex-end; margin-top: 16px; }
-  .totals-table { border-collapse: collapse; min-width: 250px; }
-  .totals-table td { padding: 6px 12px; font-size: 11px; }
-  .total-label { text-align: right; font-weight: 600; color: #444; }
-  .total-value { text-align: right; font-weight: 600; color: #222; min-width: 100px; }
-  .tax-note { font-weight: 400; color: #888; font-size: 9px; }
-  .grand-total td {
-    border-top: 2px solid #ddd;
-    background: #f7f8f9;
-    padding: 10px 12px;
-    font-size: 13px;
+  /* Bill-to / From section */
+  .parties {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 32px;
+  }
+  .party { flex: 1; }
+  .party-label {
+    font-size: 9px;
     font-weight: 700;
-    color: #111;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .party-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 4px;
+  }
+  .party-info {
+    font-size: 10px;
+    color: #6b7280;
+    line-height: 1.7;
   }
 
-  .notes-section { margin-top: 28px; }
-  .notes-heading { font-size: 11px; font-weight: 700; color: #333; margin-bottom: 4px; }
-  .notes-body { font-size: 10px; color: #555; line-height: 1.6; white-space: pre-wrap; }
+  /* Items table */
+  .items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0;
+  }
+  .items-table thead th {
+    background: ${accentLight};
+    padding: 10px 14px;
+    font-size: 9px;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: left;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .items-table thead th.num { text-align: right; }
+  .items-table tbody td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #f3f4f6;
+    vertical-align: top;
+  }
+  .items-table tbody td.desc {
+    font-size: 12px;
+    font-weight: 500;
+    color: #111827;
+  }
+  .items-table tbody td.num {
+    text-align: right;
+    font-size: 11px;
+    font-weight: 500;
+    color: #374151;
+    white-space: nowrap;
+  }
+  .items-table tbody td.amt {
+    font-weight: 700;
+    color: #111827;
+  }
 
-  .due-date-section { margin-top: 20px; text-align: right; font-size: 11px; }
-  .due-label { font-weight: 600; color: #444; }
-  .due-value { font-weight: 700; color: #222; }
+  /* Totals */
+  .totals-section {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 2px;
+  }
+  .totals-table {
+    border-collapse: collapse;
+    min-width: 280px;
+  }
+  .totals-table td {
+    padding: 8px 16px;
+    font-size: 11px;
+  }
+  .totals-table td:first-child {
+    text-align: right;
+    font-weight: 500;
+    color: #6b7280;
+  }
+  .totals-table td:last-child {
+    text-align: right;
+    font-weight: 600;
+    color: #1f2937;
+    min-width: 120px;
+  }
+  .totals-table .note {
+    font-weight: 400;
+    color: #9ca3af;
+    font-size: 9px;
+  }
+  .totals-table .grand-total td {
+    border-top: 2px solid #e5e7eb;
+    padding: 14px 16px;
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .totals-table .grand-total td:first-child {
+    color: #111827;
+  }
+  .totals-table .grand-total td:last-child {
+    color: ${accentColor};
+    font-size: 16px;
+  }
 
-  .footer { margin-top: 32px; text-align: center; }
-  .footer-text { font-size: 10px; color: #888; }
-  .footer-rule { border: none; border-top: 1px solid #eee; margin: 8px auto 0 auto; width: 200px; }
+  /* Notes / Terms */
+  .bottom-section {
+    margin-top: 32px;
+    display: flex;
+    gap: 32px;
+  }
+  .notes, .terms { flex: 1; }
+  .section-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .section-body {
+    font-size: 10px;
+    color: #6b7280;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+    text-align: center;
+  }
+  .footer-text {
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 500;
+  }
 </style>
 </head>
 <body>
-  <div class="header">
-    <div class="company-block">
-      <div class="company-name">${escapeHtml(data.company.name)}</div>
-      <div class="company-info">${companyLines.join("<br/>")}</div>
+  <div class="accent-bar"></div>
+  <div class="page">
+    <div class="header">
+      <div class="header-left">
+        <div class="company-name">${escapeHtml(data.company.name)}</div>
+        <div class="company-details">${companyLines.join("<br/>")}</div>
+      </div>
+      ${logoHtml}
     </div>
-    ${logoHtml}
-  </div>
-  <hr class="header-rule"/>
 
-  <div class="title">${t(TranslationKey.invoice)}</div>
-  <div class="meta-line">#${escapeHtml(data.invoiceNumber)} &bull; ${fd(data.date)}</div>
+    <div class="doc-header">
+      <div class="doc-title">${docTitle}</div>
+      <div class="doc-meta">
+        <div class="meta-item">
+          <span class="meta-label">${numberLabel}</span>
+          <span class="meta-value">${escapeHtml(data.invoiceNumber)}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">${t(TranslationKey.date)}</span>
+          <span class="meta-value">${fd(data.date)}</span>
+        </div>
+        ${dueDateHtml}
+      </div>
+    </div>
 
-  <div class="bill-to-label">${t(TranslationKey.billTo)}</div>
-  <div class="client-name">${escapeHtml(data.client.name)}</div>
-  <div class="client-info">${clientLines.join("<br/>")}</div>
+    <div class="parties">
+      <div class="party">
+        <div class="party-label">${toLabel}</div>
+        <div class="party-name">${escapeHtml(data.client.name)}</div>
+        <div class="party-info">${clientLines.join("<br/>")}</div>
+      </div>
+    </div>
 
-  <table class="items-table">
-    <thead>
-      <tr>
-        <th>${t(TranslationKey.description)}</th>
-        ${showQty ? `<th class="qty">${t(TranslationKey.quantity)}</th><th class="rate">${t(TranslationKey.rate)}</th>` : ""}
-        <th class="amt">${t(TranslationKey.amount)}</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemRows}
-    </tbody>
-  </table>
-
-  <div class="totals-wrapper">
-    <table class="totals-table">
-      ${totalRows.join("\n")}
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>${t(TranslationKey.description)}</th>
+          ${showQty ? `<th class="num">${t(TranslationKey.quantity)}</th><th class="num">${t(TranslationKey.rate)}</th>` : ""}
+          <th class="num">${t(TranslationKey.amount)}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemRows}
+      </tbody>
     </table>
-  </div>
 
-  ${notesHtml}
-  ${dueDateHtml}
+    <div class="totals-section">
+      <table class="totals-table">
+        ${totalRows.join("\n")}
+        <tr class="grand-total">
+          <td>${isQuote ? t(TranslationKey.grandTotal) : t(TranslationKey.totalDue)}</td>
+          <td>${fc(data.grandTotal)}</td>
+        </tr>
+      </table>
+    </div>
 
-  <div class="footer">
-    <div class="footer-text">${t(TranslationKey.thankYou)}</div>
-    <hr class="footer-rule"/>
+    <div class="bottom-section">
+      ${notesHtml}
+      ${termsHtml}
+    </div>
+
+    <div class="footer">
+      <div class="footer-text">${thankYou}</div>
+    </div>
   </div>
 </body>
 </html>`;

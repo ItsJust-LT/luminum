@@ -2,7 +2,7 @@
 
 import { useSession } from "@/lib/auth/client";
 import { useOrganization } from "@/lib/contexts/organization-context";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -78,7 +78,10 @@ export default function NewInvoicePage() {
   const { organization, loading: orgLoading } = useOrganization();
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
+  const documentType = searchParams.get("type") === "quote" ? "quote" : "invoice";
+  const isQuote = documentType === "quote";
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [saving, setSaving] = useState(false);
@@ -122,12 +125,12 @@ export default function NewInvoicePage() {
       setCompanyLogo((organization as any).logo);
     }
     api.invoices
-      .getNextNumber(organization.id)
+      .getNextNumber(organization.id, documentType)
       .then((res: any) => {
         if (res.nextNumber) setInvoiceNumber(res.nextNumber);
       })
       .catch(() => {});
-  }, [organization?.id, organization?.name]);
+  }, [organization?.id, organization?.name, documentType]);
 
   const subtotal = items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0);
   const totalTax = items.reduce((sum, it) => {
@@ -210,6 +213,7 @@ export default function NewInvoicePage() {
   const buildPayload = useCallback(
     () => ({
       organizationId: organization?.id,
+      documentType,
       invoiceNumber,
       date: format(date, "yyyy-MM-dd"),
       dueDate: dueDate ? format(dueDate, "yyyy-MM-dd") : undefined,
@@ -240,7 +244,7 @@ export default function NewInvoicePage() {
       terms: terms || undefined,
     }),
     [
-      organization?.id, invoiceNumber, date, dueDate, currency, language,
+      organization?.id, documentType, invoiceNumber, date, dueDate, currency, language,
       companyName, companyEmail, companyPhone, companyVat, companyLogo,
       clientName, clientEmail, clientPhone, clientAddressLine1, clientCity, clientCountry,
       items, discountAmount, shippingAmount, taxInclusive, notes, terms,
@@ -256,7 +260,7 @@ export default function NewInvoicePage() {
     setSaving(true);
     try {
       const res = (await api.invoices.create(buildPayload())) as any;
-      toast.success("Invoice saved as draft");
+      toast.success(`${isQuote ? "Quote" : "Invoice"} saved as draft`);
       router.push(`/${slug}/invoices/${res.invoice.id}`);
     } catch (err: any) {
       toast.error(err?.message || "Failed to create invoice");
@@ -275,7 +279,7 @@ export default function NewInvoicePage() {
     try {
       const res = (await api.invoices.create(buildPayload())) as any;
       await api.invoices.generatePdf(res.invoice.id);
-      toast.success("Invoice created & PDF generated");
+      toast.success(`${isQuote ? "Quote" : "Invoice"} created & PDF generated`);
       router.push(`/${slug}/invoices/${res.invoice.id}`);
     } catch (err: any) {
       toast.error(err?.message || "Failed to create invoice");
@@ -302,9 +306,9 @@ export default function NewInvoicePage() {
             </Link>
           </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">New Invoice</h1>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">New {isQuote ? "Quote" : "Invoice"}</h1>
             <p className="text-muted-foreground text-xs sm:text-sm hidden sm:block">
-              Fill in the details below to create a new invoice
+              Fill in the details below to create a new {isQuote ? "quote" : "invoice"}
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -341,8 +345,8 @@ export default function NewInvoicePage() {
                     <Receipt className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <CardTitle className="text-base">Invoice Details</CardTitle>
-                    <CardDescription>Basic information for your invoice</CardDescription>
+                    <CardTitle className="text-base">{isQuote ? "Quote" : "Invoice"} Details</CardTitle>
+                    <CardDescription>Basic information for your {isQuote ? "quote" : "invoice"}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
@@ -351,12 +355,12 @@ export default function NewInvoicePage() {
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5">
                     <Hash className="h-3.5 w-3.5 text-muted-foreground" />
-                    Invoice Number
+                    {isQuote ? "Quote" : "Invoice"} Number
                   </Label>
                   <Input
                     value={invoiceNumber}
                     onChange={(e) => setInvoiceNumber(e.target.value)}
-                    placeholder="INV-0001"
+                    placeholder={isQuote ? "QUO-0001" : "INV-0001"}
                     className="font-mono"
                   />
                 </div>
@@ -464,7 +468,7 @@ export default function NewInvoicePage() {
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5">
                     <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    Due Date
+                    {isQuote ? "Valid Until" : "Due Date"}
                     <span className="text-muted-foreground text-xs">(optional)</span>
                   </Label>
                   <Popover>
@@ -630,7 +634,7 @@ export default function NewInvoicePage() {
                       <User className="h-4 w-4 text-emerald-500" />
                     </div>
                     <div>
-                      <CardTitle className="text-base">Bill To</CardTitle>
+                      <CardTitle className="text-base">{isQuote ? "Quote To" : "Bill To"}</CardTitle>
                       <CardDescription>Client / customer details</CardDescription>
                     </div>
                   </div>

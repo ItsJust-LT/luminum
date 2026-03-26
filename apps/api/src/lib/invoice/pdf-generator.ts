@@ -15,11 +15,28 @@ async function getBrowser(): Promise<Browser> {
   return browserInstance;
 }
 
+async function resolveLogoToBase64(url: string): Promise<string> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return url;
+    const contentType = response.headers.get("content-type") || "image/png";
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    return `data:${contentType};base64,${base64}`;
+  } catch {
+    return url;
+  }
+}
+
 export async function generateInvoicePdf(data: InvoiceTemplateData): Promise<Buffer> {
+  if (data.company.logo && !data.company.logo.startsWith("data:")) {
+    data = { ...data, company: { ...data.company, logo: await resolveLogoToBase64(data.company.logo) } };
+  }
   const html = buildInvoiceHtml(data);
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
+    await page.setViewport({ width: 794, height: 1123 });
     await page.setContent(html, { waitUntil: "networkidle0", timeout: 15000 });
     const pdf = await page.pdf({
       format: "A4",

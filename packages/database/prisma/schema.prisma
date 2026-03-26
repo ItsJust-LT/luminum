@@ -692,6 +692,7 @@ model invoice {
   organization_id    String
   organization       organization   @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 
+  document_type      String         @default("invoice") @db.VarChar(10)
   invoice_number     String
   status             String         @default("draft") @db.VarChar(20)
   date               DateTime       @default(now()) @db.Date
@@ -734,6 +735,7 @@ model invoice {
   @@index([organization_id])
   @@index([status])
   @@index([invoice_number, organization_id])
+  @@index([document_type])
 }
 
 model invoice_item {
