@@ -42,6 +42,7 @@ import {
   Server,
   FileText as LogsIcon,
   Terminal,
+  Receipt,
 } from "lucide-react"
 
 interface AdminSidebarProps {
@@ -81,6 +82,7 @@ export function AdminSidebar({
     { title: "Websites", href: "/admin/websites", icon: Globe },
     { title: "User Activity", href: "/admin/activity", icon: Activity },
     { title: "WhatsApp", href: "/admin/whatsapp", icon: MessageCircle },
+    { title: "Invoices", href: "/admin/invoices", icon: Receipt },
     { title: "Server Monitoring", href: "/admin/monitoring", icon: Server },
     { title: "System Logs", href: "/admin/logs", icon: LogsIcon },
     { title: "Database", href: "/admin/database", icon: Database },

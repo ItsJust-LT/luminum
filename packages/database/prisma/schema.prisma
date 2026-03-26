@@ -239,6 +239,7 @@ model organization {
   whatsapp_always_on                                                Boolean                   @default(false)
   analytics_enabled                                                 Boolean                   @default(false)
   blogs_enabled                                                    Boolean                   @default(false)
+  invoices_enabled                                                  Boolean                   @default(false)
   emails                                                            email[]
   images                                                            images[]
   invitations                                                       invitation[]
@@ -254,6 +255,7 @@ model organization {
   blog_posts                                                        blog_post[]
   blog_assets                                                       blog_asset[]
   blog_preview_tokens                                               blog_preview_token[]
+  invoices                                                          invoice[]
 
   @@index([payment_provider], map: "idx_organization_payment_provider")
   @@index([email_domain_id], map: "idx_organization_email_domain_id")
@@ -681,6 +683,73 @@ model blog_preview_token {
   @@index([organization_id])
   @@index([token])
   @@index([expires_at])
+}
+
+// ── Invoices (per-organization invoice generation + PDF storage) ─────
+
+model invoice {
+  id                 String         @id @default(cuid())
+  organization_id    String
+  organization       organization   @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+
+  invoice_number     String
+  status             String         @default("draft") @db.VarChar(20)
+  date               DateTime       @default(now()) @db.Date
+  due_date           DateTime?      @db.Date
+  currency           String         @default("ZAR") @db.VarChar(3)
+  language           String         @default("en") @db.VarChar(5)
+
+  company_name       String
+  company_email      String?
+  company_phone      String?
+  company_vat        String?
+  company_logo       String?
+  company_address    Json?
+
+  client_name        String
+  client_email       String?
+  client_phone       String?
+  client_address     Json?
+
+  subtotal           Decimal        @db.Decimal(12, 2)
+  total_tax          Decimal        @default(0) @db.Decimal(12, 2)
+  discount_amount    Decimal        @default(0) @db.Decimal(12, 2)
+  shipping_amount    Decimal        @default(0) @db.Decimal(12, 2)
+  grand_total        Decimal        @db.Decimal(12, 2)
+  tax_inclusive       Boolean        @default(false)
+  global_tax_percent Float?
+  custom_adjustments Json?
+
+  notes              String?        @db.Text
+  terms              String?        @db.Text
+
+  pdf_storage_key    String?
+  pdf_generated_at   DateTime?      @db.Timestamptz(6)
+
+  created_at         DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime       @updatedAt @db.Timestamptz(6)
+
+  items              invoice_item[]
+
+  @@index([organization_id])
+  @@index([status])
+  @@index([invoice_number, organization_id])
+}
+
+model invoice_item {
+  id               String   @id @default(cuid())
+  invoice_id       String
+  invoice          invoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  description      String
+  quantity         Float
+  unit_price       Decimal  @db.Decimal(12, 2)
+  tax_percent      Float?
+  tax_exempt       Boolean  @default(false)
+  special_tax_rate Float?
+  sort_order       Int      @default(0)
+
+  @@index([invoice_id])
 }
 
 // ── WhatsApp Integration ────────────────────────────────────────────────

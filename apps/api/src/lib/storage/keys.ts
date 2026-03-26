@@ -24,6 +24,7 @@ const ORG_ATTACHMENTS_SUPPORT = "support";
 const ORG_ATTACHMENTS_EMAILS = "emails";
 const ORG_ATTACHMENTS_FORMS = "forms";
 const ORG_BLOG = "blog";
+const ORG_INVOICES = "invoices";
 
 /** Prefix for all keys belonging to an organization (e.g. "org/abc123"). */
 export function orgPrefix(organizationId: string): string {
@@ -86,6 +87,11 @@ export function orgBlogAssetKey(
 /** Prefix for org blog assets: org/{orgId}/blog/ */
 export function orgBlogKeyPrefix(organizationId: string): string {
   return `${orgPrefix(organizationId)}/${ORG_BLOG}/`;
+}
+
+/** Invoice PDF: org/{orgId}/invoices/{invoiceId}.pdf */
+export function orgInvoiceKey(organizationId: string, invoiceId: string): string {
+  return `${orgPrefix(organizationId)}/${ORG_INVOICES}/${invoiceId}.pdf`;
 }
 
 /** Whether key is under org blog namespace (org/{id}/blog/...). */

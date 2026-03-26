@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle, Gauge } from "lucide-react"
+import { BookOpen, Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -36,6 +36,7 @@ interface Organization {
   whatsapp_enabled?: boolean
   analytics_enabled?: boolean
   blogs_enabled?: boolean
+  invoices_enabled?: boolean
 }
 
 interface Website {
@@ -57,6 +58,7 @@ export function OrganizationSidebar({
   initialWhatsappEnabled = false,
   initialAnalyticsEnabled = false,
   initialBlogsEnabled = false,
+  initialInvoicesEnabled = false,
   isLoading: externalIsLoading = false,
 }: {
   organization: Organization
@@ -69,6 +71,7 @@ export function OrganizationSidebar({
   initialWhatsappEnabled?: boolean
   initialAnalyticsEnabled?: boolean
   initialBlogsEnabled?: boolean
+  initialInvoicesEnabled?: boolean
   isLoading?: boolean
 }) {
   const router = useRouter()
@@ -80,6 +83,7 @@ export function OrganizationSidebar({
   const [whatsappEnabled, setWhatsappEnabled] = useState(initialWhatsappEnabled)
   const [analyticsEnabled, setAnalyticsEnabled] = useState(initialAnalyticsEnabled)
   const [blogsEnabled, setBlogsEnabled] = useState(initialBlogsEnabled ?? false)
+  const [invoicesEnabled, setInvoicesEnabled] = useState(initialInvoicesEnabled ?? false)
   const [isLoading, setIsLoading] = useState(externalIsLoading)
   
   // Update state when props change
@@ -91,8 +95,9 @@ export function OrganizationSidebar({
     setWhatsappEnabled(initialWhatsappEnabled)
     setAnalyticsEnabled(initialAnalyticsEnabled)
     setBlogsEnabled(initialBlogsEnabled ?? false)
+    setInvoicesEnabled(initialInvoicesEnabled ?? false)
     setIsLoading(externalIsLoading)
-  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, initialAnalyticsEnabled, initialBlogsEnabled, externalIsLoading])
+  }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, initialAnalyticsEnabled, initialBlogsEnabled, initialInvoicesEnabled, externalIsLoading])
 
   // Extract slug from current path or use organization id as fallback
   const pathSegments = pathname?.split('/').filter(Boolean) || []
@@ -121,6 +126,7 @@ export function OrganizationSidebar({
       href: `/${slug}/whatsapp`,
       badge: unreadWhatsappCount > 0 ? unreadWhatsappCount : undefined
     }] : []),
+    ...(invoicesEnabled ? [{ title: "Invoices", icon: Receipt, href: `/${slug}/invoices` }] : []),
     { title: "Team", icon: Users, href: `/${slug}/team` },
     { title: "Settings", icon: Settings, href: `/${slug}/settings` },
   ]

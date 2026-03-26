@@ -29,7 +29,7 @@ function jsonSafe(res: Response, data: unknown) {
 router.get("/dashboard-stats", adminOnly, async (_req: Request, res: Response) => {
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions, newUsersThisMonth, newOrgsThisMonth, bannedUsers, openTickets, totalPageViews, unseenForms] = await Promise.all([
+    const [totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions, newUsersThisMonth, newOrgsThisMonth, bannedUsers, openTickets, totalPageViews, unseenForms, totalInvoices] = await Promise.all([
       prisma.organization.count(),
       prisma.user.count(),
       prisma.websites.count(),
@@ -42,6 +42,7 @@ router.get("/dashboard-stats", adminOnly, async (_req: Request, res: Response) =
       prisma.support_tickets.count({ where: { status: { in: ["open", "in_progress"] } } }).catch(() => 0),
       prisma.events.count({ where: { created_at: { gte: thirtyDaysAgo } } }).catch(() => 0),
       prisma.form_submissions.count({ where: { seen: false } }),
+      prisma.invoice.count().catch(() => 0),
     ]);
     const recentUsers = await prisma.user.findMany({ orderBy: { createdAt: "desc" }, take: 5, select: { id: true, name: true, email: true, image: true, createdAt: true, role: true } });
     const recentOrgs = await prisma.organization.findMany({
@@ -51,7 +52,7 @@ router.get("/dashboard-stats", adminOnly, async (_req: Request, res: Response) =
     const auditStats = await computeAuditAdminStats(prisma, totalWebsites, thirtyDaysAgo);
     res.json({ success: true, stats: {
       totalOrgs, totalUsers, totalWebsites, totalSubscriptions, totalEmails, totalFormSubmissions,
-      newUsersThisMonth, newOrgsThisMonth, bannedUsers, openTickets, totalPageViews, unseenForms,
+      newUsersThisMonth, newOrgsThisMonth, bannedUsers, openTickets, totalPageViews, unseenForms, totalInvoices,
       recentUsers, recentOrgs,
       auditStats,
     }});
@@ -431,6 +432,36 @@ router.post("/disable-organization-blogs", adminOnly, async (req: Request, res: 
       data: { blogs_enabled: false },
     });
     res.json({ success: true, message: "Blogs disabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/enable-organization-invoices
+router.post("/enable-organization-invoices", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { invoices_enabled: true },
+    });
+    res.json({ success: true, message: "Invoices enabled" });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/disable-organization-invoices
+router.post("/disable-organization-invoices", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const { organizationId } = req.body as { organizationId: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { invoices_enabled: false },
+    });
+    res.json({ success: true, message: "Invoices disabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }

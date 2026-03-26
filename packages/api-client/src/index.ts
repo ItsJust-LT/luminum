@@ -128,6 +128,8 @@ function createApiClient(baseUrl: string = "") {
       get("/api/organization-settings/analytics-enabled", { organizationId }),
     getBlogsEnabled: (organizationId: string) =>
       get("/api/organization-settings/blogs-enabled", { organizationId }),
+    getInvoicesEnabled: (organizationId: string) =>
+      get("/api/organization-settings/invoices-enabled", { organizationId }),
     get: (organizationId: string) =>
       get("/api/organization-settings", { organizationId }),
     update: (organizationId: string, updates: any) =>
@@ -272,6 +274,13 @@ function createApiClient(baseUrl: string = "") {
       post("/api/admin/enable-organization-blogs", { organizationId }),
     disableBlogs: (organizationId: string) =>
       post("/api/admin/disable-organization-blogs", { organizationId }),
+    enableInvoices: (organizationId: string) =>
+      post("/api/admin/enable-organization-invoices", { organizationId }),
+    disableInvoices: (organizationId: string) =>
+      post("/api/admin/disable-organization-invoices", { organizationId }),
+    getAdminInvoiceStats: () => get("/api/admin/invoices/stats"),
+    getAdminInvoices: (params?: Record<string, any>) =>
+      get("/api/admin/invoices", params),
     getDatabaseTables: () => get("/api/admin/database/tables"),
     getDatabaseStats: () => get("/api/admin/database/stats"),
     getDatabaseTableSchema: (tableName: string) =>
@@ -699,6 +708,21 @@ function createApiClient(baseUrl: string = "") {
       get("/api/user-management/paystack-payments", { userId }),
   };
 
+  // ─── Invoices ───────────────────────────────────────────
+  const invoices = {
+    list: (organizationId: string, params?: { page?: number; limit?: number; status?: string; search?: string }) =>
+      get("/api/invoices", { organizationId, ...params }),
+    getStats: (organizationId: string) => get("/api/invoices/stats", { organizationId }),
+    get: (id: string) => get(`/api/invoices/${id}`),
+    create: (data: any) => post("/api/invoices", data),
+    update: (id: string, data: any) => patch(`/api/invoices/${id}`, data),
+    delete: (id: string) => del(`/api/invoices/${id}`),
+    generatePdf: (id: string) => post(`/api/invoices/${id}/generate-pdf`),
+    getPdfUrl: (id: string) => `${baseUrl}/api/invoices/${id}/pdf`,
+    updateStatus: (id: string, status: string) => post(`/api/invoices/${id}/status`, { status }),
+    getNextNumber: (organizationId: string) => get("/api/invoices/next-number", { organizationId }),
+  };
+
   // ─── Website Audits ──────────────────────────────────────
   const websiteAudits = {
     create: (websiteId: string) =>
@@ -732,6 +756,7 @@ function createApiClient(baseUrl: string = "") {
     userManagement,
     whatsapp,
     blog,
+    invoices,
     websiteAudits,
     /** Low-level API methods for endpoints not covered by the above. Use in client components. */
     get: <T = any>(path: string, params?: Record<string, any>) => get<T>(path, params),

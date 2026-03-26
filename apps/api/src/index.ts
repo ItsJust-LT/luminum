@@ -46,6 +46,8 @@ import { cronRouter } from "./routes/cron.js";
 import { whatsappRouter } from "./routes/whatsapp.js";
 import { blogPublicAssetsRouter } from "./routes/blog-public-assets.js";
 import { blogRouter } from "./routes/blog.js";
+import { invoicesRouter } from "./routes/invoices.js";
+import { adminInvoicesRouter } from "./routes/admin-invoices.js";
 import { websiteAuditsRouter } from "./routes/website-audits.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
 import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
@@ -135,6 +137,7 @@ app.use("/api/admin/monitoring", adminMonitoringRouter);
 app.use("/api/admin/logs", adminLogsRouter);
 app.use("/api/admin/database", adminDatabaseRouter);
 app.use("/api/admin/whatsapp", adminWhatsappRouter);
+app.use("/api/admin/invoices", adminInvoicesRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/paystack", paystackRouter);
 app.use("/api/support", supportRouter);
@@ -150,6 +153,7 @@ app.use("/api/user-management", userManagementRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/blog", blogRouter);
+app.use("/api/invoices", invoicesRouter);
 app.use("/api/website-audits", websiteAuditsRouter);
 
 // ─── Global error handler (must be last) ───────────────────────────────────
