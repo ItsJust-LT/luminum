@@ -39,6 +39,9 @@ func serveTrackingScript(w http.ResponseWriter, r *http.Request) {
 var wid="%s",api="%s",wsApi="%s",sid=getOrCreateSid();
 var _ws=null,_eid=null,_lastUrl=location.href;
 function trackPage(url,ref){
+if(navigator.webdriver)return;
+var _luna=(navigator.userAgent||"").toLowerCase();
+if(_luna.indexOf("headlesschrome")!==-1||_luna.indexOf("puppeteer")!==-1||_luna.indexOf("chrome-lighthouse")!==-1||_luna.indexOf("phantomjs")!==-1||_luna.indexOf("selenium")!==-1)return;
 var p={websiteId:wid,sessionId:sid,url:url,referrer:ref||document.referrer,screen:innerWidth+"x"+innerHeight,pageTitle:(document.title||"").slice(0,500),userAgent:navigator.userAgent};
 fetch(api+"/track",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json()}).then(function(d){
 if(d.eventId){

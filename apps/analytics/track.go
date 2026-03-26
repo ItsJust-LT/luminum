@@ -151,6 +151,13 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Site audits (Lighthouse/Puppeteer) and similar automated browsers: do not record events.
+	if shouldIgnoreAutomatedClient(r) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"ignored": true, "reason": "automated"})
+		return
+	}
+
 	event.SessionID = NormalizeSessionID(event.SessionID)
 
 	ip := r.Header.Get("X-Forwarded-For")

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import type { Prisma } from "@luminum/database";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
@@ -9,6 +10,24 @@ import crypto from "crypto";
 import { isEmailSystemEnabled } from "../lib/email-system.js";
 
 const router = Router();
+
+/** PostgreSQL text/JSON cannot store U+0000; inbound MIME can contain NUL in headers or bodies. */
+function stripNul(s: string): string {
+  return s.includes("\0") ? s.replace(/\u0000/g, "") : s;
+}
+
+function stripNulDeep(value: unknown): unknown {
+  if (typeof value === "string") return stripNul(value);
+  if (Array.isArray(value)) return value.map(stripNulDeep);
+  if (value !== null && typeof value === "object") {
+    const o: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      o[stripNul(k)] = stripNulDeep(v);
+    }
+    return o;
+  }
+  return value;
+}
 
 function checkSignature(secret: string, body: string, ts: string, sig: string): boolean {
   const pre = ts + "." + body;
@@ -77,7 +96,7 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const payload = req.body;
-    const rawMessageId = payload.messageId?.trim() || null;
+    const rawMessageId = payload.messageId != null ? stripNul(String(payload.messageId).trim()) || null : null;
     const messageId = rawMessageId ? rawMessageId.toLowerCase() : null;
 
     if (messageId) {
@@ -88,14 +107,14 @@ router.post("/", async (req: Request, res: Response) => {
     let fromString: string | null = null;
     let toString: string | null = null;
     if (payload.from) {
-      fromString = typeof payload.from === "string" ? payload.from :
-        Array.isArray(payload.from) ? JSON.stringify(payload.from) :
-        payload.from.email || null;
+      fromString = typeof payload.from === "string" ? stripNul(payload.from) :
+        Array.isArray(payload.from) ? stripNul(JSON.stringify(payload.from)) :
+        payload.from.email != null ? stripNul(String(payload.from.email)) : null;
     }
     if (payload.to) {
-      toString = typeof payload.to === "string" ? payload.to :
-        Array.isArray(payload.to) ? JSON.stringify(payload.to) :
-        payload.to.email || null;
+      toString = typeof payload.to === "string" ? stripNul(payload.to) :
+        Array.isArray(payload.to) ? stripNul(JSON.stringify(payload.to)) :
+        payload.to.email != null ? stripNul(String(payload.to.email)) : null;
     }
 
     let receivedAt = payload.receivedAt ? new Date(payload.receivedAt) : new Date();
@@ -110,22 +129,42 @@ router.post("/", async (req: Request, res: Response) => {
       if (toEmail) organizationId = await findOrganizationByEmail(toEmail);
     }
 
-    const textContent = payload.text?.trim() || null;
-    const htmlContent = payload.html?.trim() || null;
+    const subjectSanitized = payload.subject != null ? stripNul(String(payload.subject).trim()) || null : null;
+    const textRaw = payload.text != null ? stripNul(String(payload.text)).trim() : "";
+    const htmlRaw = payload.html != null ? stripNul(String(payload.html)).trim() : "";
+    const textContent = textRaw || null;
+    const htmlContent = htmlRaw || null;
 
-    const contentCanonical = [organizationId ?? "", fromString ?? "", toString ?? "", (payload.subject ?? "").trim(), textContent ?? "", htmlContent ?? ""].join("\n");
+    const contentCanonical = [organizationId ?? "", fromString ?? "", toString ?? "", subjectSanitized ?? "", textContent ?? "", htmlContent ?? ""].join("\n");
     const contentHash = crypto.createHash("md5").update(contentCanonical).digest("hex");
     const existingByHash = await prisma.email.findUnique({ where: { contentHash }, select: { id: true } });
     if (existingByHash) return res.json({ ok: true, duplicate: true, emailId: existingByHash.id });
 
     let dedupeKey: string | null = null;
     if (!messageId && organizationId && receivedAt) {
-      const dc = [organizationId, fromString ?? "", toString ?? "", (payload.subject ?? "").trim(), receivedAt.toISOString().slice(0, 19)].join("\n");
+      const dc = [organizationId, fromString ?? "", toString ?? "", subjectSanitized ?? "", receivedAt.toISOString().slice(0, 19)].join("\n");
       dedupeKey = crypto.createHash("sha256").update(dc).digest("hex");
     }
 
+    const headersSafe: Prisma.InputJsonValue =
+      payload.headers != null && typeof payload.headers === "object" && !Array.isArray(payload.headers)
+        ? (stripNulDeep(payload.headers) as Prisma.InputJsonValue)
+        : {};
+
     const email = await prisma.email.create({
-      data: { organization_id: organizationId, from: fromString, to: toString, subject: payload.subject ?? null, text: textContent, html: htmlContent, headers: payload.headers ?? {}, receivedAt, messageId, dedupeKey, contentHash },
+      data: {
+        organization_id: organizationId,
+        from: fromString,
+        to: toString,
+        subject: subjectSanitized,
+        text: textContent,
+        html: htmlContent,
+        headers: headersSafe,
+        receivedAt,
+        messageId,
+        dedupeKey,
+        contentHash,
+      },
     });
 
     if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
@@ -137,7 +176,7 @@ router.post("/", async (req: Request, res: Response) => {
         if (!key && a.contentBase64 && (a.filename || a.contentType)) {
           try {
             const buffer = Buffer.from(a.contentBase64, "base64");
-            const filename = a.filename || `attachment-${i + 1}`;
+            const filename = stripNul(a.filename || `attachment-${i + 1}`);
             const storageKey = organizationId
               ? orgAttachmentsEmailsKey(organizationId, email.id, String(i), filename)
               : emailAttachmentKey(email.id, String(i), filename);
@@ -153,8 +192,8 @@ router.post("/", async (req: Request, res: Response) => {
           }
         }
         if (!key) continue;
-        const filename = a.filename || `attachment-${i + 1}`;
-        const contentType = a.contentType || "application/octet-stream";
+        const filename = stripNul(a.filename || `attachment-${i + 1}`);
+        const contentType = stripNul(a.contentType || "application/octet-stream");
         atts.push({
           emailId: email.id,
           filename,
@@ -167,7 +206,7 @@ router.post("/", async (req: Request, res: Response) => {
       if (atts.length > 0) await prisma.attachment.createMany({ data: atts });
     }
 
-    logger.info("Email received (inbound)", { from: fromString, to: toString, subject: payload.subject ?? null, emailId: email.id, organizationId, requestId }, requestId);
+    logger.info("Email received (inbound)", { from: fromString, to: toString, subject: subjectSanitized, emailId: email.id, organizationId, requestId }, requestId);
 
     if (organizationId) {
       try {
@@ -187,7 +226,7 @@ router.post("/", async (req: Request, res: Response) => {
         const emailUrl = org?.slug ? `/${org.slug}/emails/${email.id}` : `/emails/${email.id}`;
         await sendNotification({
           type: "email_received",
-          data: { emailId: email.id, fromEmail, fromName: notificationFromName, subject: payload.subject || "(No subject)", organizationId, url: emailUrl },
+          data: { emailId: email.id, fromEmail, fromName: notificationFromName, subject: subjectSanitized || "(No subject)", organizationId, url: emailUrl },
           target: { organizationId },
         });
       } catch {}

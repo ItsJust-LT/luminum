@@ -30,6 +30,13 @@ func formSubmissionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if shouldIgnoreAutomatedClient(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ignored", "reason": "automated"})
+		return
+	}
+
 	websiteId, ok := payload["websiteId"].(string)
 	if !ok || websiteId == "" {
 		http.Error(w, "Missing websiteId", http.StatusBadRequest)
