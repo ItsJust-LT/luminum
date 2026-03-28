@@ -1,7 +1,33 @@
+import { buffer as streamToBuffer } from "node:stream/consumers";
 import puppeteer, { type Browser } from "puppeteer";
+import * as s3 from "../storage/s3.js";
 import { buildInvoiceHtml, type InvoiceTemplateData } from "./html-template.js";
 
 let browserInstance: Browser | null = null;
+
+/** Parse S3 storage key from our authenticated file proxy URL (`/api/files/...`). */
+function storageKeyFromFilesProxyUrl(url: string): string | null {
+  const marker = "/api/files/";
+  try {
+    const u = new URL(url);
+    const i = u.pathname.indexOf(marker);
+    if (i === -1) return null;
+    const encoded = u.pathname.slice(i + marker.length);
+    if (!encoded) return null;
+    return decodeURIComponent(encoded).replace(/\.\./g, "");
+  } catch {
+    if (url.startsWith(marker)) {
+      return decodeURIComponent(url.slice(marker.length)).replace(/\.\./g, "");
+    }
+    const i = url.indexOf(marker);
+    if (i !== -1) {
+      const encoded = url.slice(i + marker.length).split(/[?#]/)[0] ?? "";
+      if (!encoded) return null;
+      return decodeURIComponent(encoded).replace(/\.\./g, "");
+    }
+    return null;
+  }
+}
 
 async function getBrowser(): Promise<Browser> {
   if (browserInstance && browserInstance.connected) return browserInstance;
@@ -16,6 +42,20 @@ async function getBrowser(): Promise<Browser> {
 }
 
 async function resolveLogoToBase64(url: string): Promise<string> {
+  const key = storageKeyFromFilesProxyUrl(url);
+  if (key && s3.isStorageConfigured()) {
+    try {
+      const obj = await s3.getObject(key);
+      if (obj) {
+        const buf = await streamToBuffer(obj.stream);
+        const contentType = obj.contentType || "image/png";
+        return `data:${contentType};base64,${buf.toString("base64")}`;
+      }
+    } catch {
+      // fall through to fetch for external URLs
+    }
+  }
+
   try {
     const response = await fetch(url);
     if (!response.ok) return url;
