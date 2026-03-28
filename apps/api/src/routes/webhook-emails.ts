@@ -131,14 +131,22 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const subjectSanitized = payload.subject != null ? stripNul(String(payload.subject).trim()) || null : null;
-    const textRaw = payload.text != null ? stripNul(String(payload.text)).trim() : "";
-    const htmlRaw = payload.html != null ? stripNul(String(payload.html)).trim() : "";
+    // Do not strip NUL before ZIP extraction — 0x00 bytes appear inside real ZIP archives.
+    const textRaw = payload.text != null ? String(payload.text).trim() : "";
+    const htmlRaw = payload.html != null ? String(payload.html).trim() : "";
     /** Avoid stripping ZIP from body when we cannot upload (would lose the blob). */
     const zipNorm = isStorageConfigured()
       ? extractZipsFromBodies(textRaw || null, htmlRaw || null)
       : { text: textRaw || null, html: htmlRaw || null, extracted: [] as ExtractedZipPart[] };
-    const textContent = zipNorm.text ?? (textRaw || null);
-    const htmlContent = zipNorm.html ?? (htmlRaw || null);
+    const textAfterZip = zipNorm.text ?? (textRaw || null);
+    const htmlAfterZip = zipNorm.html ?? (htmlRaw || null);
+    const bodyForPg = (s: string | null): string | null => {
+      if (s == null) return null;
+      const t = stripNul(s).trim();
+      return t.length > 0 ? t : null;
+    };
+    const textContent = bodyForPg(textAfterZip);
+    const htmlContent = bodyForPg(htmlAfterZip);
     const extractedZips = zipNorm.extracted;
 
     const contentCanonical = [organizationId ?? "", fromString ?? "", toString ?? "", subjectSanitized ?? "", textContent ?? "", htmlContent ?? ""].join("\n");

@@ -80,9 +80,9 @@ func ParseRawMessage(raw []byte) (*ParsedEmail, error) {
 				Size:          len(body),
 			})
 		} else if strings.HasPrefix(mt, "text/html") {
-			out.HTML = string(body)
+			assignHTMLPart(out, body)
 		} else if strings.HasPrefix(mt, "text/plain") {
-			out.Text = string(body)
+			assignTextPlainPart(out, body)
 		} else {
 			// Unknown single-part non-text: keep as attachment so we do not render binary as body.
 			out.Attachments = append(out.Attachments, AttachmentPart{
@@ -163,12 +163,12 @@ func parseMultipartBody(body []byte, mediaType string, params map[string]string,
 
 		if strings.HasPrefix(partMedia, "text/html") {
 			if out.HTML == "" {
-				out.HTML = string(partBody)
+				assignHTMLPart(out, partBody)
 			}
 			continue
 		}
 		if strings.HasPrefix(partMedia, "text/plain") && out.Text == "" {
-			out.Text = string(partBody)
+			assignTextPlainPart(out, partBody)
 		}
 	}
 }
@@ -182,6 +182,64 @@ func looksLikeZipMagic(body []byte) bool {
 	}
 	b2, b3 := body[2], body[3]
 	return (b2 == 0x03 && b3 == 0x04) || (b2 == 0x05 && b3 == 0x06) || (b2 == 0x07 && b3 == 0x08)
+}
+
+var zipLocalHeaderSig = []byte{0x50, 0x4b, 0x03, 0x04}
+
+// splitEmbeddedZipPrefix finds the first ZIP local file header in body. If found, returns the
+// leading bytes (e.g. human-readable DMARC summary) and the zip from that offset. Otherwise ok is false.
+// Keeps binary out of JSON text/html fields (invalid UTF-8 would be mangled by json.Marshal).
+func splitEmbeddedZipPrefix(body []byte) (prefix []byte, zip []byte, ok bool) {
+	if len(body) < 4 {
+		return nil, nil, false
+	}
+	idx := bytes.Index(body, zipLocalHeaderSig)
+	if idx < 0 {
+		return nil, nil, false
+	}
+	zip = body[idx:]
+	if !looksLikeZipMagic(zip) {
+		return nil, nil, false
+	}
+	prefix = body[:idx]
+	return prefix, zip, true
+}
+
+func appendZipAttachment(out *ParsedEmail, zip []byte, filename string) {
+	out.Attachments = append(out.Attachments, AttachmentPart{
+		Filename:      filename,
+		ContentType:   "application/zip",
+		ContentBase64: base64.StdEncoding.EncodeToString(zip),
+		Size:          len(zip),
+	})
+}
+
+func assignTextPlainPart(out *ParsedEmail, partBody []byte) {
+	if looksLikeZipMagic(partBody) {
+		appendZipAttachment(out, partBody, guessAttachmentFilename("application/zip"))
+		return
+	}
+	prefix, zip, ok := splitEmbeddedZipPrefix(partBody)
+	if ok {
+		out.Text = string(bytes.TrimSpace(prefix))
+		appendZipAttachment(out, zip, "dmarc-report.zip")
+		return
+	}
+	out.Text = string(partBody)
+}
+
+func assignHTMLPart(out *ParsedEmail, partBody []byte) {
+	if looksLikeZipMagic(partBody) {
+		appendZipAttachment(out, partBody, guessAttachmentFilename("application/zip"))
+		return
+	}
+	prefix, zip, ok := splitEmbeddedZipPrefix(partBody)
+	if ok {
+		out.HTML = string(bytes.TrimSpace(prefix))
+		appendZipAttachment(out, zip, "dmarc-report.zip")
+		return
+	}
+	out.HTML = string(partBody)
 }
 
 func shouldTreatPartAsAttachment(partMedia, dispLower, filename string) bool {
