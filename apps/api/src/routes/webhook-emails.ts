@@ -3,11 +3,12 @@ import type { Prisma } from "@luminum/database";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
-import { upload } from "../lib/storage/s3.js";
+import { upload, isStorageConfigured } from "../lib/storage/s3.js";
 import { emailAttachmentKey, orgAttachmentsEmailsKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import crypto from "crypto";
 import { isEmailSystemEnabled } from "../lib/email-system.js";
+import { extractZipsFromBodies, type ExtractedZipPart } from "../lib/email-binary-body.js";
 
 const router = Router();
 
@@ -132,8 +133,13 @@ router.post("/", async (req: Request, res: Response) => {
     const subjectSanitized = payload.subject != null ? stripNul(String(payload.subject).trim()) || null : null;
     const textRaw = payload.text != null ? stripNul(String(payload.text)).trim() : "";
     const htmlRaw = payload.html != null ? stripNul(String(payload.html)).trim() : "";
-    const textContent = textRaw || null;
-    const htmlContent = htmlRaw || null;
+    /** Avoid stripping ZIP from body when we cannot upload (would lose the blob). */
+    const zipNorm = isStorageConfigured()
+      ? extractZipsFromBodies(textRaw || null, htmlRaw || null)
+      : { text: textRaw || null, html: htmlRaw || null, extracted: [] as ExtractedZipPart[] };
+    const textContent = zipNorm.text ?? (textRaw || null);
+    const htmlContent = zipNorm.html ?? (htmlRaw || null);
+    const extractedZips = zipNorm.extracted;
 
     const contentCanonical = [organizationId ?? "", fromString ?? "", toString ?? "", subjectSanitized ?? "", textContent ?? "", htmlContent ?? ""].join("\n");
     const contentHash = crypto.createHash("md5").update(contentCanonical).digest("hex");
@@ -167,19 +173,21 @@ router.post("/", async (req: Request, res: Response) => {
       },
     });
 
+    const base = config.apiUrl.replace(/\/$/, "");
+    const atts: { emailId: string; filename: string; contentType: string; size: number | null; r2Key: string; url: string }[] = [];
+    let attIndex = 0;
+
     if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
-      const base = config.apiUrl.replace(/\/$/, "");
-      const atts: { emailId: string; filename: string; contentType: string; size: number | null; r2Key: string; url: string }[] = [];
       for (let i = 0; i < payload.attachments.length; i++) {
         const a = payload.attachments[i] as { r2Key?: string; storage_key?: string; filename?: string; contentType?: string; size?: number; contentBase64?: string };
         let key = a.r2Key || a.storage_key || "";
         if (!key && a.contentBase64 && (a.filename || a.contentType)) {
           try {
             const buffer = Buffer.from(a.contentBase64, "base64");
-            const filename = stripNul(a.filename || `attachment-${i + 1}`);
+            const filename = stripNul(a.filename || `attachment-${attIndex + 1}`);
             const storageKey = organizationId
-              ? orgAttachmentsEmailsKey(organizationId, email.id, String(i), filename)
-              : emailAttachmentKey(email.id, String(i), filename);
+              ? orgAttachmentsEmailsKey(organizationId, email.id, String(attIndex), filename)
+              : emailAttachmentKey(email.id, String(attIndex), filename);
             const result = await upload(buffer, storageKey, { contentType: a.contentType || "application/octet-stream" });
             key = result.key;
             if (organizationId) {
@@ -188,23 +196,68 @@ router.post("/", async (req: Request, res: Response) => {
               } catch {}
             }
           } catch (err) {
-            logger.error("Webhook attachment upload failed", { emailId: email.id, index: i, requestId });
+            logger.error("Webhook attachment upload failed", { emailId: email.id, index: attIndex, requestId });
           }
         }
-        if (!key) continue;
-        const filename = stripNul(a.filename || `attachment-${i + 1}`);
-        const contentType = stripNul(a.contentType || "application/octet-stream");
+        if (key) {
+          const filename = stripNul(a.filename || `attachment-${attIndex + 1}`);
+          const contentType = stripNul(a.contentType || "application/octet-stream");
+          atts.push({
+            emailId: email.id,
+            filename,
+            contentType,
+            size: a.size ?? null,
+            r2Key: key,
+            url: `${base}/api/files/${encodeURIComponent(key)}`,
+          });
+          attIndex += 1;
+        }
+      }
+    }
+
+    const attCountBeforeZips = atts.length;
+    for (const z of extractedZips) {
+      try {
+        const filename = stripNul(z.filename);
+        const storageKey = organizationId
+          ? orgAttachmentsEmailsKey(organizationId, email.id, String(attIndex), filename)
+          : emailAttachmentKey(email.id, String(attIndex), filename);
+        const result = await upload(z.buffer, storageKey, { contentType: z.contentType });
+        if (organizationId) {
+          try {
+            await updateOrganizationStorage(organizationId, result.bytes);
+          } catch {}
+        }
         atts.push({
           emailId: email.id,
           filename,
-          contentType,
-          size: a.size ?? null,
-          r2Key: key,
-          url: `${base}/api/files/${encodeURIComponent(key)}`,
+          contentType: z.contentType,
+          size: z.buffer.length,
+          r2Key: result.key,
+          url: `${base}/api/files/${encodeURIComponent(result.key)}`,
         });
+        attIndex += 1;
+      } catch (err) {
+        logger.error("Webhook embedded zip upload failed", { emailId: email.id, index: attIndex, requestId });
       }
-      if (atts.length > 0) await prisma.attachment.createMany({ data: atts });
     }
+
+    if (extractedZips.length > 0 && atts.length === attCountBeforeZips) {
+      const rawCanonical = [organizationId ?? "", fromString ?? "", toString ?? "", subjectSanitized ?? "", textRaw || "", htmlRaw || ""].join("\n");
+      const rawHash = crypto.createHash("md5").update(rawCanonical).digest("hex");
+      const hashConflict = await prisma.email.findFirst({ where: { contentHash: rawHash, NOT: { id: email.id } }, select: { id: true } });
+      await prisma.email.update({
+        where: { id: email.id },
+        data: {
+          text: textRaw || null,
+          html: htmlRaw || null,
+          contentHash: hashConflict ? null : rawHash,
+        },
+      });
+      logger.warn("Webhook: embedded ZIP upload failed; restored raw body", { emailId: email.id, requestId });
+    }
+
+    if (atts.length > 0) await prisma.attachment.createMany({ data: atts });
 
     logger.info("Email received (inbound)", { from: fromString, to: toString, subject: subjectSanitized, emailId: email.id, organizationId, requestId }, requestId);
 
@@ -232,7 +285,13 @@ router.post("/", async (req: Request, res: Response) => {
       } catch {}
     }
 
-    res.json({ ok: true, emailId: email.id, attachmentsProcessed: payload.attachments?.length || 0, requestId, duration: `${Date.now() - startTime}ms` });
+    res.json({
+      ok: true,
+      emailId: email.id,
+      attachmentsProcessed: atts.length,
+      requestId,
+      duration: `${Date.now() - startTime}ms`,
+    });
   } catch (error: any) {
     logger.error(`Webhook error: ${error instanceof Error ? error.message : String(error)}`, { requestId, stack: error instanceof Error ? error.stack : undefined });
     res.status(500).json({ error: "server error", message: error.message, requestId });

@@ -48,6 +48,8 @@ import {
 } from "@/components/ui/dialog"
 import { EmailAvatar } from "@/components/emails/email-avatar"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { emailBodyLikelyHasMisstoredZip } from "@/lib/emails/embedded-zip-detect"
 
 interface Email {
   id: string
@@ -61,6 +63,10 @@ interface Email {
   htmlBody: string | null
   read: boolean
   createdAt: Date | string
+  direction?: string
+  outbound_provider?: string | null
+  fallback_used?: boolean
+  provider_message_id?: string | null
   attachments: any[]
   inlineImages: any[]
 }
@@ -85,9 +91,31 @@ function getPreviewType(attachment: { filename?: string; contentType?: string })
 
   if (type.startsWith("image/") || imageExts.includes(ext)) return "image"
   if (type === "application/pdf" || ext === "pdf") return "pdf"
+  if (
+    type === "application/zip" ||
+    type === "application/x-zip-compressed" ||
+    ext === "zip" ||
+    ext === "gz" ||
+    type.includes("gzip")
+  )
+    return null
   if (type.startsWith("text/") || textTypes.some((t) => type.includes(t)) || textExts.includes(ext)) return "text"
 
   return null
+}
+
+function isArchiveAttachment(attachment: { filename?: string; contentType?: string }): boolean {
+  const name = (attachment.filename || "").toLowerCase()
+  const type = (attachment.contentType || "").toLowerCase()
+  const ext = name.includes(".") ? name.split(".").pop()! : ""
+  return (
+    type === "application/zip" ||
+    type === "application/x-zip-compressed" ||
+    type.includes("zip") ||
+    ext === "zip" ||
+    ext === "gz" ||
+    type.includes("gzip")
+  )
 }
 
 export function EmailDetailClient({ email, organizationSlug }: EmailDetailClientProps) {
@@ -257,6 +285,8 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
   }
 
   const hasAttachments = email.attachments && Array.isArray(email.attachments) && email.attachments.length > 0
+  const showMisstoredZipBanner =
+    email.direction === "inbound" && emailBodyLikelyHasMisstoredZip(email.textBody, email.htmlBody)
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -409,6 +439,23 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
                 {formatDate(email.date)}
               </span>
             </div>
+            {email.direction === "outbound" && (
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                {email.outbound_provider === "ses" && (
+                  <Badge variant="secondary">
+                    {email.fallback_used ? "Sent via Amazon SES (fallback)" : "Sent via Amazon SES"}
+                  </Badge>
+                )}
+                {email.outbound_provider === "mail_app" && !email.fallback_used && (
+                  <Badge variant="outline">Sent via mail server</Badge>
+                )}
+                {email.outbound_provider === "ses" && email.provider_message_id && (
+                  <span className="text-xs text-muted-foreground font-mono truncate max-w-full" title={email.provider_message_id}>
+                    SES id: {email.provider_message_id}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Sender + recipients card */}
@@ -531,13 +578,21 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                            <Paperclip className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                            {isArchiveAttachment(attachment) ? (
+                              <Archive className="h-4 w-4 sm:h-5 sm:w-5 text-primary" aria-hidden />
+                            ) : (
+                              <Paperclip className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate" title={attachment.filename}>
                               {attachment.filename}
                             </p>
-                            <p className="text-xs text-muted-foreground">{formatAttachmentSize(attachment)}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {isArchiveAttachment(attachment)
+                                ? `${formatAttachmentSize(attachment)} · Archive (download to open)`
+                                : formatAttachmentSize(attachment)}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0 pl-[52px] sm:pl-0">
@@ -574,6 +629,22 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
 
           {/* Body: always HTML when available */}
           <Card className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            {showMisstoredZipBanner && (
+              <div
+                role="status"
+                className="px-4 py-3 text-sm border-b bg-amber-500/10 text-amber-950 dark:text-amber-100 dark:bg-amber-500/15"
+              >
+                <p className="font-medium">ZIP report detected inside the message body</p>
+                <p className="mt-1 text-muted-foreground dark:text-amber-100/80">
+                  This usually means the raw archive was saved as text. An admin can move it to attachments with{" "}
+                  <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">POST /api/admin/emails/recover-embedded-zips</code>{" "}
+                  (single <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">emailId</code> or batch{" "}
+                  <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">skip</code> /{" "}
+                  <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">limit</code>
+                  ). New inbound mail is corrected automatically when object storage is configured.
+                </p>
+              </div>
+            )}
             {email.htmlBody ? (
               <EmailHTMLRenderer html={sanitizedHtml} />
             ) : email.textBody ? (

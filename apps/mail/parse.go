@@ -64,11 +64,33 @@ func ParseRawMessage(raw []byte) (*ParsedEmail, error) {
 		parseMultipartBody(bodyBytes, mediaType, params, out)
 	} else {
 		body := decodeContentBytes(bodyBytes, msg.Header.Get("Content-Transfer-Encoding"))
-		bodyText := string(body)
-		if strings.HasPrefix(strings.ToLower(mediaType), "text/html") {
-			out.HTML = bodyText
+		mt := strings.ToLower(strings.TrimSpace(mediaType))
+		if looksLikeZipMagic(body) || (strings.HasPrefix(mt, "application/") && !strings.HasPrefix(mt, "application/pgp-signature")) {
+			fn := guessAttachmentFilename(mediaType)
+			if cd := msg.Header.Get("Content-Disposition"); cd != "" {
+				_, dparams, _ := mime.ParseMediaType(cd)
+				if f := dparams["filename"]; f != "" {
+					fn = f
+				}
+			}
+			out.Attachments = append(out.Attachments, AttachmentPart{
+				Filename:      fn,
+				ContentType:   mt,
+				ContentBase64: base64.StdEncoding.EncodeToString(body),
+				Size:          len(body),
+			})
+		} else if strings.HasPrefix(mt, "text/html") {
+			out.HTML = string(body)
+		} else if strings.HasPrefix(mt, "text/plain") {
+			out.Text = string(body)
 		} else {
-			out.Text = bodyText
+			// Unknown single-part non-text: keep as attachment so we do not render binary as body.
+			out.Attachments = append(out.Attachments, AttachmentPart{
+				Filename:      guessAttachmentFilename(mediaType),
+				ContentType:   mt,
+				ContentBase64: base64.StdEncoding.EncodeToString(body),
+				Size:          len(body),
+			})
 		}
 	}
 	return out, nil
@@ -113,9 +135,25 @@ func parseMultipartBody(body []byte, mediaType string, params map[string]string,
 			continue
 		}
 
-		if filename != "" || strings.Contains(strings.ToLower(disp), "attachment") {
+		dispLower := strings.ToLower(disp)
+		if filename != "" || strings.Contains(dispLower, "attachment") {
 			out.Attachments = append(out.Attachments, AttachmentPart{
 				Filename:      filename,
+				ContentType:   partMedia,
+				ContentBase64: base64.StdEncoding.EncodeToString(partBody),
+				Size:          len(partBody),
+			})
+			continue
+		}
+
+		// Binary / application parts (e.g. DMARC aggregate .zip) must not be stuffed into text/html.
+		if looksLikeZipMagic(partBody) || shouldTreatPartAsAttachment(partMedia, dispLower, filename) {
+			fn := filename
+			if fn == "" {
+				fn = guessAttachmentFilename(partMedia)
+			}
+			out.Attachments = append(out.Attachments, AttachmentPart{
+				Filename:      fn,
 				ContentType:   partMedia,
 				ContentBase64: base64.StdEncoding.EncodeToString(partBody),
 				Size:          len(partBody),
@@ -132,6 +170,45 @@ func parseMultipartBody(body []byte, mediaType string, params map[string]string,
 		if strings.HasPrefix(partMedia, "text/plain") && out.Text == "" {
 			out.Text = string(partBody)
 		}
+	}
+}
+
+func looksLikeZipMagic(body []byte) bool {
+	if len(body) < 4 {
+		return false
+	}
+	if body[0] != 'P' || body[1] != 'K' {
+		return false
+	}
+	b2, b3 := body[2], body[3]
+	return (b2 == 0x03 && b3 == 0x04) || (b2 == 0x05 && b3 == 0x06) || (b2 == 0x07 && b3 == 0x08)
+}
+
+func shouldTreatPartAsAttachment(partMedia, dispLower, filename string) bool {
+	if filename != "" || strings.Contains(dispLower, "attachment") {
+		return true
+	}
+	pm := strings.ToLower(strings.TrimSpace(partMedia))
+	if strings.HasPrefix(pm, "multipart/") {
+		return false
+	}
+	if strings.HasPrefix(pm, "application/") {
+		return true
+	}
+	return false
+}
+
+func guessAttachmentFilename(partMedia string) string {
+	pm := strings.ToLower(strings.TrimSpace(partMedia))
+	switch {
+	case strings.Contains(pm, "zip"):
+		return "attachment.zip"
+	case strings.Contains(pm, "gzip") || strings.Contains(pm, "x-gzip"):
+		return "attachment.gz"
+	case strings.Contains(pm, "pdf"):
+		return "attachment.pdf"
+	default:
+		return "attachment.bin"
 	}
 }
 
