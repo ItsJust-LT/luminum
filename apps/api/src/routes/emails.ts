@@ -16,8 +16,6 @@ import { getOrgReplyAddress, sendOutboundWithFallback } from "../lib/email-send.
 import { syncOrganizationSesDomainInDb } from "../lib/email-ses.js";
 import { logger } from "../lib/logger.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
-import { extractZipsFromBodies } from "../lib/email-binary-body.js";
-import { recoverEmbeddedZipsForEmail } from "../lib/email-recover-embedded-zips.js";
 
 const MAIL_DKIM_DNS_VALUE = (process.env.MAIL_DKIM_DNS_VALUE || "").trim();
 
@@ -571,7 +569,7 @@ router.get("/:id", async (req: Request, res: Response) => {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
     if (!id) return res.status(400).json({ success: false, error: "Missing id" });
-    let email = await prisma.email.findUnique({
+    const email = await prisma.email.findUnique({
       where: { id },
       include: { organization: { select: { id: true, name: true } }, attachments: true },
     });
@@ -579,27 +577,6 @@ router.get("/:id", async (req: Request, res: Response) => {
     if (!email.organization_id) return res.status(400).json({ success: false, error: "Email has no organization" });
 
     if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
-
-    if (email.direction === "inbound" && s3.isStorageConfigured()) {
-      const { extracted } = extractZipsFromBodies(email.text, email.html);
-      if (extracted.length > 0) {
-        try {
-          const result = await recoverEmbeddedZipsForEmail(id);
-          if (result.recovered > 0) {
-            const refreshed = await prisma.email.findUnique({
-              where: { id },
-              include: { organization: { select: { id: true, name: true } }, attachments: true },
-            });
-            if (refreshed) email = refreshed;
-          }
-        } catch (err) {
-          logger.warn("Lazy embedded-ZIP recovery failed", {
-            emailId: id,
-            message: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
 
     res.json({ success: true, data: email });
   } catch (error: any) {

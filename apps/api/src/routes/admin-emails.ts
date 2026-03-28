@@ -1,10 +1,6 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import {
-  recoverEmbeddedZipsForEmail,
-  recoverEmbeddedZipsBatch,
-} from "../lib/email-recover-embedded-zips.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -96,24 +92,6 @@ router.get("/", async (req: Request, res: Response) => {
     ]);
 
     res.json({ success: true, emails, total, limit: parseInt(limit), offset: parseInt(offset) });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// POST /api/admin/emails/recover-embedded-zips
-// Body: { emailId?: string } for one row, or { limit?: number, skip?: number } to scan inbound mail in id order.
-router.post("/recover-embedded-zips", async (req: Request, res: Response) => {
-  try {
-    const body = req.body as { emailId?: string; limit?: unknown; skip?: unknown };
-    if (body.emailId && typeof body.emailId === "string") {
-      const result = await recoverEmbeddedZipsForEmail(body.emailId.trim());
-      return res.json({ success: true, result });
-    }
-    const limit = typeof body.limit === "number" && Number.isFinite(body.limit) ? body.limit : undefined;
-    const skip = typeof body.skip === "number" && Number.isFinite(body.skip) ? body.skip : undefined;
-    const batch = await recoverEmbeddedZipsBatch({ limit, skip });
-    return res.json({ success: true, batch });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -49,7 +49,6 @@ import {
 import { EmailAvatar } from "@/components/emails/email-avatar"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { emailBodyLikelyHasMisstoredZip } from "@/lib/emails/embedded-zip-detect"
 
 interface Email {
   id: string
@@ -285,8 +284,6 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
   }
 
   const hasAttachments = email.attachments && Array.isArray(email.attachments) && email.attachments.length > 0
-  const showMisstoredZipBanner =
-    email.direction === "inbound" && emailBodyLikelyHasMisstoredZip(email.textBody, email.htmlBody)
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -629,22 +626,6 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
 
           {/* Body: always HTML when available */}
           <Card className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            {showMisstoredZipBanner && (
-              <div
-                role="status"
-                className="px-4 py-3 text-sm border-b bg-amber-500/10 text-amber-950 dark:text-amber-100 dark:bg-amber-500/15"
-              >
-                <p className="font-medium">ZIP report detected inside the message body</p>
-                <p className="mt-1 text-muted-foreground dark:text-amber-100/80">
-                  This usually means the raw archive was saved as text. An admin can move it to attachments with{" "}
-                  <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">POST /api/admin/emails/recover-embedded-zips</code>{" "}
-                  (single <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">emailId</code> or batch{" "}
-                  <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">skip</code> /{" "}
-                  <code className="rounded bg-muted/80 px-1 py-0.5 text-xs font-mono">limit</code>
-                  ). New inbound mail is corrected automatically when object storage is configured.
-                </p>
-              </div>
-            )}
             {email.htmlBody ? (
               <EmailHTMLRenderer html={sanitizedHtml} />
             ) : email.textBody ? (
