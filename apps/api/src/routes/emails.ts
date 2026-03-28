@@ -2,22 +2,42 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { canAccessOrganization, getMemberOrAdmin } from "../lib/access.js";
-import { checkDomainDkim, checkDomainDmarc, checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
-import { config } from "../config.js";
-import * as s3 from "../lib/storage/s3.js";
-import { pathParam, queryParam } from "../lib/req-params.js";
 import {
+  checkDomainDkim,
+  checkDomainDmarc,
+  checkDomainMx,
+  checkDomainSpf,
+  checkSesDkimCnames,
   getPrescribedInboundMxHost,
   getExpectedSpfRecordForDomain,
   getDkimRecordName,
   getExpectedDmarcRecord,
+  getSesDkimCnameRecords,
+  getSesInboundMxHost,
+  isSesInboundMode,
 } from "../lib/email-dns.js";
-import { getOrgReplyAddress, sendOutboundWithFallback } from "../lib/email-send.js";
-import { syncOrganizationSesDomainInDb } from "../lib/email-ses.js";
+import { config } from "../config.js";
+import * as s3 from "../lib/storage/s3.js";
+import { pathParam, queryParam } from "../lib/req-params.js";
+import { getOrgReplyAddress, sendOutboundViaSes } from "../lib/email-send.js";
+import {
+  fetchSesAccountSummary,
+  fetchSesEmailIdentityDetails,
+  isSesSendEnvironmentReady,
+  syncOrganizationSesDomainInDb,
+  createSesDomainIdentity,
+} from "../lib/email-ses.js";
+import { syncSesInboundReceiptRules } from "../lib/ses-receipt-rules.js";
 import { logger } from "../lib/logger.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
 
 const MAIL_DKIM_DNS_VALUE = (process.env.MAIL_DKIM_DNS_VALUE || "").trim();
+
+function sesDkimSetupOk(id: Awaited<ReturnType<typeof fetchSesEmailIdentityDetails>>, sesDkimDns: Awaited<ReturnType<typeof checkSesDkimCnames>>): boolean {
+  if (id.dkimStatus === "SUCCESS") return true;
+  if (id.dkimTokens.length > 0 && sesDkimDns.ok) return true;
+  return false;
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -107,7 +127,7 @@ router.get("/unread-count", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/emails/setup-status?organizationId=...
+// GET /api/emails/setup-status?organizationId=... — live AWS GetEmailIdentity + DNS checks on each load
 router.get("/setup-status", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) {
@@ -139,8 +159,8 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
     const access = !!org.emails_enabled;
     const hasDomain = !!org.email_domain_id && !!org.email_domain;
-    const setupComplete = access && hasDomain && !!org.email_dns_verified_at && !org.email_dns_last_error;
     const domain = org.email_domain?.domain ?? "";
+    const awsReady = isSesSendEnvironmentReady();
     const expectedMxHost = domain ? getPrescribedInboundMxHost(domain) : "";
     const expectedSpfRecord = domain ? getExpectedSpfRecordForDomain(domain) : "";
     const dkimInfo = domain ? getDkimRecordName(domain) : null;
@@ -148,13 +168,15 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const dmarcRecordName = domain ? `_dmarc.${domain}` : "";
 
     const mailSendIp = (process.env.MAIL_SEND_IP || "").trim();
-    let mailHostA: {
-      type: "A";
-      name: string;
-      fqdn: string;
-      value: string;
-    } | undefined;
-    if (domain && mailSendIp && expectedMxHost) {
+    let mailHostA:
+      | {
+          type: "A";
+          name: string;
+          fqdn: string;
+          value: string;
+        }
+      | undefined;
+    if (!isSesInboundMode() && domain && mailSendIp && expectedMxHost) {
       const d = domain.toLowerCase().replace(/\.$/, "");
       const suffix = `.${d}`;
       const fqdn = expectedMxHost.toLowerCase().replace(/\.$/, "");
@@ -168,15 +190,66 @@ router.get("/setup-status", async (req: Request, res: Response) => {
       };
     }
 
+    let idDetails = domain ? await fetchSesEmailIdentityDetails(domain) : { dkimTokens: [] as string[] };
+    let accountSummary = await fetchSesAccountSummary();
+    let mx = domain
+      ? await checkDomainMx(domain)
+      : { ok: false, expectedHost: "", actualHosts: [] as { exchange: string; priority: number }[], error: "No domain" };
+    let spf = domain ? await checkDomainSpf(domain) : { ok: false, error: "No domain" };
+    let dmarc = domain ? await checkDomainDmarc(domain) : { ok: false, error: "No domain" };
+    let dkimSelf: Awaited<ReturnType<typeof checkDomainDkim>> = {
+      ok: true,
+      selector: "",
+      record: undefined,
+      error: undefined,
+    };
+
+    let sesVerifiedAt = org.email_ses_verified_at;
+    let sesLastErr = org.email_ses_last_error;
+    if (domain && awsReady) {
+      await syncOrganizationSesDomainInDb(organizationId);
+      const refreshed = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { email_ses_verified_at: true, email_ses_last_error: true },
+      });
+      sesVerifiedAt = refreshed?.email_ses_verified_at ?? sesVerifiedAt;
+      sesLastErr = refreshed?.email_ses_last_error ?? sesLastErr;
+      [idDetails, accountSummary, mx, spf, dmarc] = await Promise.all([
+        fetchSesEmailIdentityDetails(domain),
+        fetchSesAccountSummary(),
+        checkDomainMx(domain),
+        checkDomainSpf(domain),
+        checkDomainDmarc(domain),
+      ]);
+    } else if (domain) {
+      [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
+    }
+
+    if (domain && !isSesInboundMode()) {
+      dkimSelf = await checkDomainDkim(domain);
+    }
+
+    let sesDkimDns = { ok: false, records: [] as { name: string; target: string; ok: boolean; error?: string }[] };
+    if (domain && isSesInboundMode() && idDetails.dkimTokens.length > 0) {
+      sesDkimDns = await checkSesDkimCnames(domain, idDetails.dkimTokens);
+    }
+
+    const sesIdentityOk = !awsReady || idDetails.verificationStatus === "SUCCESS";
+    const dkimOk = isSesInboundMode() ? sesDkimSetupOk(idDetails, sesDkimDns) : dkimSelf.ok;
+    const setupComplete = access && hasDomain && mx.ok && spf.ok && dmarc.ok && dkimOk && sesIdentityOk;
+
+    const sesDkimCnames = domain && idDetails.dkimTokens.length ? getSesDkimCnameRecords(domain, idDetails.dkimTokens) : [];
+
     const dkimValueNote =
       "Set MAIL_DKIM_DNS_VALUE on the API host to show the exact TXT value here, or paste the public key from your DKIM pair (private key lives in MAIL_DKIM_PRIVATE_KEY on the mail service).";
 
     const dnsRecords = domain
       ? {
+          inboundMode: (isSesInboundMode() ? "ses" : "self_hosted") as "ses" | "self_hosted",
           mx: {
             type: "MX" as const,
             name: "@",
-            value: expectedMxHost || "mail.yourdomain.com",
+            value: expectedMxHost || (isSesInboundMode() ? getSesInboundMxHost() : "mail.yourdomain.com"),
             priority: 10,
           },
           ...(mailHostA ? { mailHostA } : {}),
@@ -184,22 +257,32 @@ router.get("/setup-status", async (req: Request, res: Response) => {
             type: "TXT" as const,
             name: "@",
             value: expectedSpfRecord,
-            ...(!expectedSpfRecord
+            ...(!expectedSpfRecord && !isSesInboundMode()
               ? {
                   valueNote:
                     "SPF must authorize your sending server by IPv4. Set MAIL_SEND_IP on the API host to your server’s public IPv4, then add the TXT value shown here once it appears.",
                 }
               : {}),
           },
-          dkim: {
-            type: "TXT" as const,
-            name: dkimInfo?.name ?? "",
-            selector: dkimInfo?.selector ?? "default",
-            ...(MAIL_DKIM_DNS_VALUE ? { value: MAIL_DKIM_DNS_VALUE } : {}),
-            valueNote: MAIL_DKIM_DNS_VALUE
-              ? "Paste this TXT value at your DNS provider (from MAIL_DKIM_DNS_VALUE on the server)."
-              : dkimValueNote,
-          },
+          ...(isSesInboundMode()
+            ? {
+                sesDkimCnames: sesDkimCnames.map((r) => ({
+                  type: "CNAME" as const,
+                  name: r.name,
+                  value: r.target,
+                })),
+              }
+            : {
+                dkim: {
+                  type: "TXT" as const,
+                  name: dkimInfo?.name ?? "",
+                  selector: dkimInfo?.selector ?? "default",
+                  ...(MAIL_DKIM_DNS_VALUE ? { value: MAIL_DKIM_DNS_VALUE } : {}),
+                  valueNote: MAIL_DKIM_DNS_VALUE
+                    ? "Paste this TXT value at your DNS provider (from MAIL_DKIM_DNS_VALUE on the server)."
+                    : dkimValueNote,
+                },
+              }),
           dmarc: {
             type: "TXT" as const,
             name: dmarcRecordName,
@@ -211,18 +294,39 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const setupNotes = domain
       ? [
           "Use only the MX target below for this domain. Remove conflicting MX records (e.g. registrar forwarding or another provider).",
-          mailSendIp
-            ? `Point the A record for the mail host (${expectedMxHost}) to ${mailSendIp}. If you use Cloudflare, use DNS only (grey cloud), not proxied, so SMTP reaches your server.`
-            : "Set MAIL_SEND_IP in the API environment to the server’s public IPv4 so we can show the exact A record and SPF line.",
-          "Your host must allow inbound TCP 25 to the mail container for receiving mail.",
-          process.env.EMAIL_SEND_FALLBACK_SES_ENABLED === "true"
-            ? "For SES fallback: add this domain as a verified identity in Amazon SES (same domain as below), publish SES DKIM CNAMEs, and include Amazon SES in SPF. Click Verify DNS to sync SES status."
-            : "",
+          isSesInboundMode()
+            ? `Inbound mail is delivered through Amazon SES in ${(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim() || "your AWS region"}. MX must point to the SES regional inbound endpoint shown below.`
+            : mailSendIp
+              ? `Point the A record for the mail host (${expectedMxHost}) to ${mailSendIp}. If you use Cloudflare, use DNS only (grey cloud), not proxied, so SMTP reaches your server.`
+              : "Set MAIL_SEND_IP in the API environment to the server’s public IPv4 so we can show the exact A record and SPF line.",
+          isSesInboundMode()
+            ? "Outbound sending uses Amazon SES. Add the domain in SES (Register domain), publish verification/DKIM DNS records, SPF with include:amazonses.com, and DMARC."
+            : "Your host must allow inbound TCP 25 to the mail container for receiving mail.",
         ].filter(Boolean)
       : undefined;
 
-    const sesFallbackEnabled = process.env.EMAIL_SEND_FALLBACK_SES_ENABLED === "true";
-    const sesDomainReady = !!org.email_ses_verified_at;
+    const liveChecks = {
+      mx,
+      spf,
+      dmarc,
+      dkim: isSesInboundMode()
+        ? {
+            ok: dkimOk,
+            sesStatus: idDetails.dkimStatus,
+            cnameChecks: sesDkimDns.records,
+            error: dkimOk
+              ? undefined
+              : idDetails.dkimTokens.length
+                ? sesDkimDns.records.find((r) => !r.ok)?.error || "SES DKIM CNAMEs not valid"
+                : idDetails.dkimStatus || "SES DKIM not ready",
+          }
+        : dkimSelf,
+      sesIdentity: {
+        verificationStatus: idDetails.verificationStatus,
+        ok: sesIdentityOk,
+        error: idDetails.error,
+      },
+    };
 
     res.json({
       success: true,
@@ -230,19 +334,31 @@ router.get("/setup-status", async (req: Request, res: Response) => {
       setupComplete,
       domain: domain || undefined,
       expectedMxHost: expectedMxHost || undefined,
-      lastCheckAt: org.email_dns_last_check_at?.toISOString(),
+      lastCheckAt: new Date().toISOString(),
       lastError: org.email_dns_last_error ?? undefined,
       emailFromAddress: org.email_from_address ?? undefined,
       dnsRecords,
       setupNotes,
-      sesFallback: sesFallbackEnabled
+      liveChecks,
+      ses: awsReady
         ? {
-            enabled: true,
-            domainVerified: sesDomainReady,
-            verifiedAt: org.email_ses_verified_at?.toISOString(),
-            lastError: org.email_ses_last_error ?? undefined,
+            configured: true,
+            domainVerified: !!sesVerifiedAt || idDetails.verificationStatus === "SUCCESS",
+            verifiedAt: sesVerifiedAt?.toISOString(),
+            lastError: sesLastErr ?? idDetails.error,
+            identityStatus: idDetails.verificationStatus,
+            dkimStatus: idDetails.dkimStatus,
+            dkimTokens: idDetails.dkimTokens,
           }
-        : { enabled: false, domainVerified: false },
+        : { configured: false, domainVerified: false },
+      sesAccount:
+        awsReady && !accountSummary.error
+          ? {
+              productionAccessEnabled: accountSummary.productionAccessEnabled,
+              sendingEnabled: accountSummary.sendingEnabled,
+              sandbox: accountSummary.productionAccessEnabled === false,
+            }
+          : undefined,
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -272,7 +388,8 @@ router.post("/setup-domain", async (req: Request, res: Response) => {
         email_dns_last_error: null,
       },
     });
-    res.json({ success: true, message: "Domain set. Add the MX record and then click Verify DNS." });
+    void syncSesInboundReceiptRules().catch(() => {});
+    res.json({ success: true, message: "Domain set. Add SES DNS records (MX, SPF, DKIM, DMARC) then click Verify DNS." });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
@@ -282,8 +399,8 @@ router.post("/setup-domain", async (req: Request, res: Response) => {
 router.post("/sync-ses", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
-    if (process.env.EMAIL_SEND_FALLBACK_SES_ENABLED !== "true") {
-      return res.status(400).json({ success: false, error: "SES fallback is not enabled on this server" });
+    if (!isSesSendEnvironmentReady()) {
+      return res.status(400).json({ success: false, error: "SES is not configured on this server (set AWS_REGION and credentials)" });
     }
     const { organizationId } = req.body as { organizationId?: string };
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
@@ -303,7 +420,45 @@ router.post("/sync-ses", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/emails/verify-dns — check MX for org's email domain and update verified flag if ok.
+// POST /api/emails/ses-register-domain — CreateEmailIdentity in SES + sync receipt rules (owner/admin).
+router.post("/ses-register-domain", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    if (!isSesSendEnvironmentReady()) {
+      return res.status(400).json({ success: false, error: "SES is not configured on this server" });
+    }
+    const { organizationId } = req.body as { organizationId?: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const member = await getMemberOrAdmin(organizationId, req.user);
+    if (!member || (member.role !== "owner" && member.role !== "admin")) {
+      return res.status(403).json({ success: false, error: "Only owners and admins can register the domain in SES" });
+    }
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { email_domain: { select: { domain: true } } },
+    });
+    const domain = org?.email_domain?.domain;
+    if (!domain) return res.status(400).json({ success: false, error: "Set an email domain first (website)" });
+    const created = await createSesDomainIdentity(domain);
+    if (!created.ok) {
+      return res.status(400).json({ success: false, error: created.error || "Failed to create SES identity" });
+    }
+    await syncOrganizationSesDomainInDb(organizationId);
+    const receipt = await syncSesInboundReceiptRules();
+    return res.json({
+      success: true,
+      message: "Domain registered in SES. Add DNS records shown on the mail setup page, then Verify DNS.",
+      domain,
+      receiptRules: receipt.skipped ? { skipped: true } : { ok: receipt.ok, domainCount: receipt.domainCount, error: receipt.error },
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "SES register failed";
+    res.status(400).json({ success: false, error: msg });
+  }
+});
+
+// POST /api/emails/verify-dns — MX/SPF/DMARC + SES identity & DKIM (live), persist verification timestamps.
 router.post("/verify-dns", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
@@ -316,23 +471,50 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
     });
     if (!org?.email_domain_id || !org.email_domain) return res.status(400).json({ success: false, error: "No email domain set. Select a domain first." });
     const domain = org.email_domain.domain;
-    const [mx, spf, dkim, dmarc] = await Promise.all([
-      checkDomainMx(domain),
-      checkDomainSpf(domain),
-      checkDomainDkim(domain),
-      checkDomainDmarc(domain),
-    ]);
+    const [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
+
+    let dkimCheck:
+      | Awaited<ReturnType<typeof checkDomainDkim>>
+      | { ok: boolean; sesDkimDns?: Awaited<ReturnType<typeof checkSesDkimCnames>>; error?: string };
+    let idDetails = await fetchSesEmailIdentityDetails(domain);
+    if (isSesInboundMode()) {
+      const sesDkimDns =
+        idDetails.dkimTokens.length > 0 ? await checkSesDkimCnames(domain, idDetails.dkimTokens) : { ok: false, records: [] };
+      const dkimOk = sesDkimSetupOk(idDetails, sesDkimDns);
+      dkimCheck = { ok: dkimOk, sesDkimDns, error: dkimOk ? undefined : sesDkimDns.error || idDetails.dkimStatus || "SES DKIM not ready" };
+    } else {
+      dkimCheck = await checkDomainDkim(domain);
+    }
+
     const now = new Date();
-    const allOk = mx.ok && spf.ok && dkim.ok && dmarc.ok;
     let sesSync: { ok: boolean; error?: string } | undefined;
-    if (process.env.EMAIL_SEND_FALLBACK_SES_ENABLED === "true") {
+    if (isSesSendEnvironmentReady()) {
       try {
         const s = await syncOrganizationSesDomainInDb(organizationId);
         sesSync = { ok: s.ok, error: s.error };
       } catch (e) {
         sesSync = { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
+      idDetails = await fetchSesEmailIdentityDetails(domain);
     }
+
+    const sesIdentityOk = !isSesSendEnvironmentReady() || idDetails.verificationStatus === "SUCCESS";
+    const dkimOk = dkimCheck.ok;
+    const allOk = mx.ok && spf.ok && dkimOk && dmarc.ok && sesIdentityOk;
+
+    const dkimFailMsg =
+      (dkimCheck as { error?: string }).error ||
+      ("sesDkimDns" in dkimCheck && dkimCheck.sesDkimDns?.error) ||
+      "DKIM check failed";
+
+    const buildError = () =>
+      (!mx.ok && (mx.error || "MX check failed")) ||
+      (!spf.ok && (spf.error || "SPF check failed")) ||
+      (!dkimOk && dkimFailMsg) ||
+      (!dmarc.ok && (dmarc.error || "DMARC check failed")) ||
+      (!sesIdentityOk && "SES domain identity not verified") ||
+      "DNS check failed";
+
     if (allOk) {
       await prisma.organization.update({
         where: { id: organizationId },
@@ -346,41 +528,33 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
         checks: {
           mx,
           spf,
-          dkim,
+          dkim: dkimCheck,
           dmarc,
         },
         sesSync,
+        sesIdentity: { ok: sesIdentityOk, status: idDetails.verificationStatus },
       });
     }
     await prisma.organization.update({
       where: { id: organizationId },
       data: {
         email_dns_last_check_at: now,
-        email_dns_last_error:
-          (!mx.ok && (mx.error || "MX check failed")) ||
-          (!spf.ok && (spf.error || "SPF check failed")) ||
-          (!dkim.ok && (dkim.error || "DKIM check failed")) ||
-          (!dmarc.ok && (dmarc.error || "DMARC check failed")) ||
-          "DNS check failed",
+        email_dns_last_error: buildError(),
       },
     });
     res.json({
       success: false,
-      error:
-        (!mx.ok && (mx.error || "MX check failed")) ||
-        (!spf.ok && (spf.error || "SPF check failed")) ||
-        (!dkim.ok && (dkim.error || "DKIM check failed")) ||
-        (!dmarc.ok && (dmarc.error || "DMARC check failed")) ||
-        "DNS check failed",
+      error: buildError(),
       expectedHost: mx.expectedHost,
       actualHosts: mx.actualHosts,
       checks: {
         mx,
         spf,
-        dkim,
+        dkim: dkimCheck,
         dmarc,
       },
       sesSync,
+      sesIdentity: { ok: sesIdentityOk, status: idDetails.verificationStatus },
     });
   } catch (error: unknown) {
     const reqWithId = req as Request & { requestId?: string };
@@ -425,7 +599,7 @@ router.post("/send", async (req: Request, res: Response) => {
         }
       }
     }
-    const sendResult = await sendOutboundWithFallback(organizationId, {
+    const sendResult = await sendOutboundViaSes(organizationId, {
       from, replyTo, to: toList, subject,
       text: text || "", html: html || undefined,
       attachments: attachments.length ? attachments : undefined,
@@ -444,8 +618,8 @@ router.post("/send", async (req: Request, res: Response) => {
         sent_at: new Date(),
         receivedAt: null,
         outbound_provider: sendResult.provider,
-        fallback_used: sendResult.fallbackUsed,
-        fallback_reason: sendResult.fallbackUsed ? sendResult.primaryError ?? null : null,
+        fallback_used: false,
+        fallback_reason: null,
         provider_message_id: sendResult.providerMessageId ?? null,
       },
     });
@@ -457,9 +631,7 @@ router.post("/send", async (req: Request, res: Response) => {
       emailId: emailRecord.id,
       organizationId,
       provider: sendResult.provider,
-      fallbackUsed: sendResult.fallbackUsed,
       providerMessageId: sendResult.providerMessageId,
-      primaryErrorCategory: sendResult.fallbackUsed ? "mail_app_delivery" : undefined,
     }, reqWithId.requestId);
     res.json({
       success: true,
@@ -467,7 +639,7 @@ router.post("/send", async (req: Request, res: Response) => {
         id: emailRecord.id,
         messageId: sendResult.messageId,
         provider: sendResult.provider,
-        fallbackUsed: sendResult.fallbackUsed,
+        fallbackUsed: false,
         providerMessageId: sendResult.providerMessageId,
       },
     });
@@ -685,7 +857,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
     const reSubject = (original.subject || "").toLowerCase().startsWith("re:") ? (original.subject || "") : `Re: ${original.subject || ""}`;
     const refs = [original.references, original.messageId].filter(Boolean).join(" ");
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
-    const sendResult = await sendOutboundWithFallback(original.organization_id, {
+    const sendResult = await sendOutboundViaSes(original.organization_id, {
       from, replyTo, to: [toAddr], subject: reSubject,
       text: text || "", html: html || undefined,
       inReplyTo: original.messageId || undefined, references: refs || undefined, messageId,
@@ -705,8 +877,8 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
         sent_at: new Date(),
         receivedAt: null,
         outbound_provider: sendResult.provider,
-        fallback_used: sendResult.fallbackUsed,
-        fallback_reason: sendResult.fallbackUsed ? sendResult.primaryError ?? null : null,
+        fallback_used: false,
+        fallback_reason: null,
         provider_message_id: sendResult.providerMessageId ?? null,
       },
     });
@@ -716,7 +888,6 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
       organizationId: original.organization_id,
       messageId: sendResult.messageId,
       provider: sendResult.provider,
-      fallbackUsed: sendResult.fallbackUsed,
       providerMessageId: sendResult.providerMessageId,
     }, reqWithId.requestId);
     res.json({
@@ -725,7 +896,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
         id: emailRecord.id,
         messageId: sendResult.messageId,
         provider: sendResult.provider,
-        fallbackUsed: sendResult.fallbackUsed,
+        fallbackUsed: false,
         providerMessageId: sendResult.providerMessageId,
       },
     });

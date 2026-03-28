@@ -1,4 +1,6 @@
 import {
+  CreateEmailIdentityCommand,
+  GetAccountCommand,
   GetEmailIdentityCommand,
   SESv2Client,
   SendEmailCommand,
@@ -12,7 +14,6 @@ const SES_RAW_MAX_BYTES = 9 * 1024 * 1024; // stay under SES ~10 MiB limit
 let sesClient: SESv2Client | null | undefined;
 
 export function isSesSendEnvironmentReady(): boolean {
-  if (process.env.EMAIL_SEND_FALLBACK_SES_ENABLED !== "true") return false;
   const region = (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim();
   return region.length > 0;
 }
@@ -29,33 +30,78 @@ function getSesClient(): SESv2Client | null {
   return sesClient;
 }
 
-/** True when SES domain identity is SUCCESS in AWS (for fallback eligibility). */
+export interface SesEmailIdentityDetails {
+  verificationStatus?: string;
+  dkimStatus?: string;
+  dkimTokens: string[];
+  signingEnabled?: boolean;
+  error?: string;
+}
+
+export async function fetchSesEmailIdentityDetails(domain: string): Promise<SesEmailIdentityDetails> {
+  const client = getSesClient();
+  const d = domain.toLowerCase().replace(/\.$/, "").trim();
+  if (!client) {
+    return { dkimTokens: [], error: "AWS region not configured" };
+  }
+  if (!d) return { dkimTokens: [], error: "Empty domain" };
+  try {
+    const out = await client.send(new GetEmailIdentityCommand({ EmailIdentity: d }));
+    const dkim = out.DkimAttributes;
+    const tokens = (dkim?.Tokens?.filter(Boolean) as string[] | undefined) ?? [];
+    return {
+      verificationStatus: out.VerificationStatus,
+      dkimStatus: dkim?.Status,
+      dkimTokens: tokens,
+      signingEnabled: dkim?.SigningEnabled,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { dkimTokens: [], error: msg };
+  }
+}
+
+export interface SesAccountSummary {
+  productionAccessEnabled?: boolean;
+  sendingEnabled?: boolean;
+  error?: string;
+}
+
+export async function fetchSesAccountSummary(): Promise<SesAccountSummary> {
+  const client = getSesClient();
+  if (!client) {
+    return { error: "AWS region not configured" };
+  }
+  try {
+    const out = await client.send(new GetAccountCommand({}));
+    return {
+      productionAccessEnabled: out.ProductionAccessEnabled,
+      sendingEnabled: out.SendingEnabled,
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** True when SES domain identity is SUCCESS in AWS (for DB sync and eligibility). */
 export async function fetchSesDomainVerificationStatus(domain: string): Promise<{
   ok: boolean;
   status?: string;
   error?: string;
 }> {
-  const client = getSesClient();
-  if (!client) {
-    return { ok: false, error: "AWS region not configured" };
+  const details = await fetchSesEmailIdentityDetails(domain);
+  if (details.error && !details.verificationStatus) {
+    return { ok: false, error: details.error };
   }
-  const d = domain.toLowerCase().replace(/\.$/, "").trim();
-  if (!d) return { ok: false, error: "Empty domain" };
-  try {
-    const out = await client.send(new GetEmailIdentityCommand({ EmailIdentity: d }));
-    const status = out.VerificationStatus;
-    if (status === "SUCCESS") {
-      return { ok: true, status };
-    }
-    return {
-      ok: false,
-      status,
-      error: status ? `SES identity status: ${status}` : "SES identity not found or not verified",
-    };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: msg };
+  const status = details.verificationStatus;
+  if (status === "SUCCESS") {
+    return { ok: true, status };
   }
+  return {
+    ok: false,
+    status,
+    error: status ? `SES identity status: ${status}` : "SES identity not found or not verified",
+  };
 }
 
 export async function syncOrganizationSesDomainInDb(organizationId: string): Promise<{
@@ -89,6 +135,52 @@ export async function syncOrganizationSesDomainInDb(organizationId: string): Pro
     },
   });
   return { ok: false, error: check.error, domain };
+}
+
+export async function createSesDomainIdentity(domain: string): Promise<{ ok: boolean; error?: string }> {
+  const client = getSesClient();
+  const d = domain.toLowerCase().replace(/\.$/, "").trim();
+  if (!client) {
+    return { ok: false, error: "AWS region not configured" };
+  }
+  if (!d) return { ok: false, error: "Empty domain" };
+  try {
+    await client.send(new CreateEmailIdentityCommand({ EmailIdentity: d }));
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/already exists/i.test(msg) || /AlreadyExists/i.test(msg)) {
+      return { ok: true };
+    }
+    return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Throws if the org cannot send: domain identity must be SUCCESS; if SES_FROM_STRICT=true, Easy DKIM must be SUCCESS.
+ */
+export async function assertOrgCanSendViaSes(organizationId: string): Promise<void> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { email_domain: { select: { domain: true } } },
+  });
+  const domain = org?.email_domain?.domain;
+  if (!domain) {
+    throw new Error("No email domain configured for this organization");
+  }
+  const id = await fetchSesEmailIdentityDetails(domain);
+  if (id.error && !id.verificationStatus) {
+    throw new Error(`SES: ${id.error}`);
+  }
+  if (id.verificationStatus !== "SUCCESS") {
+    throw new Error(
+      `Domain is not verified in Amazon SES (${id.verificationStatus ?? "unknown"}). Add DNS records and use Verify DNS or Register domain in SES.`
+    );
+  }
+  const strict = /^true$/i.test((process.env.SES_FROM_STRICT || "").trim());
+  if (strict && id.dkimStatus && id.dkimStatus !== "SUCCESS") {
+    throw new Error(`SES DKIM is not ready (${id.dkimStatus}). Publish the SES DKIM CNAME records and wait for propagation.`);
+  }
 }
 
 function encodeMimeHeaderValue(s: string): string {
@@ -212,7 +304,7 @@ export interface SesSendResult {
 export async function sendViaSes(payload: SendViaMailAppPayload): Promise<SesSendResult> {
   const client = getSesClient();
   if (!client) {
-    throw new Error("SES not configured (set AWS_REGION and enable EMAIL_SEND_FALLBACK_SES_ENABLED)");
+    throw new Error("SES not configured (set AWS_REGION or AWS_DEFAULT_REGION and credentials)");
   }
   const raw = buildRawMime(payload);
   const input: SendEmailCommandInput = {
@@ -222,10 +314,7 @@ export async function sendViaSes(payload: SendViaMailAppPayload): Promise<SesSen
     ...(process.env.SES_CONFIGURATION_SET?.trim()
       ? { ConfigurationSetName: process.env.SES_CONFIGURATION_SET.trim() }
       : {}),
-    EmailTags: [
-      { Name: "luminum_send", Value: "ses" },
-      { Name: "luminum_fallback", Value: "true" },
-    ],
+    EmailTags: [{ Name: "luminum_send", Value: "ses" }],
   };
 
   const out = await client.send(new SendEmailCommand(input));

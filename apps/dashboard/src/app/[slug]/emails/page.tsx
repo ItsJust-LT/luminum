@@ -102,12 +102,18 @@ export default function EmailsPage() {
   const [settingDomain, setSettingDomain] = useState(false)
   const [verifyingDns, setVerifyingDns] = useState(false)
   const [syncingSes, setSyncingSes] = useState(false)
+  const [registeringSes, setRegisteringSes] = useState(false)
   const [lastVerifyResult, setLastVerifyResult] = useState<{
     success: boolean
     error?: string
     message?: string
     sesSync?: { ok: boolean; error?: string }
-    checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
+    checks?: {
+      mx: { ok: boolean; error?: string }
+      spf: { ok: boolean; record?: string; error?: string }
+      dkim: { ok: boolean; selector?: string; error?: string }
+      dmarc: { ok: boolean; record?: string; error?: string }
+    }
   } | null>(null)
   const [composeOpen, setComposeOpen] = useState(false)
   /** Local part only; server appends @org domain */
@@ -127,7 +133,7 @@ export default function EmailsPage() {
 
   useEffect(() => {
     if (!organization?.id) return
-    api.emails.getSetupStatus(organization.id).then(setSetupStatus)
+    api.emails.getSetupStatus(organization.id).then((s) => setSetupStatus(s as EmailSetupStatus))
   }, [organization?.id])
 
   // When setup required and no domain, fetch websites so owner/admin can select one
@@ -414,11 +420,34 @@ export default function EmailsPage() {
         toast.error(res?.error || "SES sync failed.")
       }
       const next = await api.emails.getSetupStatus(organization.id)
-      setSetupStatus(next)
+      setSetupStatus(next as EmailSetupStatus)
     } catch {
       toast.error("SES sync failed.")
     } finally {
       setSyncingSes(false)
+    }
+  }
+
+  const handleSesRegisterDomain = async () => {
+    if (!organization?.id) return
+    setRegisteringSes(true)
+    try {
+      const res = (await api.emails.sesRegisterDomain(organization.id)) as {
+        success?: boolean
+        error?: string
+        message?: string
+      }
+      if (res?.success) {
+        toast.success(res?.message || "Domain registered in Amazon SES.")
+      } else {
+        toast.error(res?.error || "SES registration failed.")
+      }
+      const next = await api.emails.getSetupStatus(organization.id)
+      setSetupStatus(next as EmailSetupStatus)
+    } catch {
+      toast.error("SES registration failed.")
+    } finally {
+      setRegisteringSes(false)
     }
   }
 
@@ -455,7 +484,13 @@ export default function EmailsPage() {
           error?: string
           message?: string
           sesSync?: { ok: boolean; error?: string }
-          checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
+          sesIdentity?: { ok: boolean; status?: string }
+          checks?: {
+            mx: { ok: boolean; error?: string }
+            spf: { ok: boolean; record?: string; error?: string }
+            dkim: { ok: boolean; selector?: string; error?: string }
+            dmarc: { ok: boolean; record?: string; error?: string }
+          }
         }
         setLastVerifyResult({
           success: !!res?.success,
@@ -565,7 +600,9 @@ export default function EmailsPage() {
                         </div>
                       )}
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF — Sender policy (IPv4)</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          SPF — {setupStatus.dnsRecords.inboundMode === "self_hosted" ? "Sender policy (IPv4)" : "includes Amazon SES"}
+                        </p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: @ (or {setupStatus.dnsRecords.spf.name})</p>
                         {setupStatus.dnsRecords.spf.value ? (
                           <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.spf.value}</code>
@@ -574,38 +611,71 @@ export default function EmailsPage() {
                           <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.spf.valueNote}</p>
                         )}
                       </div>
-                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Signing (selector: {setupStatus.dnsRecords.dkim.selector})</p>
-                        <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dkim.name}</p>
-                        {setupStatus.dnsRecords.dkim.value && (
-                          <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dkim.value}</code>
-                        )}
-                        <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.dkim.valueNote}</p>
-                      </div>
+                      {setupStatus.dnsRecords.sesDkimCnames && setupStatus.dnsRecords.sesDkimCnames.length > 0 ? (
+                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Amazon SES (CNAME)</p>
+                          <p className="text-xs text-muted-foreground">Add each CNAME exactly as shown (SES Easy DKIM).</p>
+                          {setupStatus.dnsRecords.sesDkimCnames.map((row, i) => (
+                            <div key={i} className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Name: {row.name}</p>
+                              <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{row.value}</code>
+                            </div>
+                          ))}
+                        </div>
+                      ) : setupStatus.dnsRecords.dkim ? (
+                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Signing (selector: {setupStatus.dnsRecords.dkim.selector})</p>
+                          <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dkim.name}</p>
+                          {setupStatus.dnsRecords.dkim.value && (
+                            <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dkim.value}</code>
+                          )}
+                          <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.dkim.valueNote}</p>
+                        </div>
+                      ) : null}
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
                         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DMARC — Reporting &amp; policy</p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dmarc.name}</p>
                         <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dmarc.value}</code>
                       </div>
                     </div>
-                    {setupStatus.sesFallback?.enabled && (
+                    {setupStatus.sesAccount?.sandbox && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100 mt-4">
+                        Your AWS SES account appears to be in <strong>sandbox</strong> mode: you can only send to verified addresses until production access is enabled in AWS.
+                      </div>
+                    )}
+                    {setupStatus.ses?.configured && (
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 mt-4">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amazon SES — Send fallback</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amazon SES</p>
                         <p className="text-xs text-muted-foreground">
-                          If direct delivery from the mail server fails, we can retry via SES. In the AWS SES console, add and verify the domain <strong>{setupStatus.domain}</strong>, publish the DKIM CNAME records SES shows, and add Amazon SES to your SPF (see AWS SES documentation for your region). Then click Verify DNS or Sync SES.
+                          Outbound mail sends through SES. Use <strong>Register in SES</strong> to create the domain identity (if needed), publish the DNS records above, then <strong>Verify DNS</strong> or <strong>Sync SES</strong>.
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={setupStatus.sesFallback.domainVerified ? "default" : "secondary"}>
-                            {setupStatus.sesFallback.domainVerified ? "SES domain verified" : "SES domain not verified"}
+                          <Badge variant={setupStatus.ses.domainVerified ? "default" : "secondary"}>
+                            {setupStatus.ses.domainVerified ? "SES domain verified" : "SES domain not verified"}
                           </Badge>
-                          {setupStatus.sesFallback.lastError && (
-                            <span className="text-xs text-destructive">{setupStatus.sesFallback.lastError}</span>
+                          {setupStatus.ses.lastError && (
+                            <span className="text-xs text-destructive">{setupStatus.ses.lastError}</span>
                           )}
                         </div>
-                        <Button type="button" variant="outline" size="sm" className="rounded-lg" disabled={syncingSes} onClick={handleSyncSes}>
-                          {syncingSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                          Sync SES status
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          {canSetDomain ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="rounded-lg"
+                              disabled={registeringSes}
+                              onClick={handleSesRegisterDomain}
+                            >
+                              {registeringSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                              Register in SES
+                            </Button>
+                          ) : null}
+                          <Button type="button" variant="outline" size="sm" className="rounded-lg" disabled={syncingSes} onClick={handleSyncSes}>
+                            {syncingSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Sync SES status
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -637,17 +707,17 @@ export default function EmailsPage() {
                       </div>
                       <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dkim.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
                         {lastVerifyResult.checks.dkim.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                        <span className="text-sm">DKIM — {lastVerifyResult.checks.dkim.ok ? "OK" : lastVerifyResult.checks.dkim.error || "Failed"}</span>
+                        <span className="text-sm">DKIM — {lastVerifyResult.checks.dkim.ok ? "OK" : (lastVerifyResult.checks.dkim as { error?: string }).error || "Failed"}</span>
                       </div>
                       <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dmarc.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
                         {lastVerifyResult.checks.dmarc.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
                         <span className="text-sm">DMARC — {lastVerifyResult.checks.dmarc.ok ? "OK" : lastVerifyResult.checks.dmarc.error || "Failed"}</span>
                       </div>
-                      {lastVerifyResult.sesSync && setupStatus?.sesFallback?.enabled && (
+                      {lastVerifyResult.sesSync && setupStatus?.ses?.configured && (
                         <div className={cn("flex items-start gap-2 rounded-md px-3 py-2 sm:col-span-2", lastVerifyResult.sesSync.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-amber-500/10 text-amber-900 dark:text-amber-200")}>
                           {lastVerifyResult.sesSync.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
                           <span className="text-sm">
-                            Amazon SES domain — {lastVerifyResult.sesSync.ok ? "verified (fallback enabled)" : lastVerifyResult.sesSync.error || "Not verified — complete SES setup in AWS console"}
+                            Amazon SES domain — {lastVerifyResult.sesSync.ok ? "verified" : lastVerifyResult.sesSync.error || "Not verified — complete SES DNS or Register in SES"}
                           </span>
                         </div>
                       )}
@@ -655,7 +725,7 @@ export default function EmailsPage() {
                   </div>
                 )}
                 <p className="text-sm text-muted-foreground mt-2">
-                  After you’ve added the records at your DNS provider, click Verify DNS. We check MX, SPF, DKIM, and DMARC. If all pass, the inbox will appear.
+                  After you’ve added the records at your DNS provider, click Verify DNS. We check MX, SPF, DKIM (SES CNAMEs or mail-server TXT), DMARC, and SES domain verification. If all pass, the inbox will appear.
                 </p>
               </>
             )}
@@ -696,7 +766,7 @@ export default function EmailsPage() {
             <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
             Refresh
           </Button>
-          {setupStatus?.sesFallback?.enabled && (
+          {setupStatus?.ses?.configured && (
             <Button variant="outline" size="sm" className="shrink-0" disabled={syncingSes} onClick={handleSyncSes} title="Refresh Amazon SES domain verification status">
               {syncingSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Sync SES

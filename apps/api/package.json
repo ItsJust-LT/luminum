@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.939.0",
+    "@aws-sdk/client-ses": "^3.1019.0",
     "@aws-sdk/client-sesv2": "^3.1017.0",
     "@aws-sdk/s3-request-presigner": "^3.939.0",
     "@better-auth-kit/app-invite": "^0.1.2",
@@ -23,6 +24,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "lighthouse": "^13.0.3",
+    "mailparser": "^3.9.6",
     "marked": "^17.0.4",
     "pg": "^8.16.3",
     "puppeteer": "^24.40.0",

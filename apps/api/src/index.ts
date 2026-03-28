@@ -22,6 +22,7 @@ import { supportRouter } from "./routes/support.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { notificationPreferencesRouter } from "./routes/notification-preferences.js";
 import { webhookEmailsRouter } from "./routes/webhook-emails.js";
+import { webhookSesLambdaRouter } from "./routes/webhook-ses-lambda.js";
 import { webhookNotificationsRouter } from "./routes/webhook-notifications.js";
 import { imagesRouter } from "./routes/images.js";
 import { uploadsRouter } from "./routes/uploads.js";
@@ -52,6 +53,7 @@ import { websiteAuditsRouter } from "./routes/website-audits.js";
 import { domainLookupRouter } from "./routes/domain-lookup.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
 import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
+import { startEmailDnsPeriodicScheduler } from "./lib/start-email-dns-scheduler.js";
 
 const app = express();
 
@@ -78,7 +80,8 @@ app.use(
     verify: (req, _res, buf) => {
       const r = req as express.Request & { rawBody?: string };
       if (r.method !== "POST") return;
-      if (!r.originalUrl?.startsWith("/api/webhook/emails")) return;
+      const url = r.originalUrl || "";
+      if (!url.startsWith("/api/webhook/emails") && !url.startsWith("/api/webhook/ses-lambda-inbound")) return;
       r.rawBody = buf.toString("utf8");
     },
   })
@@ -118,6 +121,7 @@ app.use("/api/cron", cronRouter);
 
 // ─── Webhooks & public endpoints (no auth) ──────────────────────────────────
 app.use("/api/webhook/emails", webhookEmailsRouter);
+app.use("/api/webhook/ses-lambda-inbound", webhookSesLambdaRouter);
 app.use("/api/notifications", webhookNotificationsRouter);
 app.use("/api/images", imagesRouter);
 app.use("/api/analytics", analyticsWebhookRouter);
@@ -193,6 +197,8 @@ httpServer.listen(config.port, () => {
     env: config.nodeEnv,
     appUrl: config.appUrl,
   });
+
+  startEmailDnsPeriodicScheduler();
 
   // Initialize WhatsApp manager after server is listening (fan-out so multi-instance WS receive WA events)
   const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);
