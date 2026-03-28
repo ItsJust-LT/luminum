@@ -38,7 +38,7 @@ const MAX_ORG_CLIENTS = parseInt(process.env.WHATSAPP_MAX_ORG_CLIENTS || "50", 1
 const QR_MAX_RETRIES = parseInt(process.env.WHATSAPP_QR_MAX_RETRIES || "5", 10);
 const TAKEOVER_ON_CONFLICT = process.env.WHATSAPP_TAKEOVER_ON_CONFLICT === "true";
 const AUTH_TIMEOUT_MS = parseInt(process.env.WHATSAPP_AUTH_TIMEOUT_MS || "120000", 10);
-const PUPPETEER_PROTOCOL_TIMEOUT_MS = parseInt(process.env.WHATSAPP_PROTOCOL_TIMEOUT_MS || "300000", 10);
+const PUPPETEER_PROTOCOL_TIMEOUT_MS = parseInt(process.env.WHATSAPP_PROTOCOL_TIMEOUT_MS || "600000", 10);
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const LEASE_TTL_MS = 90_000;
 const ALWAYS_ON_RECOVERY_COOLDOWN_MS = Math.max(
@@ -51,6 +51,15 @@ const WAIT_READY_MS = Math.max(15_000, parseInt(process.env.WHATSAPP_WAIT_READY_
 const WAIT_READY_ALWAYS_ON_MS = Math.max(WAIT_READY_MS, parseInt(process.env.WHATSAPP_ALWAYS_ON_WAIT_READY_MS || "240000", 10));
 const READY_POLL_MS = Math.max(200, parseInt(process.env.WHATSAPP_READY_POLL_MS || "400", 10));
 const ALWAYS_ON_RECONNECT_DELAY_MS = Math.max(2000, parseInt(process.env.WHATSAPP_ALWAYS_ON_RECONNECT_MS || "5000", 10));
+const ALWAYS_ON_MAX_BACKOFF_MS = Math.max(
+  ALWAYS_ON_RECONNECT_DELAY_MS,
+  parseInt(process.env.WHATSAPP_ALWAYS_ON_MAX_BACKOFF_MS || "1800000", 10)
+);
+/** Do not spam admin incident log with identical INIT_EXHAUSTED rows every reconnect cycle. */
+const INIT_EXHAUSTED_LOG_COOLDOWN_MS = Math.max(
+  60_000,
+  parseInt(process.env.WHATSAPP_INIT_EXHAUSTED_LOG_COOLDOWN_MS || "600000", 10)
+);
 const MAX_INLINE_MEDIA_BYTES = Math.max(256_000, parseInt(process.env.WHATSAPP_MAX_INLINE_MEDIA_BYTES || "1500000", 10));
 
 function formatUnknownError(err: unknown): { message: string; details?: string } {
@@ -73,6 +82,50 @@ function formatUnknownError(err: unknown): { message: string; details?: string }
     } catch { return { message: util.inspect(err, { depth: 4, maxArrayLength: 20, showHidden: true }) }; }
   }
   return { message: String(err) };
+}
+
+function isBrowserAlreadyRunningError(err: unknown): boolean {
+  const msg = formatUnknownError(err).message.toLowerCase();
+  return msg.includes("browser is already running for") || msg.includes("used by another process");
+}
+
+async function cleanupChromiumLockFiles(userDataDir: string): Promise<void> {
+  for (const name of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+    try {
+      await fs.rm(path.join(userDataDir, name), { force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function isExecutionContextDestroyedError(err: unknown): boolean {
+  const msg = formatUnknownError(err).message;
+  return (
+    /execution context was destroyed|target closed|session closed|browser has disconnected/i.test(msg) ||
+    /runtime\.callfunctionon timed out|protocol error \(runtime\.callfunctionon\)/i.test(msg)
+  );
+}
+
+function isIndexedDbCorruptionError(err: unknown): boolean {
+  const msg = formatUnknownError(err).message.toLowerCase();
+  return (
+    msg.includes("indexeddb") ||
+    msg.includes("leveldb") ||
+    (msg.includes("enoent") && msg.includes("remoteauth"))
+  );
+}
+
+/** Removes local Chromium profile under RemoteAuth (PostgreSQL session still restores via RemoteAuth). */
+async function cleanupRemoteAuthLocalBrowserProfile(userDataDir: string): Promise<void> {
+  await cleanupChromiumLockFiles(userDataDir);
+  for (const sub of ["Default", "Crashpad", "GPUCache", "Code Cache"]) {
+    try {
+      await fs.rm(path.join(userDataDir, sub), { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 async function safeUpdateAccountById(accountId: string, data: Record<string, unknown>): Promise<boolean> {
@@ -119,11 +172,30 @@ let prisma: PrismaClient;
 let broadcastToOrg: BroadcastFn;
 let broadcastToAdmins: BroadcastToAdminsFn = () => {};
 const clients = new Map<string, ManagedClient>();
+/** One in-flight start per org — avoids stacked Puppeteer launches from drift + always-on + manual reconnect. */
+const startClientInflight = new Map<string, Promise<ManagedClient | null>>();
+/** Exponential backoff generation for always-on reconnects (reset on successful `ready`). */
+const alwaysOnReconnectGeneration = new Map<string, number>();
+const lastInitExhaustedIncidentAt = new Map<string, number>();
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 const lastAlwaysOnRecoveryAttempt = new Map<string, number>();
 const lastDriftEventLogged = new Map<string, number>();
 const DRIFT_LOG_COOLDOWN_MS = 5 * 60 * 1000;
 let alwaysOnRecoveryRunning = false;
+
+function bumpAlwaysOnBackoff(organizationId: string): number {
+  const gen = (alwaysOnReconnectGeneration.get(organizationId) ?? 0) + 1;
+  alwaysOnReconnectGeneration.set(organizationId, gen);
+  return Math.min(
+    ALWAYS_ON_RECONNECT_DELAY_MS * Math.pow(2, Math.min(gen - 1, 10)),
+    ALWAYS_ON_MAX_BACKOFF_MS
+  );
+}
+
+function resetAlwaysOnBackoff(organizationId: string): void {
+  alwaysOnReconnectGeneration.delete(organizationId);
+  lastInitExhaustedIncidentAt.delete(organizationId);
+}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -190,6 +262,7 @@ export async function getAccountStatus(organizationId: string) {
 }
 
 export async function startOrRestartClient(organizationId: string) {
+  resetAlwaysOnBackoff(organizationId);
   if (clients.has(organizationId)) {
     await destroyClient(organizationId, {
       reasonCode: "CLIENT_RESTART",
@@ -673,12 +746,18 @@ export function getManagedClientIfReady(organizationId: string): ManagedClient |
 
 function scheduleAlwaysOnReconnect(organizationId: string, reason: string) {
   lastAlwaysOnRecoveryAttempt.set(organizationId, 0);
-  logger.info("WhatsApp always-on: scheduling reconnect", { orgId: organizationId, reason, delayMs: ALWAYS_ON_RECONNECT_DELAY_MS });
+  const delayMs = bumpAlwaysOnBackoff(organizationId);
+  logger.info("WhatsApp always-on: scheduling reconnect", { orgId: organizationId, reason, delayMs });
+  void prisma.whatsapp_account
+    .findUnique({ where: { organization_id: organizationId }, select: { id: true } })
+    .then((acc) => {
+      if (acc) void safeUpdateAccountById(acc.id, { next_retry_at: new Date(Date.now() + delayMs) });
+    });
   setTimeout(() => {
     void startClientForAccount(organizationId).catch((err) =>
       logger.logError(err, "Always-on reconnect after event failed", { orgId: organizationId })
     );
-  }, ALWAYS_ON_RECONNECT_DELAY_MS);
+  }, delayMs);
 }
 
 /**
@@ -791,7 +870,15 @@ export async function getReadyClient(organizationId: string, context = "api"): P
   throw new WhatsAppNotReadyError("NOT_READY_TIMEOUT", `WhatsApp client not ready: ${detail}`, detail, context);
 }
 
-async function startClientForAccount(organizationId: string): Promise<ManagedClient | null> {
+export async function startClientForAccount(organizationId: string): Promise<ManagedClient | null> {
+  const inflight = startClientInflight.get(organizationId);
+  if (inflight) return inflight;
+  const p = startClientForAccountImpl(organizationId).finally(() => startClientInflight.delete(organizationId));
+  startClientInflight.set(organizationId, p);
+  return p;
+}
+
+async function startClientForAccountImpl(organizationId: string): Promise<ManagedClient | null> {
   const account = await prisma.whatsapp_account.findUnique({
     where: { organization_id: organizationId },
     include: { organization: { select: { whatsapp_enabled: true } } },
@@ -820,6 +907,7 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
   await fs.mkdir(authDataPath, { recursive: true }).catch(() => {});
 
   const store = new PgRemoteAuthStore(prisma);
+  const userDataDir = path.join(authDataPath, `RemoteAuth-${account.id}`);
   const puppeteerExecutablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROMIUM_PATH || "/usr/bin/chromium";
   const minimal = process.env.WHATSAPP_PUPPETEER_MINIMAL === "true";
   const puppeteerArgs = [
@@ -874,7 +962,20 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
       const formatted = formatUnknownError(err);
       const displayMessage = formatted.message.trim() && formatted.message !== "{}" ? formatted.message : "Initialization failed. Try reconnecting or check server logs.";
       logger.logError(err, "WhatsApp client initialization failed", { orgId: organizationId, accountId: account.id, attempt, maxAttempts: INIT_RETRY_MAX });
-      await safeUpdateAccountById(account.id, { status: "ERROR", last_error: displayMessage, retry_count: attempt, next_retry_at: attempt < INIT_RETRY_MAX ? new Date(Date.now() + INIT_RETRY_BASE_MS * attempt) : null, owner_instance_id: null, lease_expires_at: null });
+      if (isBrowserAlreadyRunningError(err)) {
+        await cleanupChromiumLockFiles(userDataDir);
+      } else if (isExecutionContextDestroyedError(err) || isIndexedDbCorruptionError(err)) {
+        await cleanupRemoteAuthLocalBrowserProfile(userDataDir);
+      }
+      await safeUpdateAccountById(account.id, {
+        status: attempt < INIT_RETRY_MAX ? "CONNECTING" : "ERROR",
+        last_error: displayMessage,
+        retry_count: attempt,
+        next_retry_at: attempt < INIT_RETRY_MAX ? new Date(Date.now() + INIT_RETRY_BASE_MS * attempt) : null,
+        owner_instance_id: attempt < INIT_RETRY_MAX ? INSTANCE_ID : null,
+        owner_heartbeat_at: attempt < INIT_RETRY_MAX ? new Date() : null,
+        lease_expires_at: attempt < INIT_RETRY_MAX ? new Date(Date.now() + LEASE_TTL_MS) : null,
+      });
       try { await client.destroy(); } catch { }
       if (attempt < INIT_RETRY_MAX) {
         const delayMs = Math.min(INIT_RETRY_BASE_MS * attempt, 60_000);
@@ -888,18 +989,46 @@ async function startClientForAccount(organizationId: string): Promise<ManagedCli
   if (lastErr) {
     const formatted = formatUnknownError(lastErr);
     const displayMessage = formatted.message.trim() && formatted.message !== "{}" ? formatted.message : "Initialization failed after retries. Wait a few minutes and try again.";
-    await safeUpdateAccountById(account.id, { status: "ERROR", last_error: displayMessage, owner_instance_id: null, lease_expires_at: null });
     const alwaysOn = await prisma.organization.findUnique({ where: { id: organizationId }, select: { whatsapp_always_on: true } });
-    await recordWhatsAppClientEvent({
-      organizationId,
-      accountId: account.id,
-      reasonCode: "INIT_EXHAUSTED",
-      detail: `WhatsApp Web failed to initialize after ${INIT_RETRY_MAX} attempt(s). Last error: ${displayMessage}`,
-      instanceId: INSTANCE_ID,
-      alwaysOn: !!alwaysOn?.whatsapp_always_on,
-      metadata: { attempts: INIT_RETRY_MAX },
+    const reconnectDelayMs = alwaysOn?.whatsapp_always_on ? bumpAlwaysOnBackoff(organizationId) : ALWAYS_ON_RECONNECT_DELAY_MS;
+    await safeUpdateAccountById(account.id, {
+      status: "ERROR",
+      last_error: displayMessage,
+      owner_instance_id: null,
+      lease_expires_at: null,
+      next_retry_at: alwaysOn?.whatsapp_always_on ? new Date(Date.now() + reconnectDelayMs) : null,
     });
-    if (alwaysOn?.whatsapp_always_on) scheduleAlwaysOnReconnect(organizationId, "INIT_EXHAUSTED");
+    const nowMs = Date.now();
+    const lastIncident = lastInitExhaustedIncidentAt.get(organizationId) ?? 0;
+    if (nowMs - lastIncident >= INIT_EXHAUSTED_LOG_COOLDOWN_MS) {
+      lastInitExhaustedIncidentAt.set(organizationId, nowMs);
+      await recordWhatsAppClientEvent({
+        organizationId,
+        accountId: account.id,
+        reasonCode: "INIT_EXHAUSTED",
+        detail: `WhatsApp Web failed to initialize after ${INIT_RETRY_MAX} attempt(s). Last error: ${displayMessage}`,
+        instanceId: INSTANCE_ID,
+        alwaysOn: !!alwaysOn?.whatsapp_always_on,
+        metadata: { attempts: INIT_RETRY_MAX, nextReconnectInMs: alwaysOn?.whatsapp_always_on ? reconnectDelayMs : null },
+      });
+    } else {
+      logger.warn("WhatsApp INIT_EXHAUSTED incident log suppressed (cooldown)", {
+        orgId: organizationId,
+        cooldownMs: INIT_EXHAUSTED_LOG_COOLDOWN_MS,
+      });
+    }
+    if (alwaysOn?.whatsapp_always_on) {
+      lastAlwaysOnRecoveryAttempt.set(organizationId, 0);
+      logger.info("WhatsApp always-on: scheduling reconnect after INIT_EXHAUSTED", {
+        orgId: organizationId,
+        delayMs: reconnectDelayMs,
+      });
+      setTimeout(() => {
+        void startClientForAccount(organizationId).catch((err) =>
+          logger.logError(err, "Always-on reconnect after INIT_EXHAUSTED failed", { orgId: organizationId })
+        );
+      }, reconnectDelayMs);
+    }
   }
   return null;
 }
@@ -928,6 +1057,7 @@ function attachEventHandlers(managed: ManagedClient) {
   client.on("ready", async () => {
     managed.ready = true;
     managed.qrRetries = 0;
+    resetAlwaysOnBackoff(orgId);
     const info = client.info;
     const phoneNumber = info?.wid?.user || "";
     await prisma.whatsapp_account.update({
@@ -1114,6 +1244,12 @@ async function safeGetProfilePictureUrl(managed: ManagedClient, jid: string): Pr
     /* no picture / unavailable */
   }
   return null;
+}
+
+export async function getProfilePictureUrlFromReadyClient(organizationId: string, jid: string): Promise<string | null> {
+  const managed = getManagedClientIfReady(organizationId);
+  if (!managed) return null;
+  return safeGetProfilePictureUrl(managed, jid);
 }
 
 async function attachInlineMediaIfSmall(
@@ -1492,6 +1628,7 @@ async function recoverAlwaysOnClients() {
       }
 
       if (acc.status === "QR_PENDING") continue;
+      if (acc.status === "CONNECTING" && acc.lease_expires_at && acc.lease_expires_at.getTime() > nowMs) continue;
 
       if (acc.status === "CONNECTED" && isLeaseHeldByOtherLiveInstance(acc)) continue;
 
