@@ -96,6 +96,10 @@ export default function EmailDetailPage() {
           htmlBody: emailData.html || null,
           read: true,
           createdAt: emailData.createdAt,
+          direction: emailData.direction || "inbound",
+          outbound_provider: emailData.outbound_provider ?? null,
+          fallback_used: !!emailData.fallback_used,
+          provider_message_id: emailData.provider_message_id ?? null,
           attachments: (emailData.attachments || []).map((att: any) => ({
             filename: att.filename,
             size: att.size,

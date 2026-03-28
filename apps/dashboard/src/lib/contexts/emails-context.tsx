@@ -16,6 +16,10 @@ export interface EmailListItem {
   createdAt: Date
   attachments: any[]
   inlineImages: any[]
+  direction?: string
+  outbound_provider?: string | null
+  fallback_used?: boolean
+  provider_message_id?: string | null
 }
 
 interface EmailsContextValue {

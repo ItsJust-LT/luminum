@@ -12,7 +12,8 @@ import {
   getDkimRecordName,
   getExpectedDmarcRecord,
 } from "../lib/email-dns.js";
-import { getOrgReplyAddress, sendViaMailApp } from "../lib/email-send.js";
+import { getOrgReplyAddress, sendOutboundWithFallback } from "../lib/email-send.js";
+import { syncOrganizationSesDomainInDb } from "../lib/email-ses.js";
 import { logger } from "../lib/logger.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
 
@@ -130,6 +131,8 @@ router.get("/setup-status", async (req: Request, res: Response) => {
         email_dns_last_check_at: true,
         email_dns_last_error: true,
         email_from_address: true,
+        email_ses_verified_at: true,
+        email_ses_last_error: true,
         email_domain: { select: { domain: true } },
       },
     });
@@ -212,8 +215,14 @@ router.get("/setup-status", async (req: Request, res: Response) => {
             ? `Point the A record for the mail host (${expectedMxHost}) to ${mailSendIp}. If you use Cloudflare, use DNS only (grey cloud), not proxied, so SMTP reaches your server.`
             : "Set MAIL_SEND_IP in the API environment to the server’s public IPv4 so we can show the exact A record and SPF line.",
           "Your host must allow inbound TCP 25 to the mail container for receiving mail.",
-        ]
+          process.env.EMAIL_SEND_FALLBACK_SES_ENABLED === "true"
+            ? "For SES fallback: add this domain as a verified identity in Amazon SES (same domain as below), publish SES DKIM CNAMEs, and include Amazon SES in SPF. Click Verify DNS to sync SES status."
+            : "",
+        ].filter(Boolean)
       : undefined;
+
+    const sesFallbackEnabled = process.env.EMAIL_SEND_FALLBACK_SES_ENABLED === "true";
+    const sesDomainReady = !!org.email_ses_verified_at;
 
     res.json({
       success: true,
@@ -226,6 +235,14 @@ router.get("/setup-status", async (req: Request, res: Response) => {
       emailFromAddress: org.email_from_address ?? undefined,
       dnsRecords,
       setupNotes,
+      sesFallback: sesFallbackEnabled
+        ? {
+            enabled: true,
+            domainVerified: sesDomainReady,
+            verifiedAt: org.email_ses_verified_at?.toISOString(),
+            lastError: org.email_ses_last_error ?? undefined,
+          }
+        : { enabled: false, domainVerified: false },
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -261,6 +278,31 @@ router.post("/setup-domain", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/emails/sync-ses — refresh Amazon SES domain verification status for the org (no DNS checks).
+router.post("/sync-ses", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    if (process.env.EMAIL_SEND_FALLBACK_SES_ENABLED !== "true") {
+      return res.status(400).json({ success: false, error: "SES fallback is not enabled on this server" });
+    }
+    const { organizationId } = req.body as { organizationId?: string };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const sync = await syncOrganizationSesDomainInDb(organizationId);
+    if (sync.ok) {
+      return res.json({ success: true, message: "SES domain identity verified", domain: sync.domain });
+    }
+    return res.json({
+      success: false,
+      error: sync.error || "SES domain not verified",
+      domain: sync.domain,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "SES sync failed";
+    res.status(400).json({ success: false, error: msg });
+  }
+});
+
 // POST /api/emails/verify-dns — check MX for org's email domain and update verified flag if ok.
 router.post("/verify-dns", async (req: Request, res: Response) => {
   try {
@@ -282,6 +324,15 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
     ]);
     const now = new Date();
     const allOk = mx.ok && spf.ok && dkim.ok && dmarc.ok;
+    let sesSync: { ok: boolean; error?: string } | undefined;
+    if (process.env.EMAIL_SEND_FALLBACK_SES_ENABLED === "true") {
+      try {
+        const s = await syncOrganizationSesDomainInDb(organizationId);
+        sesSync = { ok: s.ok, error: s.error };
+      } catch (e) {
+        sesSync = { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    }
     if (allOk) {
       await prisma.organization.update({
         where: { id: organizationId },
@@ -298,6 +349,7 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
           dkim,
           dmarc,
         },
+        sesSync,
       });
     }
     await prisma.organization.update({
@@ -328,6 +380,7 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
         dkim,
         dmarc,
       },
+      sesSync,
     });
   } catch (error: unknown) {
     const reqWithId = req as Request & { requestId?: string };
@@ -372,7 +425,7 @@ router.post("/send", async (req: Request, res: Response) => {
         }
       }
     }
-    const { messageId: sentMessageId } = await sendViaMailApp({
+    const sendResult = await sendOutboundWithFallback(organizationId, {
       from, replyTo, to: toList, subject,
       text: text || "", html: html || undefined,
       attachments: attachments.length ? attachments : undefined,
@@ -387,14 +440,37 @@ router.post("/send", async (req: Request, res: Response) => {
         text: text || null,
         html: html || null,
         direction: "outbound",
-        messageId: sentMessageId,
+        messageId: sendResult.messageId,
         sent_at: new Date(),
         receivedAt: null,
+        outbound_provider: sendResult.provider,
+        fallback_used: sendResult.fallbackUsed,
+        fallback_reason: sendResult.fallbackUsed ? sendResult.primaryError ?? null : null,
+        provider_message_id: sendResult.providerMessageId ?? null,
       },
     });
     const reqWithId = req as Request & { requestId?: string };
-    logger.info("Email sent (outbound)", { to: toList, subject, messageId: sentMessageId, emailId: emailRecord.id, organizationId }, reqWithId.requestId);
-    res.json({ success: true, data: { id: emailRecord.id, messageId: sentMessageId } });
+    logger.info("Email sent (outbound)", {
+      to: toList,
+      subject,
+      messageId: sendResult.messageId,
+      emailId: emailRecord.id,
+      organizationId,
+      provider: sendResult.provider,
+      fallbackUsed: sendResult.fallbackUsed,
+      providerMessageId: sendResult.providerMessageId,
+      primaryErrorCategory: sendResult.fallbackUsed ? "mail_app_delivery" : undefined,
+    }, reqWithId.requestId);
+    res.json({
+      success: true,
+      data: {
+        id: emailRecord.id,
+        messageId: sendResult.messageId,
+        provider: sendResult.provider,
+        fallbackUsed: sendResult.fallbackUsed,
+        providerMessageId: sendResult.providerMessageId,
+      },
+    });
   } catch (error: unknown) {
     const reqWithId = req as Request & { requestId?: string };
     logger.logError(error, "Emails send failed", { organizationId: (req.body as any)?.organizationId }, reqWithId.requestId);
@@ -468,6 +544,9 @@ router.get("/", async (req: Request, res: Response) => {
         subject: e.subject || "", date: e.receivedAt || e.createdAt,
         textBody: e.text || null, htmlBody: e.html || null, read: e.read, createdAt: e.createdAt,
         direction: (e as any).direction ?? "inbound",
+        outbound_provider: (e as any).outbound_provider ?? null,
+        fallback_used: !!(e as any).fallback_used,
+        provider_message_id: (e as any).provider_message_id ?? null,
         in_reply_to: (e as any).in_reply_to ?? undefined,
         attachments: e.attachments.map((a: any) => {
           const base = config.apiUrl.replace(/\/$/, "");
@@ -605,7 +684,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
     const reSubject = (original.subject || "").toLowerCase().startsWith("re:") ? (original.subject || "") : `Re: ${original.subject || ""}`;
     const refs = [original.references, original.messageId].filter(Boolean).join(" ");
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
-    const { messageId: sentMessageId } = await sendViaMailApp({
+    const sendResult = await sendOutboundWithFallback(original.organization_id, {
       from, replyTo, to: [toAddr], subject: reSubject,
       text: text || "", html: html || undefined,
       inReplyTo: original.messageId || undefined, references: refs || undefined, messageId,
@@ -619,15 +698,40 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
         text: text || null,
         html: html || null,
         direction: "outbound",
-        messageId: sentMessageId,
+        messageId: sendResult.messageId,
         in_reply_to: original.messageId || undefined,
         references: refs || undefined,
         sent_at: new Date(),
         receivedAt: null,
+        outbound_provider: sendResult.provider,
+        fallback_used: sendResult.fallbackUsed,
+        fallback_reason: sendResult.fallbackUsed ? sendResult.primaryError ?? null : null,
+        provider_message_id: sendResult.providerMessageId ?? null,
       },
     });
-    res.json({ success: true, data: { id: emailRecord.id, messageId: sentMessageId } });
+    const reqWithId = req as Request & { requestId?: string };
+    logger.info("Email sent (reply)", {
+      emailId: emailRecord.id,
+      organizationId: original.organization_id,
+      messageId: sendResult.messageId,
+      provider: sendResult.provider,
+      fallbackUsed: sendResult.fallbackUsed,
+      providerMessageId: sendResult.providerMessageId,
+    }, reqWithId.requestId);
+    res.json({
+      success: true,
+      data: {
+        id: emailRecord.id,
+        messageId: sendResult.messageId,
+        provider: sendResult.provider,
+        fallbackUsed: sendResult.fallbackUsed,
+        providerMessageId: sendResult.providerMessageId,
+      },
+    });
   } catch (error: any) {
+    const reqWithId = req as Request & { requestId?: string };
+    const replyEmailId = pathParam(req, "id");
+    logger.logError(error, "Emails reply failed", { emailId: replyEmailId }, reqWithId.requestId);
     res.status(400).json({ success: false, error: error.message });
   }
 });

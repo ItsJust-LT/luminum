@@ -23,4 +23,11 @@ export interface EmailSetupStatus {
   /** Operator guidance (MX conflicts, Cloudflare grey cloud, port 25) */
   setupNotes?: string[]
   steps?: { title: string; description: string }[]
+  /** Amazon SES fallback (when enabled on API) */
+  sesFallback?: {
+    enabled: boolean
+    domainVerified: boolean
+    verifiedAt?: string
+    lastError?: string
+  }
 }

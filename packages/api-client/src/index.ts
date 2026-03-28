@@ -77,6 +77,8 @@ function createApiClient(baseUrl: string = "") {
       post("/api/emails/setup-domain", { organizationId, websiteId }),
     verifyDns: (organizationId: string) =>
       post("/api/emails/verify-dns", { organizationId }),
+    syncSes: (organizationId: string) =>
+      post("/api/emails/sync-ses", { organizationId }),
     getAddresses: (organizationId: string) =>
       get("/api/emails/addresses", { organizationId }),
     list: (

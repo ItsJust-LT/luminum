@@ -18,6 +18,7 @@ import {
   setContactBlocked,
   clearSessionData,
   getManagedClientIfReady,
+  getProfilePictureUrlFromReadyClient,
   forwardMessage,
   starMessage,
   deleteMessage,
@@ -268,18 +269,7 @@ router.get("/profile-photo", async (req: Request, res: Response) => {
     const managed = getManagedClientIfReady(organizationId);
     if (!managed) return res.status(404).end();
 
-    let waUrl: string | null = null;
-    try {
-      const raw = await (managed.client as any).getProfilePicUrl?.(jid);
-      waUrl = typeof raw === "string" && raw.trim() ? raw.trim() : null;
-    } catch (err) {
-      logger.warn("WhatsApp profile photo lookup failed", {
-        organizationId,
-        jid,
-        error: String(err),
-      });
-      return res.status(404).end();
-    }
+    const waUrl = await getProfilePictureUrlFromReadyClient(organizationId, jid);
     if (!waUrl) return res.status(404).end();
 
     const imgRes = await fetch(waUrl, {

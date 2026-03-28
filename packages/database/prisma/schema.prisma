@@ -175,6 +175,11 @@ model email {
   in_reply_to     String?      @db.Text
   references      String?      @db.Text
   sent_at         DateTime?    @db.Timestamptz(6)
+  /// mail_app | ses — which path delivered outbound mail
+  outbound_provider String?    @db.VarChar(20)
+  fallback_used   Boolean      @default(false)
+  fallback_reason String?      @db.Text
+  provider_message_id String?  @db.VarChar(500) // e.g. Amazon SES MessageId
   attachments     attachment[]
   createdAt       DateTime     @default(now())
   organization    organization? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -185,6 +190,7 @@ model email {
   @@index([from])
   @@index([read])
   @@index([direction])
+  @@index([outbound_provider])
   @@map("email")
 }
 
@@ -234,6 +240,9 @@ model organization {
   email_dns_verified_at                                             DateTime?                 @db.Timestamptz(6)
   email_dns_last_check_at                                           DateTime?                 @db.Timestamptz(6)
   email_dns_last_error                                              String?                   @db.Text
+  /// Set when SES reports the org email domain identity as verified (enables SES fallback)
+  email_ses_verified_at                                             DateTime?                 @db.Timestamptz(6)
+  email_ses_last_error                                              String?                   @db.Text
   email_from_address                                                String?                   @db.VarChar(255)
   whatsapp_enabled                                                  Boolean                   @default(false)
   whatsapp_always_on                                                Boolean                   @default(false)

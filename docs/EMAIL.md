@@ -5,16 +5,16 @@
 - **Inbox and list:** Dashboard → **`/[slug]/emails`** (e.g. `/my-org/emails`). This page lists inbound and outbound emails for the organization and shows email setup (domain, MX, verify).
 - **Send API:** The API exposes **`POST /api/emails/send`** (see `apps/api/src/routes/emails.ts`). It expects `organizationId`, `to`, `subject`, and `text` or `html`. **There is currently no compose or reply UI in the dashboard** — the Reply/Forward buttons on the email detail page are disabled. To send from the app you would need to add a compose form or reply flow that calls this API.
 
-## How email works in this repo (self-hosted)
+## How email works in this repo (self-hosted + optional SES)
 
 ### Outbound (sending)
 
-1. A client (future UI or another service) calls **`POST /api/emails/send`**.
-2. The API resolves the org’s reply address, then calls **`sendViaMailApp()`** in `apps/api/src/lib/email-send.ts`.
-3. **`sendViaMailApp()`** does an **HTTP POST to `MAIL_APP_URL/send`** (with optional `MAIL_APP_SECRET`). In production, **`MAIL_APP_URL`** points to the in-repo mail service (e.g. `http://mail:8025`).
-4. The **apps/mail** Go service receives the request, resolves the recipient’s MX, and delivers the message via SMTP to the recipient’s mail server.
+1. A client (dashboard compose or another service) calls **`POST /api/emails/send`** (or reply via **`POST /api/emails/:id/reply`**).
+2. The API resolves the org’s From / Reply-To (`getOrgReplyAddress` in `apps/api/src/lib/email-send.ts`), then calls **`sendOutboundWithFallback()`**.
+3. **Primary path:** **`sendViaMailApp()`** POSTs JSON to **`MAIL_APP_URL/send`** (optional `MAIL_APP_SECRET`). The **apps/mail** Go service delivers to the recipient’s MX over SMTP.
+4. **Fallback (optional):** If **`EMAIL_SEND_FALLBACK_SES_ENABLED=true`**, AWS region is set, and the organization’s email domain is marked verified for SES in the database (`email_ses_verified_at`), a failed primary send that looks like a delivery/infrastructure issue is retried once through **Amazon SES** (`sendViaSes` in `apps/api/src/lib/email-ses.ts`). Outbound rows store **`outbound_provider`** (`mail_app` | `ses`), **`fallback_used`**, **`fallback_reason`**, and **`provider_message_id`** (SES MessageId when applicable).
 
-So: **sending is handled by the in-repo mail app** at `MAIL_APP_URL` (no external mail provider required).
+So: **inbound stays on your mail server; outbound defaults to the in-repo mail app, with optional SES retry.**
 
 ### Inbound (receiving)
 
@@ -47,16 +47,25 @@ Example:
   **Content:** `v=spf1 ip4:YOUR_SERVER_IP -all`  
   DNS verification requires that exact `ip4:` when `MAIL_SEND_IP` is configured.
 
+If you use **SES fallback**, also **authorize Amazon SES** in the same SPF record for your region/account (see [Amazon SES SPF](https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-spf.html)) so messages that go out via SES pass SPF.
+
 ### DMARC (policy)
 
 - Add a **TXT** record at **`_dmarc.yourdomain`**. Setup suggests **`p=quarantine`** (with aggregate reports to `rua`). Verification accepts **`p=quarantine`** or **`p=reject`**; **`p=none`** does not pass verification.
 
 ### DKIM (required for best deliverability)
 
-- DKIM signs outgoing mail with a private key; the recipient checks the public key in DNS. To enable it:
-  - Generate a DKIM key pair and store the private key where **apps/mail** can read it (e.g. env or file).
-  - Add a **TXT** record for the chosen selector (e.g. **default._domainkey**) with the public key.  
-  Implementation of DKIM signing in the Go app can be added in a follow-up; this section documents the DNS side.
+- **Mail server path:** DKIM signs outgoing mail with a private key on **apps/mail**; the recipient checks the public key in DNS (selector TXT under `_domainkey`).
+- **SES path:** When SES sends mail, use the **DKIM CNAME records** from the SES console for that domain identity (different from the mail app’s selector).
+
+### Amazon SES (fallback sending only)
+
+- In **AWS SES**, create a **domain identity** for the same domain as the org’s email domain (the website domain linked in setup).
+- Complete **domain verification** (TXT) and **Easy DKIM** CNAMEs in DNS.
+- Set **`EMAIL_SEND_FALLBACK_SES_ENABLED=true`**, **`AWS_REGION`**, and AWS credentials (or an IAM role on the host).
+- Use **Verify DNS** in the dashboard (or **`POST /api/emails/sync-ses`**) so the API calls **`GetEmailIdentity`** and sets **`email_ses_verified_at`** when SES reports `SUCCESS`.
+
+DNS you **do not** need *only* for SES (inbound is unchanged): SES does not replace your **MX** for receiving; keep MX pointing at your mail host for the dashboard inbox.
 
 ## Why didn’t my email arrive?
 
@@ -79,7 +88,12 @@ Set these in the **API** process (e.g. `apps/api/.env` or your deployment env).
 
 | Variable | Required? | Purpose | Where to get it |
 |----------|-----------|--------|------------------|
-| `MAIL_APP_URL` | **Yes** (for sending) | Base URL of the mail service the API calls for outbound mail. | Your mail service URL. In Docker: `http://mail:8025`. Locally: `http://localhost:8025`. |
+| `MAIL_APP_URL` | **Yes** (for primary sending) | Base URL of the mail service the API calls first for outbound mail. | Your mail service URL. In Docker: `http://mail:8025`. Locally: `http://localhost:8025`. |
+| `EMAIL_SEND_FALLBACK_SES_ENABLED` | Optional | If `true`, retry failed primary sends via Amazon SES when the org domain is SES-verified. | `true` / unset |
+| `AWS_REGION` | With SES fallback | Region for SES API (`@aws-sdk/client-sesv2`). | e.g. `us-east-1` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | With SES (unless using IAM role) | Credentials for `ses:SendEmail`. | IAM user or role with SES send permission |
+| `EMAIL_SEND_SES_ORG_IDS` | Optional | Comma-separated organization IDs allowed to use SES fallback; empty = any org with `email_ses_verified_at`. | UUIDs |
+| `SES_CONFIGURATION_SET` | Optional | SES configuration set name on send. | From SES console |
 | `WEBHOOK_SECRET` | **Yes** (for inbound) | Shared secret to verify `x-webhook-signature` on `POST /api/webhook/emails`. | Generate a random string (e.g. `openssl rand -hex 32`). **Must be the same value** in both API and mail service. |
 | `MAIL_APP_SECRET` | Optional | If set, sent as `X-Mail-Secret` and `Authorization: Bearer` when the API calls the mail app’s `/send`. | Generate a random string. Set the same in the mail service if you add auth there. |
 | `MAIL_FROM_DEFAULT` | Optional | Default From header when the org doesn’t override (e.g. `Luminum <noreply@luminum.agency>`). | Your chosen default sender; domain is also used for DNS hints if MX/DKIM vars are unset. |

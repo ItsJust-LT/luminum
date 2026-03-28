@@ -101,10 +101,12 @@ export default function EmailsPage() {
   const [websites, setWebsites] = useState<{ id: string; domain: string; name?: string }[]>([])
   const [settingDomain, setSettingDomain] = useState(false)
   const [verifyingDns, setVerifyingDns] = useState(false)
+  const [syncingSes, setSyncingSes] = useState(false)
   const [lastVerifyResult, setLastVerifyResult] = useState<{
     success: boolean
     error?: string
     message?: string
+    sesSync?: { ok: boolean; error?: string }
     checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
   } | null>(null)
   const [composeOpen, setComposeOpen] = useState(false)
@@ -401,6 +403,25 @@ export default function EmailsPage() {
     }
   }
 
+  const handleSyncSes = async () => {
+    if (!organization?.id) return
+    setSyncingSes(true)
+    try {
+      const res = (await api.emails.syncSes(organization.id)) as { success?: boolean; error?: string; message?: string }
+      if (res?.success) {
+        toast.success(res?.message || "Amazon SES domain verified.")
+      } else {
+        toast.error(res?.error || "SES sync failed.")
+      }
+      const next = await api.emails.getSetupStatus(organization.id)
+      setSetupStatus(next)
+    } catch {
+      toast.error("SES sync failed.")
+    } finally {
+      setSyncingSes(false)
+    }
+  }
+
   if (showSetupRequired) {
     const hasDomain = !!setupStatus?.domain
     const canSetDomain = userRole === "owner" || userRole === "admin"
@@ -433,14 +454,20 @@ export default function EmailsPage() {
           success?: boolean
           error?: string
           message?: string
+          sesSync?: { ok: boolean; error?: string }
           checks?: { mx: { ok: boolean; error?: string }; spf: { ok: boolean; record?: string; error?: string }; dkim: { ok: boolean; selector: string; error?: string }; dmarc: { ok: boolean; record?: string; error?: string } }
         }
         setLastVerifyResult({
           success: !!res?.success,
           error: res?.error,
           message: res?.message,
+          sesSync: res?.sesSync,
           checks: res?.checks,
         })
+        if (res?.sesSync) {
+          if (res.sesSync.ok) toast.success("Amazon SES domain identity verified.")
+          else if (res.sesSync.error) toast.info("Amazon SES", { description: res.sesSync.error })
+        }
         if (res?.success) {
           toast.success(res?.message || "DNS verified. You can send and receive email.")
           const next = await api.emails.getSetupStatus(organization.id)
@@ -561,6 +588,26 @@ export default function EmailsPage() {
                         <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dmarc.value}</code>
                       </div>
                     </div>
+                    {setupStatus.sesFallback?.enabled && (
+                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 mt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amazon SES — Send fallback</p>
+                        <p className="text-xs text-muted-foreground">
+                          If direct delivery from the mail server fails, we can retry via SES. In the AWS SES console, add and verify the domain <strong>{setupStatus.domain}</strong>, publish the DKIM CNAME records SES shows, and add Amazon SES to your SPF (see AWS SES documentation for your region). Then click Verify DNS or Sync SES.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={setupStatus.sesFallback.domainVerified ? "default" : "secondary"}>
+                            {setupStatus.sesFallback.domainVerified ? "SES domain verified" : "SES domain not verified"}
+                          </Badge>
+                          {setupStatus.sesFallback.lastError && (
+                            <span className="text-xs text-destructive">{setupStatus.sesFallback.lastError}</span>
+                          )}
+                        </div>
+                        <Button type="button" variant="outline" size="sm" className="rounded-lg" disabled={syncingSes} onClick={handleSyncSes}>
+                          {syncingSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                          Sync SES status
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
                 {!setupStatus?.dnsRecords && setupStatus?.expectedMxHost && (
@@ -596,6 +643,14 @@ export default function EmailsPage() {
                         {lastVerifyResult.checks.dmarc.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
                         <span className="text-sm">DMARC — {lastVerifyResult.checks.dmarc.ok ? "OK" : lastVerifyResult.checks.dmarc.error || "Failed"}</span>
                       </div>
+                      {lastVerifyResult.sesSync && setupStatus?.sesFallback?.enabled && (
+                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2 sm:col-span-2", lastVerifyResult.sesSync.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-amber-500/10 text-amber-900 dark:text-amber-200")}>
+                          {lastVerifyResult.sesSync.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                          <span className="text-sm">
+                            Amazon SES domain — {lastVerifyResult.sesSync.ok ? "verified (fallback enabled)" : lastVerifyResult.sesSync.error || "Not verified — complete SES setup in AWS console"}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -641,6 +696,12 @@ export default function EmailsPage() {
             <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
             Refresh
           </Button>
+          {setupStatus?.sesFallback?.enabled && (
+            <Button variant="outline" size="sm" className="shrink-0" disabled={syncingSes} onClick={handleSyncSes} title="Refresh Amazon SES domain verification status">
+              {syncingSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Sync SES
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -875,9 +936,21 @@ export default function EmailsPage() {
                         {smartDate(email.date)}
                       </span>
                     </div>
-                    <p className={cn("text-sm truncate mb-0.5", !email.read ? "font-medium text-foreground" : "text-muted-foreground")}>
-                      {email.subject || "(No subject)"}
-                    </p>
+                    <div className="flex items-center gap-2 mb-0.5 min-w-0">
+                      <p className={cn("text-sm truncate flex-1 min-w-0", !email.read ? "font-medium text-foreground" : "text-muted-foreground")}>
+                        {email.subject || "(No subject)"}
+                      </p>
+                      {email.direction === "outbound" && email.outbound_provider === "ses" && (
+                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
+                          {email.fallback_used ? "SES fallback" : "SES"}
+                        </Badge>
+                      )}
+                      {email.direction === "outbound" && email.outbound_provider === "mail_app" && !email.fallback_used && (
+                        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5 hidden sm:inline-flex">
+                          Mail server
+                        </Badge>
+                      )}
+                    </div>
                     {extractPreview(email) && (
                       <p className="text-xs text-muted-foreground line-clamp-1">{extractPreview(email)}</p>
                     )}

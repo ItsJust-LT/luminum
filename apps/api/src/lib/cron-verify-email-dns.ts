@@ -74,6 +74,15 @@ export async function runEmailDnsVerification(): Promise<EmailDnsVerificationRes
         },
       });
     }
+
+    if (process.env.EMAIL_SEND_FALLBACK_SES_ENABLED === "true") {
+      try {
+        const { syncOrganizationSesDomainInDb } = await import("./email-ses.js");
+        await syncOrganizationSesDomainInDb(org.id);
+      } catch {
+        /* ignore SES sync errors in cron */
+      }
+    }
   }
 
   return result;
