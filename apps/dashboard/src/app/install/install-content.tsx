@@ -127,9 +127,11 @@ const itemVariants = {
 interface InstallContentProps {
   orgName?: string
   orgLogo?: string
+  /** Same-origin absolute URL from server (avoids wrong favicon / install art). */
+  brandIconSrc?: string
 }
 
-export default function InstallContent({ orgName, orgLogo }: InstallContentProps) {
+export default function InstallContent({ orgName, orgLogo, brandIconSrc }: InstallContentProps) {
   const router = useRouter()
   const { isStandalone, isReady } = useDisplayMode()
 
@@ -141,10 +143,12 @@ export default function InstallContent({ orgName, orgLogo }: InstallContentProps
   const appName = orgName || 'Luminum'
   const installIconSrc = orgLogo?.trim()
     ? orgLogo.trim()
-    : orgName
-      ? orgBrandIconProxyUrl(orgName)
-      : '/images/logo.png'
-  const installIconUnopt = !!(orgLogo?.trim() || orgName)
+    : brandIconSrc
+      ? brandIconSrc
+      : orgName
+        ? orgBrandIconProxyUrl(orgName)
+        : '/images/logo.png'
+  const installIconUnopt = true
   const [platform, setPlatform] = useState<Platform>('ios')
   const [detected, setDetected] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
@@ -201,7 +205,7 @@ export default function InstallContent({ orgName, orgLogo }: InstallContentProps
             <Image src={installIconSrc} alt={appName} width={36} height={36} className="h-9 w-9 object-contain" unoptimized={installIconUnopt} />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight mb-2">
-            Install {appName}
+            {appName}
           </h1>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-xs">
             Add {appName} to your home screen for instant access, notifications, and the best experience.

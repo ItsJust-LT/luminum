@@ -14,6 +14,9 @@ const PUBLIC_PATHS = [
   "/accept-invitation",
   "/accept-org-invitation",
   "/accept-owner-invitation",
+  /** Must be reachable without a session or PWA install uses the wrong name/icons. */
+  "/manifest.json",
+  "/sw.js",
 ]
 
 /** API path prefixes that do not require auth (webhooks, auth). */
