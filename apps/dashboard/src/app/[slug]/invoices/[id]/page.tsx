@@ -26,6 +26,7 @@ import {
   AlertCircle, Building2, User, Calendar, Receipt, ExternalLink,
   ArrowRightLeft, FileCheck,
 } from "lucide-react";
+import { InvoicePdfPreview } from "./invoice-pdf-preview";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className?: string; icon: typeof Receipt }> = {
   draft: { label: "Draft", variant: "secondary", icon: FileText },
@@ -259,19 +260,11 @@ export default function InvoiceViewPage() {
                 </div>
                 <div className="bg-muted/30 rounded-xl p-4 sm:p-6 lg:p-8">
                   <div className="mx-auto shadow-2xl rounded-lg overflow-hidden bg-white" style={{ maxWidth: 794 }}>
-                    <object
-                      data={`${api.invoices.getPdfUrl(invoiceId)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-                      type="application/pdf"
-                      className="w-full"
-                      style={{ height: "calc(100vh - 180px)", minHeight: 600 }}
-                    >
-                      <iframe
-                        src={`${api.invoices.getPdfUrl(invoiceId)}#toolbar=0&navpanes=0&scrollbar=0`}
-                        className="w-full border-0"
-                        style={{ height: "calc(100vh - 180px)", minHeight: 600 }}
-                        title={`${docLabel} PDF`}
-                      />
-                    </object>
+                    <InvoicePdfPreview
+                      invoiceId={invoiceId}
+                      docLabel={docLabel}
+                      pdfVersion={invoice.pdf_generated_at ?? invoice.pdf_storage_key ?? undefined}
+                    />
                   </div>
                 </div>
               </div>
