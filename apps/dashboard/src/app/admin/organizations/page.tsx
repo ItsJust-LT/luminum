@@ -58,6 +58,7 @@ import {
   Loader2,
   ShieldCheck,
   Info,
+  SlidersHorizontal,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-organization-creator-dialog"
@@ -512,6 +513,11 @@ export default function AdminOrganizationsPage() {
                           )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem asChild>
+                            <Link href={`/admin/settings/organization?slug=${encodeURIComponent(org.slug)}`}>
+                              <SlidersHorizontal className="h-4 w-4 mr-2" /> Admin organization settings
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
                             <Link href={`/${org.slug}/dashboard`}>
                               <ExternalLink className="h-4 w-4 mr-2" /> View Dashboard
                             </Link>
@@ -528,7 +534,7 @@ export default function AdminOrganizationsPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
                             <Link href={`/${org.slug}/settings`}>
-                              <Eye className="h-4 w-4 mr-2" /> Settings
+                              <Eye className="h-4 w-4 mr-2" /> Client workspace settings
                             </Link>
                           </DropdownMenuItem>
                         </DropdownMenuContent>

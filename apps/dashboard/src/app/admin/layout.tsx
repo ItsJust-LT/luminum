@@ -45,6 +45,7 @@ import {
   FileText as LogsIcon,
   Database,
   Terminal,
+  SlidersHorizontal,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import NotificationBell from "@/components/NotificationBell"
@@ -115,6 +116,7 @@ export default function AdminLayout({
   const mobileNavItems = [
     { title: "Overview", icon: LayoutDashboard, href: "/admin" },
     { title: "Organizations", icon: Building2, href: "/admin/organizations" },
+    { title: "Organization settings", icon: SlidersHorizontal, href: "/admin/settings/organization" },
     { title: "Users", icon: Users, href: "/admin/users" },
     { title: "Platform Analytics", icon: TrendingUp, href: "/admin/analytics" },
     { title: "Forms", icon: FileText, href: "/admin/forms" },
@@ -253,6 +255,10 @@ export default function AdminLayout({
                   <DropdownMenuItem onClick={() => router.push("/admin/settings")} className="gap-2">
                     <Shield className="h-4 w-4" />
                     Platform settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push("/admin/settings/organization")} className="gap-2">
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Organization settings
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push("/account/settings")} className="gap-2">
                     <Settings className="h-4 w-4" />
