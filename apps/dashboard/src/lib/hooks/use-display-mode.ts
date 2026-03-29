@@ -20,6 +20,8 @@ function getStandalone(): boolean {
   if (typeof window === 'undefined') return false
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    window.matchMedia('(display-mode: minimal-ui)').matches ||
     (navigator as unknown as { standalone?: boolean }).standalone === true
   )
 }
@@ -45,15 +47,19 @@ export function useDisplayMode(): DisplayMode {
       isReady: true,
     })
 
-    const mq = window.matchMedia('(display-mode: standalone)')
+    const mqs = [
+      window.matchMedia('(display-mode: standalone)'),
+      window.matchMedia('(display-mode: fullscreen)'),
+      window.matchMedia('(display-mode: minimal-ui)'),
+    ]
     const listener = () => {
       setState((prev) => ({
         ...prev,
         isStandalone: getStandalone(),
       }))
     }
-    mq.addEventListener('change', listener)
-    return () => mq.removeEventListener('change', listener)
+    mqs.forEach((mq) => mq.addEventListener('change', listener))
+    return () => mqs.forEach((mq) => mq.removeEventListener('change', listener))
   }, [])
 
   return state

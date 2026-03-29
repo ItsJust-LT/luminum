@@ -51,6 +51,8 @@ import { useDisplayMode } from "@/lib/hooks/use-display-mode"
 import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
 import { cn } from "@/lib/utils"
 import { CustomDomainCtx, type CustomDomainContext } from "@/lib/hooks/use-custom-domain"
+import { orgNavPath } from "@/lib/org-nav-path"
+import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
 
 interface Organization {
   id: string
@@ -110,6 +112,8 @@ export default function SlugLayout({
     ? !["localhost", "127.0.0.1", new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").hostname].includes(window.location.hostname)
     : false
 
+  const flatRoutes = isCustomDomain
+
   const customDomainCtx: CustomDomainContext = {
     isCustomDomain,
     orgSlug: isCustomDomain ? slug : null,
@@ -117,7 +121,9 @@ export default function SlugLayout({
     orgLogo: isCustomDomain ? (state.organization?.logo ?? null) : null,
     orgId: isCustomDomain ? (state.organization?.id ?? null) : null,
   }
-  const isWhatsappRoute = pathname?.includes(`/${slug}/whatsapp`)
+  const whatsappNavPath = orgNavPath(slug, flatRoutes, "whatsapp")
+  const isWhatsappRoute =
+    pathname === whatsappNavPath || (pathname?.startsWith(`${whatsappNavPath}/`) ?? false)
 
   useEffect(() => {
     if (!isPending && session) {
@@ -382,7 +388,12 @@ export default function SlugLayout({
           <div className="p-4 border-b border-border/50">
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8 ring-2 ring-primary/20">
-                <AvatarImage src={state.organization?.logo || ""} />
+                <AvatarImage
+                  src={
+                    state.organization?.logo?.trim() ||
+                    orgBrandIconProxyUrl(state.organization?.name || "Organization")
+                  }
+                />
                 <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
                   {state.organization?.name.charAt(0).toUpperCase()}
                 </AvatarFallback>
@@ -408,17 +419,27 @@ export default function SlugLayout({
                     {
                       title: "Dashboard",
                       icon: LayoutDashboard,
-                      href: `/${slug}/dashboard`,
+                      href: orgNavPath(slug, flatRoutes, "dashboard"),
                     },
-                    ...((state.organization as any)?.analytics_enabled ? [{ title: "Analytics", icon: Globe, href: `/${slug}/analytics` }] : []),
-                    { title: "Site Audits", icon: Gauge, href: `/${slug}/audits` },
-                    { title: "Forms", icon: FileText, href: `/${slug}/forms` },
-                    ...((state.organization as any)?.blogs_enabled ? [{ title: "Blog", icon: BookOpen, href: `/${slug}/blogs` }] : []),
-                    ...((state.organization as any)?.emails_enabled ? [{ title: "Emails", icon: Mail, href: `/${slug}/emails` }] : []),
-                    ...((state.organization as any)?.whatsapp_enabled ? [{ title: "WhatsApp", icon: MessageCircle, href: `/${slug}/whatsapp` }] : []),
-                    ...((state.organization as any)?.invoices_enabled ? [{ title: "Invoices", icon: Receipt, href: `/${slug}/invoices` }] : []),
-                    { title: "Team", icon: Users, href: `/${slug}/team` },
-                    { title: "Settings", icon: Settings, href: `/${slug}/settings` },
+                    ...((state.organization as any)?.analytics_enabled
+                      ? [{ title: "Analytics", icon: Globe, href: orgNavPath(slug, flatRoutes, "analytics") }]
+                      : []),
+                    { title: "Site Audits", icon: Gauge, href: orgNavPath(slug, flatRoutes, "audits") },
+                    { title: "Forms", icon: FileText, href: orgNavPath(slug, flatRoutes, "forms") },
+                    ...((state.organization as any)?.blogs_enabled
+                      ? [{ title: "Blog", icon: BookOpen, href: orgNavPath(slug, flatRoutes, "blogs") }]
+                      : []),
+                    ...((state.organization as any)?.emails_enabled
+                      ? [{ title: "Emails", icon: Mail, href: orgNavPath(slug, flatRoutes, "emails") }]
+                      : []),
+                    ...((state.organization as any)?.whatsapp_enabled
+                      ? [{ title: "WhatsApp", icon: MessageCircle, href: orgNavPath(slug, flatRoutes, "whatsapp") }]
+                      : []),
+                    ...((state.organization as any)?.invoices_enabled
+                      ? [{ title: "Invoices", icon: Receipt, href: orgNavPath(slug, flatRoutes, "invoices") }]
+                      : []),
+                    { title: "Team", icon: Users, href: orgNavPath(slug, flatRoutes, "team") },
+                    { title: "Settings", icon: Settings, href: orgNavPath(slug, flatRoutes, "settings") },
                   ].map((item) => (
                     <Button
                       key={item.href}
@@ -445,10 +466,10 @@ export default function SlugLayout({
                     {
                       title: "Billing",
                       icon: CreditCard,
-                      href: `/${slug}/billing`,
+                      href: orgNavPath(slug, flatRoutes, "billing"),
                     },
-                    { title: "Reports", icon: FileText, href: `/${slug}/reports` },
-                    { title: "Support", icon: HelpCircle, href: `/${slug}/support` },
+                    { title: "Reports", icon: FileText, href: orgNavPath(slug, flatRoutes, "reports") },
+                    { title: "Support", icon: HelpCircle, href: orgNavPath(slug, flatRoutes, "support") },
                   ].map((item) => (
                     <Button
                       key={item.href}
@@ -530,8 +551,12 @@ export default function SlugLayout({
           <EmailsProvider>
             <AppShellLayout
               slug={slug}
+              flatRoutes={flatRoutes}
               organizationName={state.organization.name}
-              organizationLogo={state.organization.logo}
+              organizationLogo={
+                state.organization.logo?.trim() ||
+                orgBrandIconProxyUrl(state.organization.name)
+              }
               emailsEnabled={state.organization.emails_enabled ?? false}
               userRole={state.userRole ?? "member"}
               sessionUser={{
@@ -566,6 +591,8 @@ export default function SlugLayout({
           {/* Desktop Sidebar */}
           <div className="hidden md:block">
             <OrganizationSidebarWrapper
+              workspaceSlug={slug}
+              flatRoutes={flatRoutes}
               organization={{
                 id: state.organization.id,
                 name: state.organization.name,
@@ -602,12 +629,16 @@ export default function SlugLayout({
               <div className="flex items-center gap-3 min-w-0">
                 <div className="p-2 bg-gradient-to-br from-primary/15 to-primary/5 rounded-xl flex-shrink-0 ring-1 ring-primary/10">
                   <Image
-                    src={isCustomDomain && state.organization?.logo ? state.organization.logo : "/images/logo.png"}
+                    src={
+                      isCustomDomain && state.organization
+                        ? state.organization.logo?.trim() || orgBrandIconProxyUrl(state.organization.name)
+                        : "/images/logo.png"
+                    }
                     alt={isCustomDomain && state.organization?.name ? state.organization.name : "Luminum"}
                     width={20}
                     height={20}
                     className="h-4 w-4 md:h-5 md:w-5 object-contain"
-                    unoptimized={isCustomDomain && !!state.organization?.logo}
+                    unoptimized={isCustomDomain && !!state.organization}
                   />
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -672,7 +703,12 @@ export default function SlugLayout({
                     <div className="md:hidden">
                       <DropdownMenuItem className="flex items-center gap-2">
                         <Avatar className="h-4 w-4">
-                          <AvatarImage src={state.organization?.logo || ""} />
+                          <AvatarImage
+                            src={
+                              state.organization?.logo?.trim() ||
+                              orgBrandIconProxyUrl(state.organization?.name || "Organization")
+                            }
+                          />
                           <AvatarFallback className="text-xs">
                             {state.organization?.name.charAt(0).toUpperCase()}
                           </AvatarFallback>
@@ -693,7 +729,7 @@ export default function SlugLayout({
                     </div>
 
                     <DropdownMenuItem
-                      onClick={() => router.push(`/${slug}/settings`)}
+                      onClick={() => router.push(orgNavPath(slug, flatRoutes, "settings"))}
                       className="flex items-center gap-2"
                     >
                       <Settings className="mr-2 h-4 w-4" />

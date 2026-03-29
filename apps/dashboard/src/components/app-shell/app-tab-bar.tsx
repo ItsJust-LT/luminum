@@ -5,24 +5,37 @@ import { usePathname } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { LayoutDashboard, Mail, FileText, HelpCircle, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { orgNavPath } from '@/lib/org-nav-path'
 
-const tabs: { id: string; label: string; href: (slug: string) => string; icon: typeof LayoutDashboard; emailsOnly?: boolean }[] = [
-  { id: 'dashboard', label: 'Home', href: (s) => `/${s}/dashboard`, icon: LayoutDashboard },
-  { id: 'emails', label: 'Inbox', href: (s) => `/${s}/emails`, icon: Mail, emailsOnly: true },
-  { id: 'forms', label: 'Forms', href: (s) => `/${s}/forms`, icon: FileText },
-  { id: 'support', label: 'Support', href: (s) => `/${s}/support`, icon: HelpCircle },
-  { id: 'more', label: 'More', href: (s) => `/${s}/settings`, icon: MoreHorizontal },
+const tabs: {
+  id: string
+  label: string
+  section: string
+  icon: typeof LayoutDashboard
+  emailsOnly?: boolean
+}[] = [
+  { id: 'dashboard', label: 'Home', section: 'dashboard', icon: LayoutDashboard },
+  { id: 'emails', label: 'Inbox', section: 'emails', icon: Mail, emailsOnly: true },
+  { id: 'forms', label: 'Forms', section: 'forms', icon: FileText },
+  { id: 'support', label: 'Support', section: 'support', icon: HelpCircle },
+  { id: 'more', label: 'More', section: 'settings', icon: MoreHorizontal },
 ]
 
 interface AppTabBarProps {
   slug: string
+  flatRoutes: boolean
   emailsEnabled?: boolean
 }
 
-export function AppTabBar({ slug, emailsEnabled = false }: AppTabBarProps) {
+export function AppTabBar({ slug, flatRoutes, emailsEnabled = false }: AppTabBarProps) {
   const pathname = usePathname()
+  const hrefFor = (section: string) => orgNavPath(slug, flatRoutes, section)
 
   const visibleTabs = tabs.filter((t) => !t.emailsOnly || emailsEnabled)
+
+  const settingsPath = hrefFor('settings')
+  const teamPath = hrefFor('team')
+  const billingPath = hrefFor('billing')
 
   return (
     <nav
@@ -30,11 +43,18 @@ export function AppTabBar({ slug, emailsEnabled = false }: AppTabBarProps) {
       role="tablist"
     >
       {visibleTabs.map((tab) => {
-        const href = tab.href(slug)
+        const href = hrefFor(tab.section)
         const isActive =
           tab.id === 'more'
-            ? pathname === `/${slug}/settings` || pathname === `/${slug}/team` || pathname === `/${slug}/billing`
-            : pathname === href || (tab.id === 'emails' && pathname?.startsWith(`/${slug}/emails`)) || (tab.id === 'forms' && pathname?.startsWith(`/${slug}/forms`))
+            ? pathname === settingsPath ||
+              pathname === teamPath ||
+              pathname === billingPath ||
+              pathname?.startsWith(`${settingsPath}/`) ||
+              pathname?.startsWith(`${teamPath}/`) ||
+              pathname?.startsWith(`${billingPath}/`)
+            : pathname === href ||
+              (tab.id === 'emails' && (pathname?.startsWith(`${href}/`) ?? false)) ||
+              (tab.id === 'forms' && (pathname?.startsWith(`${href}/`) ?? false))
 
         return (
           <Link

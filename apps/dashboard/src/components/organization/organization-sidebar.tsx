@@ -14,19 +14,12 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
-import Image from "next/image"
-import { usePathname, useRouter } from "next/navigation"
+import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
+import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
-import { api } from "@/lib/api"
+import { orgNavPath } from "@/lib/org-nav-path"
+import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
 
 interface Organization {
   id: string
@@ -39,17 +32,9 @@ interface Organization {
   invoices_enabled?: boolean
 }
 
-interface Website {
-  id: string
-  name: string
-  domain: string
-  organization_id: string
-  analytics: boolean
-  created_at: string
-  updated_at: string
-}
-
 export function OrganizationSidebar({
+  workspaceSlug,
+  flatRoutes,
   organization,
   initialUnseenFormsCount = 0,
   initialUnreadEmailsCount = 0,
@@ -61,6 +46,9 @@ export function OrganizationSidebar({
   initialInvoicesEnabled = false,
   isLoading: externalIsLoading = false,
 }: {
+  workspaceSlug: string
+  /** Custom-domain dashboard: URLs are /dashboard, /settings, … */
+  flatRoutes: boolean
   organization: Organization
   sessionUser?: { name?: string | null; image?: string | null }
   onSignOut?: () => Promise<void> | void
@@ -74,8 +62,10 @@ export function OrganizationSidebar({
   initialInvoicesEnabled?: boolean
   isLoading?: boolean
 }) {
-  const router = useRouter()
   const pathname = usePathname()
+  const nav = (section: string) => orgNavPath(workspaceSlug, flatRoutes, section)
+  const orgBrandSrc =
+    organization.logo?.trim() || orgBrandIconProxyUrl(organization.name)
   const [unseenFormsCount, setUnseenFormsCount] = useState(initialUnseenFormsCount)
   const [unreadEmailsCount, setUnreadEmailsCount] = useState(initialUnreadEmailsCount)
   const [unreadWhatsappCount, setUnreadWhatsappCount] = useState(initialUnreadWhatsappCount)
@@ -99,42 +89,38 @@ export function OrganizationSidebar({
     setIsLoading(externalIsLoading)
   }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, initialAnalyticsEnabled, initialBlogsEnabled, initialInvoicesEnabled, externalIsLoading])
 
-  // Extract slug from current path or use organization id as fallback
-  const pathSegments = pathname?.split('/').filter(Boolean) || []
-  const slug = pathSegments[0] || organization.id
-
   const sidebarItems = [
-    { title: "Dashboard", icon: LayoutDashboard, href: `/${slug}/dashboard` },
-    ...(analyticsEnabled ? [{ title: "Analytics", icon: Globe, href: `/${slug}/analytics` }] : []),
-    { title: "Site Audits", icon: Gauge, href: `/${slug}/audits` },
+    { title: "Dashboard", icon: LayoutDashboard, href: nav("dashboard") },
+    ...(analyticsEnabled ? [{ title: "Analytics", icon: Globe, href: nav("analytics") }] : []),
+    { title: "Site Audits", icon: Gauge, href: nav("audits") },
     { 
       title: "Forms", 
       icon: FileText, 
-      href: `/${slug}/forms`,
+      href: nav("forms"),
       badge: unseenFormsCount > 0 ? unseenFormsCount : undefined
     },
-    ...(blogsEnabled ? [{ title: "Blog", icon: BookOpen, href: `/${slug}/blogs` }] : []),
+    ...(blogsEnabled ? [{ title: "Blog", icon: BookOpen, href: nav("blogs") }] : []),
     ...(emailsEnabled ? [{
       title: "Emails",
       icon: Mail,
-      href: `/${slug}/emails`,
+      href: nav("emails"),
       badge: unreadEmailsCount > 0 ? unreadEmailsCount : undefined
     }] : []),
     ...(whatsappEnabled ? [{
       title: "WhatsApp",
       icon: MessageCircle,
-      href: `/${slug}/whatsapp`,
+      href: nav("whatsapp"),
       badge: unreadWhatsappCount > 0 ? unreadWhatsappCount : undefined
     }] : []),
-    ...(invoicesEnabled ? [{ title: "Invoices", icon: Receipt, href: `/${slug}/invoices` }] : []),
-    { title: "Team", icon: Users, href: `/${slug}/team` },
-    { title: "Settings", icon: Settings, href: `/${slug}/settings` },
+    ...(invoicesEnabled ? [{ title: "Invoices", icon: Receipt, href: nav("invoices") }] : []),
+    { title: "Team", icon: Users, href: nav("team") },
+    { title: "Settings", icon: Settings, href: nav("settings") },
   ]
 
   const managementItems = [
-    { title: "Billing", icon: CreditCard, href: `/${slug}/billing` },
-    { title: "Reports", icon: FileText, href: `/${slug}/reports` },
-    { title: "Support", icon: HelpCircle, href: `/${slug}/support` },
+    { title: "Billing", icon: CreditCard, href: nav("billing") },
+    { title: "Reports", icon: FileText, href: nav("reports") },
+    { title: "Support", icon: HelpCircle, href: nav("support") },
   ]
 
   const isActive = (href: string) => pathname?.startsWith(href)
@@ -145,50 +131,22 @@ export function OrganizationSidebar({
   return (
     <Sidebar className="border-r border-border/50 bg-gradient-to-b from-background/95 to-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/90 flex flex-col h-full">
       <SidebarHeader className="p-4 pb-2">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <SidebarMenuButton className="w-full hover:bg-muted/60 p-4 rounded-2xl min-h-[72px] group border border-border/20 hover:border-border/40 hover:shadow-lg transition-all duration-200">
-                  <div className="flex items-center gap-3 w-full min-w-0">
-                    <div className="flex-shrink-0">
-                      <Avatar className="h-11 w-11 ring-2 ring-primary/20 transition-all duration-200 group-hover:ring-primary/40 shadow-lg">
-                        <AvatarImage 
-                          src={organization.logo || ""} 
-                          alt={organization.name}
-                          className="object-cover"
-                        />
-                        <AvatarFallback className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white font-bold text-lg">
-                          {organization.name.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                    </div>
-                    <div className="flex-1 min-w-0 text-left py-0.5">
-                      <p className="font-bold text-foreground text-sm leading-snug line-clamp-2 break-words">
-                        {organization.name}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground font-medium mt-0.5">
-                        Organization
-                      </p>
-                    </div>
-                    <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-                  </div>
-                </SidebarMenuButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-[--radix-popper-anchor-width] min-w-[240px]" align="start">
-                <DropdownMenuItem onClick={() => router.push("/dashboard")} className="gap-2">
-                  <Building2 className="h-4 w-4" />
-                  Switch Organization
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push(`/${slug}/settings`)} className="gap-2">
-                  <Settings className="h-4 w-4" />
-                  Organization Settings
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center gap-3 w-full min-w-0 p-4 rounded-2xl min-h-[72px] border border-border/20 shadow-sm bg-sidebar">
+          <div className="flex-shrink-0">
+            <Avatar className="h-11 w-11 ring-2 ring-primary/20 shadow-lg">
+              <AvatarImage src={orgBrandSrc} alt={organization.name} className="object-cover" />
+              <AvatarFallback className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white font-bold text-lg">
+                {organization.name.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+          <div className="flex-1 min-w-0 text-left py-0.5">
+            <p className="font-bold text-foreground text-sm leading-snug line-clamp-2 break-words">
+              {organization.name}
+            </p>
+            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Organization</p>
+          </div>
+        </div>
       </SidebarHeader>
 
       <SidebarContent className="px-3 flex-1 overflow-y-auto">

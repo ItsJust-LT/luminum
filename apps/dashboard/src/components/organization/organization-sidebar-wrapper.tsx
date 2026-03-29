@@ -23,6 +23,8 @@ interface SessionUser {
 }
 
 interface OrganizationSidebarWrapperProps {
+  workspaceSlug: string
+  flatRoutes: boolean
   organization: Organization
   sessionUser?: SessionUser
   onSignOut: () => Promise<void> | void
@@ -37,6 +39,8 @@ interface OrganizationSidebarWrapperProps {
 }
 
 export function OrganizationSidebarWrapper({
+  workspaceSlug,
+  flatRoutes,
   organization,
   sessionUser,
   onSignOut,
@@ -102,6 +106,8 @@ export function OrganizationSidebarWrapper({
 
   return (
     <OrganizationSidebar
+      workspaceSlug={workspaceSlug}
+      flatRoutes={flatRoutes}
       organization={organization}
       sessionUser={sessionUser}
       onSignOut={onSignOut}

@@ -14,7 +14,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { Building2, Settings, LogOut } from 'lucide-react'
+import { Settings, LogOut } from 'lucide-react'
+import { orgNavPath } from '@/lib/org-nav-path'
 import NotificationBell from '@/components/NotificationBell'
 import { AppTabBar } from './app-tab-bar'
 
@@ -33,6 +34,7 @@ function getRoleColor(role: string) {
 
 export interface AppShellLayoutProps {
   slug: string
+  flatRoutes: boolean
   organizationName: string
   organizationLogo?: string | null
   emailsEnabled: boolean
@@ -44,6 +46,7 @@ export interface AppShellLayoutProps {
 
 export function AppShellLayout({
   slug,
+  flatRoutes,
   organizationName,
   organizationLogo,
   emailsEnabled,
@@ -54,6 +57,8 @@ export function AppShellLayout({
 }: AppShellLayoutProps) {
   const router = useRouter()
   const roleColor = getRoleColor(userRole)
+  const settingsHref = orgNavPath(slug, flatRoutes, 'settings')
+  const brandSrc = organizationLogo?.trim() || '/images/logo.png'
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
@@ -64,7 +69,14 @@ export function AppShellLayout({
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <div className="flex shrink-0 items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/10">
-              <Image src={organizationLogo || "/images/logo.png"} alt={organizationName || "Luminum"} width={18} height={18} className="h-4 w-4 object-contain" unoptimized={!!organizationLogo} />
+              <Image
+                src={brandSrc}
+                alt={organizationName || 'Luminum'}
+                width={18}
+                height={18}
+                className="h-4 w-4 object-contain"
+                unoptimized
+              />
             </div>
             <span className="truncate text-[15px] font-semibold text-foreground tracking-tight">{organizationName}</span>
           </div>
@@ -90,13 +102,9 @@ export function AppShellLayout({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={() => router.push(`/${slug}/settings`)} className="py-2.5">
+              <DropdownMenuItem onClick={() => router.push(settingsHref)} className="py-2.5">
                 <Settings className="mr-2 h-4 w-4" />
                 Account Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/dashboard')} className="py-2.5">
-                <Building2 className="mr-2 h-4 w-4" />
-                Switch Organization
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onSignOut} className="text-destructive focus:text-destructive py-2.5">
@@ -112,7 +120,7 @@ export function AppShellLayout({
         {children}
       </main>
 
-      <AppTabBar slug={slug} emailsEnabled={emailsEnabled} />
+      <AppTabBar slug={slug} flatRoutes={flatRoutes} emailsEnabled={emailsEnabled} />
     </div>
   )
 }

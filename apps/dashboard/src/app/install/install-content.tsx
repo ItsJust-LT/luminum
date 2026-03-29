@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useDisplayMode } from '@/lib/hooks/use-display-mode'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Download, Share, MoreVertical, Smartphone, Monitor, Plus, Check } from 'lucide-react'
@@ -128,6 +130,14 @@ interface InstallContentProps {
 }
 
 export default function InstallContent({ orgName, orgLogo }: InstallContentProps) {
+  const router = useRouter()
+  const { isStandalone, isReady } = useDisplayMode()
+
+  useEffect(() => {
+    if (!isReady || !isStandalone) return
+    router.replace('/dashboard')
+  }, [isReady, isStandalone, router])
+
   const appName = orgName || 'Luminum'
   const installIconSrc = orgLogo?.trim()
     ? orgLogo.trim()
@@ -168,6 +178,14 @@ export default function InstallContent({ orgName, orgLogo }: InstallContentProps
 
   const steps = getSteps(platform)
   const platforms: Platform[] = ['ios', 'android', 'desktop']
+
+  if (isReady && isStandalone) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-center p-6">
+        <p className="text-sm text-muted-foreground">Opening your dashboard…</p>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col pb-[env(safe-area-inset-bottom)]">
