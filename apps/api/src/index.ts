@@ -56,6 +56,10 @@ import { initWhatsAppManager } from "./whatsapp/manager.js";
 import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
 import { startEmailDnsPeriodicScheduler } from "./lib/start-email-dns-scheduler.js";
 import { startSiteAuditsPeriodicScheduler } from "./lib/start-site-audits-scheduler.js";
+import {
+  isBrandedVerifiedOrigin,
+  syncBrandedDashboardAllowedHosts,
+} from "./lib/branded-dashboard-hosts.js";
 
 const app = express();
 
@@ -64,9 +68,16 @@ const corsOrigins = Array.isArray(config.corsOrigin) ? config.corsOrigin : [conf
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // same-origin or non-browser
-      if (corsOrigins.some((allowed) => allowed === origin)) return cb(null, true);
-      cb(null, false); // disallow, no CORS header sent
+      void (async () => {
+        try {
+          if (!origin) return cb(null, true);
+          if (corsOrigins.some((allowed) => allowed === origin)) return cb(null, true);
+          if (await isBrandedVerifiedOrigin(origin)) return cb(null, true);
+          cb(null, false);
+        } catch {
+          cb(null, false);
+        }
+      })();
     },
     credentials: true,
   })
@@ -196,19 +207,35 @@ setInterval(() => {
     });
 }, MONITORING_INTERVAL_MS);
 
-httpServer.listen(config.port, () => {
-  logger.info("API server started", {
-    port: config.port,
-    env: config.nodeEnv,
-    appUrl: config.appUrl,
+const BRANDED_HOSTS_RESYNC_MS = 10 * 60 * 1000;
+setInterval(() => {
+  syncBrandedDashboardAllowedHosts().catch((err) => {
+    try {
+      logger.warn("syncBrandedDashboardAllowedHosts failed", { error: String(err) });
+    } catch {}
   });
+}, BRANDED_HOSTS_RESYNC_MS);
 
-  startEmailDnsPeriodicScheduler();
-  startSiteAuditsPeriodicScheduler();
+syncBrandedDashboardAllowedHosts()
+  .catch((err) => {
+    try {
+      logger.warn("Initial syncBrandedDashboardAllowedHosts failed", { error: String(err) });
+    } catch {}
+  })
+  .finally(() => {
+    httpServer.listen(config.port, () => {
+      logger.info("API server started", {
+        port: config.port,
+        env: config.nodeEnv,
+        appUrl: config.appUrl,
+      });
 
-  // Initialize WhatsApp manager after server is listening (fan-out so multi-instance WS receive WA events)
-  const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);
-  initWhatsAppManager({ prisma, broadcastToOrg: broadcastToOrgForWhatsapp, broadcastToAdmins }).catch((err) => {
-    logger.logError(err, "Failed to initialize WhatsApp Manager");
+      startEmailDnsPeriodicScheduler();
+      startSiteAuditsPeriodicScheduler();
+
+      const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);
+      initWhatsAppManager({ prisma, broadcastToOrg: broadcastToOrgForWhatsapp, broadcastToAdmins }).catch((err) => {
+        logger.logError(err, "Failed to initialize WhatsApp Manager");
+      });
+    });
   });
-});

@@ -3,7 +3,7 @@ import dns from "node:dns";
 import { pathParam } from "../lib/req-params.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { auth } from "../auth/config.js";
+import { syncBrandedDashboardAllowedHosts } from "../lib/branded-dashboard-hosts.js";
 import { jsonStringifySafe } from "../lib/json-safe.js";
 import { notifyAdminsOrganizationCreated } from "../lib/notifications/helpers.js";
 import { computeAuditAdminStats } from "../site-audit/admin-stats.js";
@@ -19,6 +19,14 @@ router.use(requireAuth);
 function adminOnly(req: any, res: any, next: any) {
   if (req.user.role !== "admin") return res.status(403).json({ success: false, error: "Admin access required" });
   next();
+}
+
+async function refreshBrandedDashboardHosts(): Promise<void> {
+  try {
+    await syncBrandedDashboardAllowedHosts();
+  } catch {
+    /* logged elsewhere if needed */
+  }
 }
 
 /** Send JSON response with BigInt serialized as string (avoids "Do not know how to serialize a BigInt") */
@@ -479,6 +487,7 @@ router.post("/enable-organization-branded-dashboard", adminOnly, async (req: Req
       where: { id: organizationId },
       data: { branded_dashboard_enabled: true },
     });
+    await refreshBrandedDashboardHosts();
     res.json({ success: true, message: "Branded dashboard enabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -493,6 +502,7 @@ router.post("/disable-organization-branded-dashboard", adminOnly, async (req: Re
       where: { id: organizationId },
       data: { branded_dashboard_enabled: false },
     });
+    await refreshBrandedDashboardHosts();
     res.json({ success: true, message: "Branded dashboard disabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -533,6 +543,7 @@ router.post("/set-organization-custom-domain", adminOnly, async (req: Request, r
     });
 
     await cacheDel(`domain-lookup:${fullDomain}`);
+    await refreshBrandedDashboardHosts();
     res.json({ success: true, domain: org.custom_domain, prefix: org.custom_domain_prefix });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -551,6 +562,7 @@ router.post("/remove-organization-custom-domain", adminOnly, async (req: Request
     });
 
     if (org?.custom_domain) await cacheDel(`domain-lookup:${org.custom_domain}`);
+    await refreshBrandedDashboardHosts();
     res.json({ success: true, message: "Custom domain removed" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -596,6 +608,7 @@ router.post("/verify-organization-custom-domain", adminOnly, async (req: Request
         data: { custom_domain_verified: true },
       });
       await cacheDel(`domain-lookup:${domain}`);
+      await refreshBrandedDashboardHosts();
       return res.json({ success: true, verified: true, message: "Domain verified" });
     }
 
@@ -604,6 +617,7 @@ router.post("/verify-organization-custom-domain", adminOnly, async (req: Request
       data: { custom_domain_verified: false },
     });
     await cacheDel(`domain-lookup:${domain}`);
+    await refreshBrandedDashboardHosts();
 
     res.json({
       success: true,
