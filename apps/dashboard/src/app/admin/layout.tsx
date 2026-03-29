@@ -126,7 +126,7 @@ export default function AdminLayout({
     { title: "System Logs", icon: LogsIcon, href: "/admin/logs" },
     { title: "Database", icon: Database, href: "/admin/database" },
     { title: "Environment", icon: Terminal, href: "/admin/environment" },
-    { title: "Settings", icon: Settings, href: "/admin/settings" },
+    { title: "Platform settings", icon: Settings, href: "/admin/settings" },
   ]
 
   return (
@@ -250,9 +250,13 @@ export default function AdminLayout({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onClick={() => router.push("/admin/settings")} className="gap-2">
+                    <Shield className="h-4 w-4" />
+                    Platform settings
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push("/account/settings")} className="gap-2">
                     <Settings className="h-4 w-4" />
-                    Account Settings
+                    Profile & password
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push("/dashboard")} className="gap-2">
                     <Building2 className="h-4 w-4" />

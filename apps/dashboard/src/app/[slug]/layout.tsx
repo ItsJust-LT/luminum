@@ -38,8 +38,6 @@ import {
   MessageCircle,
   Gauge,
   Receipt,
-  UserCircle,
-  Crown,
 } from "lucide-react"
 import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
@@ -53,7 +51,6 @@ import { useDisplayMode } from "@/lib/hooks/use-display-mode"
 import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
 import { cn } from "@/lib/utils"
 import { CustomDomainCtx, type CustomDomainContext } from "@/lib/hooks/use-custom-domain"
-import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
 
 interface Organization {
   id: string
@@ -121,7 +118,6 @@ export default function SlugLayout({
     orgId: isCustomDomain ? (state.organization?.id ?? null) : null,
   }
   const isWhatsappRoute = pathname?.includes(`/${slug}/whatsapp`)
-  const isPlatformAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
 
   useEffect(() => {
     if (!isPending && session) {
@@ -354,18 +350,6 @@ export default function SlugLayout({
     window.location.href = "/sign-in"
   }
 
-  const headerBrandSrc =
-    !isCustomDomain || !state.organization
-      ? "/images/logo.png"
-      : state.organization.logo?.trim()
-        ? state.organization.logo.trim()
-        : orgBrandIconProxyUrl(state.organization.name)
-
-  const headerBrandUnoptimized =
-    isCustomDomain &&
-    !!state.organization &&
-    (!!state.organization.logo?.trim() || !!state.organization.name)
-
   const getRoleColor = (role: string) => {
     switch (role) {
       case "owner":
@@ -434,7 +418,7 @@ export default function SlugLayout({
                     ...((state.organization as any)?.whatsapp_enabled ? [{ title: "WhatsApp", icon: MessageCircle, href: `/${slug}/whatsapp` }] : []),
                     ...((state.organization as any)?.invoices_enabled ? [{ title: "Invoices", icon: Receipt, href: `/${slug}/invoices` }] : []),
                     { title: "Team", icon: Users, href: `/${slug}/team` },
-                    { title: "Workspace", icon: Settings, href: `/${slug}/settings` },
+                    { title: "Settings", icon: Settings, href: `/${slug}/settings` },
                   ].map((item) => (
                     <Button
                       key={item.href}
@@ -485,44 +469,7 @@ export default function SlugLayout({
           </div>
 
           {/* Mobile Footer */}
-          <div className="p-4 border-t border-border/50 space-y-1">
-            <Button
-              variant="ghost"
-              className="w-full justify-start p-3 font-normal"
-              onClick={() => {
-                router.push("/account/settings")
-                setIsMobileMenuOpen(false)
-              }}
-            >
-              <UserCircle className="h-4 w-4 mr-3" />
-              Your account
-            </Button>
-            {isPlatformAdmin ? (
-              <>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start p-3 font-normal"
-                  onClick={() => {
-                    router.push("/admin")
-                    setIsMobileMenuOpen(false)
-                  }}
-                >
-                  <Crown className="h-4 w-4 mr-3" />
-                  Admin console
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start p-3 font-normal"
-                  onClick={() => {
-                    router.push("/admin/settings")
-                    setIsMobileMenuOpen(false)
-                  }}
-                >
-                  <Settings className="h-4 w-4 mr-3" />
-                  Platform admin
-                </Button>
-              </>
-            ) : null}
+          <div className="p-4 border-t border-border/50">
             <Button
               variant="ghost"
               className="w-full justify-start p-3 text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -655,12 +602,12 @@ export default function SlugLayout({
               <div className="flex items-center gap-3 min-w-0">
                 <div className="p-2 bg-gradient-to-br from-primary/15 to-primary/5 rounded-xl flex-shrink-0 ring-1 ring-primary/10">
                   <Image
-                    src={headerBrandSrc}
+                    src={isCustomDomain && state.organization?.logo ? state.organization.logo : "/images/logo.png"}
                     alt={isCustomDomain && state.organization?.name ? state.organization.name : "Luminum"}
                     width={20}
                     height={20}
                     className="h-4 w-4 md:h-5 md:w-5 object-contain"
-                    unoptimized={headerBrandUnoptimized}
+                    unoptimized={isCustomDomain && !!state.organization?.logo}
                   />
                 </div>
                 <div className="flex flex-col min-w-0">
@@ -750,40 +697,12 @@ export default function SlugLayout({
                       className="flex items-center gap-2"
                     >
                       <Settings className="mr-2 h-4 w-4" />
-                      <span>Workspace settings</span>
+                      <span>Account Settings</span>
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => router.push(`/${slug}/team`)}
-                      className="flex items-center gap-2"
-                    >
-                      <Users className="mr-2 h-4 w-4" />
-                      <span>Team & invites</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => router.push("/account/settings")}
-                      className="flex items-center gap-2"
-                    >
-                      <UserCircle className="mr-2 h-4 w-4" />
-                      <span>Your account</span>
-                    </DropdownMenuItem>
-                    {isPlatformAdmin ? (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => router.push("/admin")} className="flex items-center gap-2">
-                          <Crown className="mr-2 h-4 w-4" />
-                          <span>Admin console</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => router.push("/admin/settings")} className="flex items-center gap-2">
-                          <Settings className="mr-2 h-4 w-4" />
-                          <span>Platform admin</span>
-                        </DropdownMenuItem>
-                      </>
-                    ) : null}
-                    {!isCustomDomain ? <DropdownMenuSeparator /> : null}
                     {!isCustomDomain && (
                       <DropdownMenuItem onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
                         <Building2 className="mr-2 h-4 w-4" />
-                        <span>Switch organization</span>
+                        <span>Switch Organization</span>
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />

@@ -162,7 +162,7 @@ function createApiClient(baseUrl: string = "") {
       post("/api/organization-actions/check-user", { email }),
     sendInvitation: (data: {
       email: string;
-      role: "admin" | "member";
+      role: "admin" | "member" | "owner";
       organizationId: string;
       organizationName: string;
     }) => post("/api/organization-actions/send-invitation", data),
@@ -214,6 +214,24 @@ function createApiClient(baseUrl: string = "") {
     getOrganizations: (params?: Record<string, string>) =>
       get("/api/admin/organizations", params),
     getOrganization: (id: string) => get(`/api/admin/organizations/${id}`),
+    getOrganizationBySlug: (slug: string) =>
+      get("/api/admin/organizations/by-slug", { slug }),
+    patchOrganization: (
+      id: string,
+      data: {
+        name?: string;
+        slug?: string;
+        logo?: string | null;
+        country?: string;
+        currency?: string;
+        billing_email?: string | null;
+        tax_id?: string | null;
+      }
+    ) => patch(`/api/admin/organizations/${encodeURIComponent(id)}`, data),
+    inviteOrganizationMember: (organizationId: string, data: { email: string; role?: string }) =>
+      post(`/api/admin/organizations/${encodeURIComponent(organizationId)}/invite`, data),
+    addOrganizationMember: (organizationId: string, data: { email: string; role?: string }) =>
+      post(`/api/admin/organizations/${encodeURIComponent(organizationId)}/members`, data),
     createOrganization: (data: any) =>
       post("/api/admin/create-organization", data),
     getUsers: () => get("/api/admin/users"),

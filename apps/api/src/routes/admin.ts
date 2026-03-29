@@ -3,11 +3,12 @@ import dns from "node:dns";
 import { pathParam } from "../lib/req-params.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { syncBrandedDashboardAllowedHosts } from "../lib/branded-dashboard-hosts.js";
+import { auth } from "../auth/config.js";
 import { jsonStringifySafe } from "../lib/json-safe.js";
 import { notifyAdminsOrganizationCreated } from "../lib/notifications/helpers.js";
 import { computeAuditAdminStats } from "../site-audit/admin-stats.js";
-import { sendOwnerInvitationEmail, sendInvitationEmail } from "../lib/email.js";
+import { sendOwnerInvitationEmail, sendInvitationEmail, sendOrganizationInvitationEmail } from "../lib/email.js";
+import { notifyMemberInvited, notifyMemberJoined } from "../lib/notifications/helpers.js";
 import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 import { getAdminSystemEnvironmentSnapshot } from "../lib/system-environment.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
@@ -19,14 +20,6 @@ router.use(requireAuth);
 function adminOnly(req: any, res: any, next: any) {
   if (req.user.role !== "admin") return res.status(403).json({ success: false, error: "Admin access required" });
   next();
-}
-
-async function refreshBrandedDashboardHosts(): Promise<void> {
-  try {
-    await syncBrandedDashboardAllowedHosts();
-  } catch {
-    /* logged elsewhere if needed */
-  }
 }
 
 /** Send JSON response with BigInt serialized as string (avoids "Do not know how to serialize a BigInt") */
@@ -128,6 +121,162 @@ router.get("/organizations/:id", adminOnly, async (req: Request, res: Response) 
     if (!org) return res.status(404).json({ success: false, error: "Not found" });
     jsonSafe(res, { success: true, organization: org });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
+});
+
+const ORG_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+// PATCH /api/admin/organizations/:id — platform admin updates core org fields (name, slug, logo, billing, etc.)
+router.patch("/organizations/:id", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const id = pathParam(req, "id");
+    if (!id) return res.status(400).json({ success: false, error: "Missing organization id" });
+    const body = req.body as Record<string, unknown>;
+    const existing = await prisma.organization.findUnique({ where: { id }, select: { id: true, slug: true } });
+    if (!existing) return res.status(404).json({ success: false, error: "Organization not found" });
+
+    const data: Record<string, string | null> = {};
+    if (typeof body.name === "string") {
+      const n = body.name.trim();
+      if (!n) return res.status(400).json({ success: false, error: "Name cannot be empty" });
+      data.name = n;
+    }
+    if (body.slug !== undefined) {
+      if (typeof body.slug !== "string") return res.status(400).json({ success: false, error: "Invalid slug" });
+      const s = body.slug.trim().toLowerCase();
+      if (!ORG_SLUG_RE.test(s)) return res.status(400).json({ success: false, error: "Invalid slug format" });
+      if (s !== existing.slug) {
+        const taken = await prisma.organization.findFirst({ where: { slug: s, id: { not: id } } });
+        if (taken) return res.status(409).json({ success: false, error: "Slug already in use" });
+      }
+      data.slug = s;
+    }
+    if (body.logo !== undefined) {
+      data.logo = body.logo === null || body.logo === "" ? null : String(body.logo);
+    }
+    if (typeof body.country === "string") data.country = body.country.trim() || "South Africa";
+    if (typeof body.currency === "string") data.currency = body.currency.trim().toUpperCase().slice(0, 8) || "ZAR";
+    if (body.billing_email !== undefined) {
+      data.billing_email =
+        body.billing_email === null || body.billing_email === ""
+          ? null
+          : String(body.billing_email).trim().slice(0, 255);
+    }
+    if (body.tax_id !== undefined) {
+      data.tax_id =
+        body.tax_id === null || body.tax_id === "" ? null : String(body.tax_id).trim().slice(0, 100);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, error: "No valid fields to update" });
+    }
+
+    const org = await prisma.organization.update({
+      where: { id },
+      data,
+      include: {
+        members: { include: { user: { select: { id: true, name: true, email: true, image: true, role: true } } } },
+        invitations: { where: { status: "pending" } },
+      },
+    });
+    jsonSafe(res, { success: true, organization: org });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/organizations/:id/invite — invite by email without org membership (platform admin)
+router.post("/organizations/:id/invite", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const organizationId = pathParam(req, "id");
+    if (!organizationId) return res.status(400).json({ success: false, error: "Missing organization id" });
+    const { email, role } = req.body as { email?: string; role?: string };
+    if (!email || typeof email !== "string") return res.status(400).json({ success: false, error: "Email required" });
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return res.status(400).json({ success: false, error: "Email required" });
+
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true, name: true } });
+    if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
+
+    const r = (role || "member").toLowerCase();
+    if (!["member", "admin", "owner"].includes(r)) {
+      return res.status(400).json({ success: false, error: "Invalid role" });
+    }
+
+    const userCheck = await prisma.user.findUnique({ where: { email: normalized }, select: { id: true } });
+    if (userCheck) {
+      const already = await prisma.member.findFirst({ where: { userId: userCheck.id, organizationId } });
+      if (already) return res.status(400).json({ success: false, error: "User is already a member" });
+    }
+
+    const pending = await prisma.invitation.findFirst({
+      where: { organizationId, email: normalized, status: "pending" },
+    });
+    if (pending) return res.status(400).json({ success: false, error: "A pending invitation already exists for this email" });
+
+    const invitation = await prisma.invitation.create({
+      data: {
+        id: crypto.randomUUID(),
+        email: normalized,
+        role: r,
+        organizationId,
+        inviterId: req.user.id,
+        status: "pending",
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+      },
+    });
+
+    const APP_URL = process.env.APP_URL || "http://localhost:3000";
+    const inviteLink = `${APP_URL}/accept-org-invitation/${invitation.id}`;
+    await sendOrganizationInvitationEmail({
+      email: normalized,
+      role: r as "admin" | "member" | "owner",
+      organizationName: org.name,
+      inviteLink,
+      invitedByUsername: req.user.name || "Platform admin",
+      invitedByEmail: req.user.email,
+      userExists: !!userCheck,
+    });
+    await notifyMemberInvited(organizationId, normalized, r, req.user.name || "Platform admin");
+
+    jsonSafe(res, { success: true, invitation });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/admin/organizations/:id/members — add an existing user by email (platform admin)
+router.post("/organizations/:id/members", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const organizationId = pathParam(req, "id");
+    if (!organizationId) return res.status(400).json({ success: false, error: "Missing organization id" });
+    const { email, role } = req.body as { email?: string; role?: string };
+    if (!email || typeof email !== "string") return res.status(400).json({ success: false, error: "Email required" });
+    const normalized = email.trim().toLowerCase();
+
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true, name: true } });
+    if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
+
+    const r = (role || "member").toLowerCase();
+    if (!["member", "admin", "owner"].includes(r)) {
+      return res.status(400).json({ success: false, error: "Invalid role" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: normalized }, select: { id: true, name: true } });
+    if (!user) return res.status(404).json({ success: false, error: "No user with that email — use Invite instead" });
+
+    const existingMember = await prisma.member.findFirst({ where: { userId: user.id, organizationId } });
+    if (existingMember) return res.status(400).json({ success: false, error: "User is already a member" });
+
+    await prisma.member.create({
+      data: { id: crypto.randomUUID(), userId: user.id, organizationId, role: r, createdAt: new Date() },
+    });
+    await notifyMemberJoined(organizationId, user.name || normalized, normalized, r);
+
+    jsonSafe(res, { success: true });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
 });
 
 // POST /api/admin/create-organization
@@ -487,7 +636,6 @@ router.post("/enable-organization-branded-dashboard", adminOnly, async (req: Req
       where: { id: organizationId },
       data: { branded_dashboard_enabled: true },
     });
-    await refreshBrandedDashboardHosts();
     res.json({ success: true, message: "Branded dashboard enabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -502,7 +650,6 @@ router.post("/disable-organization-branded-dashboard", adminOnly, async (req: Re
       where: { id: organizationId },
       data: { branded_dashboard_enabled: false },
     });
-    await refreshBrandedDashboardHosts();
     res.json({ success: true, message: "Branded dashboard disabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -543,7 +690,6 @@ router.post("/set-organization-custom-domain", adminOnly, async (req: Request, r
     });
 
     await cacheDel(`domain-lookup:${fullDomain}`);
-    await refreshBrandedDashboardHosts();
     res.json({ success: true, domain: org.custom_domain, prefix: org.custom_domain_prefix });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -562,7 +708,6 @@ router.post("/remove-organization-custom-domain", adminOnly, async (req: Request
     });
 
     if (org?.custom_domain) await cacheDel(`domain-lookup:${org.custom_domain}`);
-    await refreshBrandedDashboardHosts();
     res.json({ success: true, message: "Custom domain removed" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -608,7 +753,6 @@ router.post("/verify-organization-custom-domain", adminOnly, async (req: Request
         data: { custom_domain_verified: true },
       });
       await cacheDel(`domain-lookup:${domain}`);
-      await refreshBrandedDashboardHosts();
       return res.json({ success: true, verified: true, message: "Domain verified" });
     }
 
@@ -617,7 +761,6 @@ router.post("/verify-organization-custom-domain", adminOnly, async (req: Request
       data: { custom_domain_verified: false },
     });
     await cacheDel(`domain-lookup:${domain}`);
-    await refreshBrandedDashboardHosts();
 
     res.json({
       success: true,

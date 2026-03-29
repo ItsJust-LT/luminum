@@ -194,8 +194,12 @@ router.patch("/", async (req: Request, res: Response) => {
 router.post("/upload-logo", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
+    const isPlatformAdmin = req.user?.role === "admin";
     const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    if (
+      !isPlatformAdmin &&
+      (!member || (member.role !== "owner" && member.role !== "admin"))
+    ) {
       return res.status(403).json({ success: false, error: "Insufficient permissions" });
     }
 
@@ -232,8 +236,12 @@ router.post("/upload-logo", async (req: Request, res: Response) => {
 router.delete("/logo", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
+    const isPlatformAdmin = req.user?.role === "admin";
     const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    if (
+      !isPlatformAdmin &&
+      (!member || (member.role !== "owner" && member.role !== "admin"))
+    ) {
       return res.status(403).json({ success: false, error: "Insufficient permissions" });
     }
 

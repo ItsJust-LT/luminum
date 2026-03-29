@@ -163,25 +163,15 @@ export async function sendNotification({
 
 const DEFAULT_ICON = "https://luminum.agency/logo.png";
 
-async function getOrgBranding(
-  orgId: string | undefined,
-): Promise<{ name: string; logo: string | null; iconUrl: string } | null> {
+async function getOrgBranding(orgId: string | undefined): Promise<{ name: string; logo: string | null } | null> {
   if (!orgId) return null;
   try {
-    const { config } = await import("../../config.js");
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
       select: { name: true, logo: true, branded_dashboard_enabled: true },
     });
-    if (!org?.branded_dashboard_enabled) return null;
-    const apiBase = config.apiUrl.replace(/\/$/, "");
-    const fallbackIcon = `${apiBase}/api/public/org-brand?name=${encodeURIComponent(org.name)}`;
-    const logo = org.logo?.trim() || null;
-    return {
-      name: org.name,
-      logo,
-      iconUrl: logo || fallbackIcon,
-    };
+    if (org?.branded_dashboard_enabled && org.logo) return { name: org.name, logo: org.logo };
+    return null;
   } catch {
     return null;
   }
@@ -208,7 +198,7 @@ async function sendPushNotifications(notifications: any[]) {
     });
 
     const branding = await getOrgBranding(notif.data?.organizationId);
-    const icon = branding?.iconUrl || DEFAULT_ICON;
+    const icon = branding?.logo || DEFAULT_ICON;
 
     for (const sub of subs) {
       try {

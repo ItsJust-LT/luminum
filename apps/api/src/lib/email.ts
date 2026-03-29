@@ -92,7 +92,7 @@ export async function sendOrganizationInvitationEmail({
   userExists,
 }: {
   email: string;
-  role: "admin" | "member";
+  role: "admin" | "member" | "owner";
   organizationName: string;
   inviteLink: string;
   invitedByUsername: string;

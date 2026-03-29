@@ -1,9 +1,8 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
-import Link from "next/link"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -52,10 +51,7 @@ import {
   Users,
   HardDrive,
   AlertTriangle,
-  FileText,
-  UserCircle,
-  ArrowRight,
-  Info,
+  FileText
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
@@ -64,16 +60,9 @@ import { useOrganizationUpdates } from "@/hooks/use-organization-updates"
 import { countries } from "@/lib/countries"
 import { currencies } from "@/lib/currencies"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
-import { OrganizationInviteDialog } from "@/components/dashboard/organization-invite-dialog"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function OrganizationSettingsPage() {
   const router = useRouter()
-  const routeParams = useParams()
-  const searchParams = useSearchParams()
-  const slug = typeof routeParams?.slug === "string" ? routeParams.slug : ""
-  const tabFromUrl = searchParams.get("tab")
-  const activeTab = tabFromUrl === "people" || tabFromUrl === "billing" ? tabFromUrl : "general"
   const { organization, userRole, loading, error, refreshOrganization } = useOrganization()
   const { updateOrganizationData, updateOrganizationLogo } = useOrganizationUpdates()
   const [settings, setSettings] = useState<OrganizationSettings | null>(null)
@@ -91,37 +80,6 @@ export default function OrganizationSettingsPage() {
     };
   } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [pendingInvitesCount, setPendingInvitesCount] = useState<number | null>(null)
-  const canManageTeam = userRole === "owner" || userRole === "admin"
-
-  const setSettingsTab = (value: string) => {
-    const next = value === "people" || value === "billing" ? value : "general"
-    if (!slug) return
-    const sp = new URLSearchParams(searchParams.toString())
-    if (next === "general") sp.delete("tab")
-    else sp.set("tab", next)
-    const q = sp.toString()
-    router.replace(q ? `/${slug}/settings?${q}` : `/${slug}/settings`, { scroll: false })
-  }
-
-  useEffect(() => {
-    if (!organization?.id) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const result = (await api.organizationActions.getInvitations(organization.id)) as {
-          success?: boolean
-          invitations?: { id: string }[]
-        }
-        if (!cancelled && result.success) setPendingInvitesCount(result.invitations?.length ?? 0)
-      } catch {
-        if (!cancelled) setPendingInvitesCount(null)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [organization?.id])
 
   useEffect(() => {
     if (organization?.id) {
@@ -288,9 +246,8 @@ export default function OrganizationSettingsPage() {
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
         </TabsList>
 
@@ -390,18 +347,6 @@ export default function OrganizationSettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="people" className="space-y-6">
-          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
-            <CardHeader>
-              <Skeleton className="h-6 w-40" />
-              <Skeleton className="h-4 w-64" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-24 w-full rounded-xl" />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="billing" className="space-y-6">
           <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
             <CardHeader>
@@ -497,7 +442,7 @@ export default function OrganizationSettingsPage() {
             <Building2 className="h-5 w-5 text-primary" />
           </div>
           <div className="flex items-center gap-3 min-w-0">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-foreground truncate">Workspace settings</h1>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-foreground truncate">Organization Settings</h1>
             {getRoleBadge(userRole || "member")}
           </div>
         </div>
@@ -547,23 +492,9 @@ export default function OrganizationSettingsPage() {
         )}
       </div>
 
-      <Alert className="border-primary/20 bg-primary/5">
-        <Info className="text-primary" />
-        <AlertTitle>Workspace vs. your account</AlertTitle>
-        <AlertDescription className="text-muted-foreground">
-          Name, logo, billing, and storage here apply to{" "}
-          <span className="font-medium text-foreground">{organization.name}</span>. To update your password, email, or connected accounts, open{" "}
-          <Link href="/account/settings" className="font-medium text-primary underline-offset-4 hover:underline">
-            your account settings
-          </Link>
-          .
-        </AlertDescription>
-      </Alert>
-
-      <Tabs value={activeTab} onValueChange={setSettingsTab} className="space-y-4 sm:space-y-6">
-        <TabsList className="grid w-full grid-cols-3 h-11 sm:h-12 app-touch">
+      <Tabs defaultValue="general" className="space-y-4 sm:space-y-6">
+        <TabsList className="grid w-full grid-cols-2 h-11 sm:h-12 app-touch">
           <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
         </TabsList>
 
@@ -967,85 +898,6 @@ export default function OrganizationSettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="people" className="space-y-4 sm:space-y-6">
-          <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
-            <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Team & invites
-              </CardTitle>
-              <CardDescription>
-                Invite colleagues and manage roles on the full team page.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
-                  <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs text-muted-foreground">Members</div>
-                    <div className="font-semibold text-lg tabular-nums">
-                      {Array.isArray(organization.members) ? organization.members.length : "—"}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
-                  <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs text-muted-foreground">Pending invites</div>
-                    <div className="font-semibold text-lg tabular-nums">
-                      {pendingInvitesCount === null ? "—" : pendingInvitesCount}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
-                  <SettingsIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex flex-col gap-2 w-full">
-                    <span className="text-xs text-muted-foreground">Actions</span>
-                    {canManageTeam ? (
-                      <div className="flex flex-wrap gap-2">
-                        <OrganizationInviteDialog
-                          organizationId={organization.id}
-                          organizationName={organization.name}
-                          onInvitationSent={async () => {
-                            try {
-                              const r = (await api.organizationActions.getInvitations(organization.id)) as {
-                                success?: boolean
-                                invitations?: { id: string }[]
-                              }
-                              if (r.success) setPendingInvitesCount(r.invitations?.length ?? 0)
-                            } catch {
-                              /* ignore */
-                            }
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        Only owners and admins can send invitations.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button variant="outline" className="w-full sm:w-auto" asChild>
-                  <Link href={`/${organization.slug}/team`} className="inline-flex items-center gap-2">
-                    Open team page
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button variant="ghost" className="w-full sm:w-auto" asChild>
-                  <Link href="/account/settings" className="inline-flex items-center gap-2">
-                    <UserCircle className="h-4 w-4" />
-                    Your account (login & password)
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         {/* Billing Settings */}
         <TabsContent value="billing" className="space-y-4 sm:space-y-6">
           <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
@@ -1178,63 +1030,6 @@ export default function OrganizationSettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      <div className="space-y-3 pt-2">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">More</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="app-card border-border/60 shadow-sm hover:border-primary/25 transition-colors">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4 text-primary" />
-                Team
-              </CardTitle>
-              <CardDescription>Members, roles, pending invitations</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" size="sm" className="w-full" asChild>
-                <Link href={`/${organization.slug}/team`} className="inline-flex items-center justify-center gap-2">
-                  Go to team
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-          <Card className="app-card border-border/60 shadow-sm hover:border-primary/25 transition-colors">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-primary" />
-                Plans & payments
-              </CardTitle>
-              <CardDescription>Subscriptions and payment methods</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" size="sm" className="w-full" asChild>
-                <Link href={`/${organization.slug}/billing`} className="inline-flex items-center justify-center gap-2">
-                  Open billing
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-          <Card className="app-card border-border/60 shadow-sm hover:border-primary/25 transition-colors sm:col-span-2 lg:col-span-1">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <UserCircle className="h-4 w-4 text-primary" />
-                Your account
-              </CardTitle>
-              <CardDescription>Profile, password, linked sign-in methods</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" size="sm" className="w-full" asChild>
-                <Link href="/account/settings" className="inline-flex items-center justify-center gap-2">
-                  Account settings
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
 
     </AppPageContainer>
   )

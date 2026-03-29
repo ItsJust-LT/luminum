@@ -96,7 +96,7 @@ export function AdminSidebar({
       icon: HelpCircle,
       badge: openTickets > 0 ? openTickets : undefined,
     },
-    { title: "Settings", href: "/admin/settings", icon: Settings },
+    { title: "Platform settings", href: "/admin/settings", icon: Settings },
   ]
 
   const isActive = (href: string) => {

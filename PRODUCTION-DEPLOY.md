@@ -48,10 +48,6 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 **Branded customer domains** (Admin → Organizations → custom domain): The client must create an **A** record from their full hostname (e.g. `admin.client.com`) to your **server’s public IPv4** — not a CNAME to `app.yourdomain.com` if that hostname is behind Cloudflare proxy (traffic would hit Cloudflare without a matching custom hostname). Set **`PROD_SERVER_IP`** (variable) to that IPv4 so the dashboard build shows the correct value; the API verifies the domain by resolving the A record to **`SERVER_IP`** or **`MAIL_SEND_IP`**.
 
-**Branded dashboard CORS / Better Auth hosts:** The API allows browser `Origin` values that match organizations with **branded dashboard enabled** and a **verified** `custom_domain` (same check as CORS, with a short cache). It also refreshes Better Auth `allowedHosts` from the database on startup, every 10 minutes, and whenever an admin changes branded settings or domain verification—so you do **not** need to list each customer domain in **`CORS_ORIGINS`**. Keep **`CORS_ORIGINS`** for your primary app URL(s) only.
-
-In **Google Cloud Console** → OAuth client → **Authorized redirect URIs**, you must still add `https://admin.client.com/api/auth/callback/google` for each custom hostname (Google does not allow wildcards there).
-
 ---
 
 ## Step 2: GitHub Secrets and Variables

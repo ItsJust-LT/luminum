@@ -28,7 +28,6 @@ import {
 import Image from "next/image"
 import { authClient } from "@/lib/auth/client"
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { CardSkeleton } from "@/components/ui/skeleton-loader"
 import { ClientProjectManagement } from "@/components/dashboard/client-project-management"
 import { api } from "@/lib/api"
@@ -46,7 +45,6 @@ interface ClientProject {
 }
 
 export function UserDashboard() {
-  const router = useRouter()
   const { data: session } = useSession()
   const [projects, setProjects] = useState<ClientProject[]>([])
   const [loading, setLoading] = useState(true)
@@ -142,9 +140,13 @@ export function UserDashboard() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuItem onClick={() => router.push("/account/settings")}>
+                  <DropdownMenuItem>
+                    <User className="mr-2 h-4 w-4" />
+                    <span>Profile</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
                     <Settings className="mr-2 h-4 w-4" />
-                    <span>Account settings</span>
+                    <span>Settings</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut}>

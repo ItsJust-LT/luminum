@@ -20,7 +20,6 @@ interface Organization {
 interface SessionUser {
   name?: string | null
   image?: string | null
-  role?: string | null
 }
 
 interface OrganizationSidebarWrapperProps {
