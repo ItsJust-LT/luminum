@@ -59,6 +59,8 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
   const t = (key: string) => translate(data.language, key);
   const fc = (amount: number) => formatCurrency(amount, data.currency, data.language);
   const fd = (dateStr: string) => formatDate(dateStr, data.language);
+  const htmlLang = data.language.toLowerCase().split("-")[0] || "en";
+  const htmlDir = htmlLang === "ar" ? "rtl" : "ltr";
 
   const docTitle = isQuote ? t(TranslationKey.quote) : t(TranslationKey.invoice);
   const numberLabel = isQuote ? t(TranslationKey.quoteNumber) : t(TranslationKey.invoiceNumber);
@@ -128,32 +130,48 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     : "";
 
   const dueDateHtml = data.dueDate
-    ? `<div class="meta-item"><span class="meta-label">${dateLabel}</span><span class="meta-value">${fd(data.dueDate)}</span></div>`
+    ? `<div class="meta-row"><span class="meta-k">${dateLabel}</span><span class="meta-v">${fd(data.dueDate)}</span></div>`
     : "";
 
   return `<!DOCTYPE html>
-<html>
+<html lang="${escapeHtml(htmlLang)}" dir="${htmlDir}">
 <head>
 <meta charset="utf-8"/>
 <style>
   @page { size: A4; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --ink: #0c0c0c;
+    --ink-soft: #262626;
+    --muted: #525252;
+    --faint: #737373;
+    --line: #e5e5e5;
+    --line-strong: #d4d4d4;
+    --surface: #fafafa;
+    --surface-2: #f5f5f5;
+  }
+
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    color: #1f2937;
-    font-size: 11px;
-    line-height: 1.5;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink-soft);
+    font-size: 12px;
+    line-height: 1.55;
+    font-weight: 400;
     width: 794px;
     min-height: 1123px;
     position: relative;
     background: #fff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
-  .page { padding: 48px 56px 40px 56px; }
+  .page { padding: 44px 52px 36px 52px; }
 
   .accent-bar {
-    height: 5px;
-    background: #111827;
+    height: 3px;
+    background: var(--ink);
     width: 100%;
   }
 
@@ -161,196 +179,272 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 40px;
+    gap: 32px;
+    margin-bottom: 36px;
   }
-  .header-left { flex: 1; }
+  .header-left { flex: 1; min-width: 0; }
   .company-name {
-    font-size: 20px;
-    font-weight: 700;
-    color: #111827;
-    letter-spacing: -0.3px;
-    margin-bottom: 6px;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+    margin-bottom: 8px;
   }
   .company-details {
-    font-size: 10px;
-    color: #6b7280;
-    line-height: 1.7;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.65;
+    font-weight: 400;
+  }
+  .logo-wrap {
+    flex-shrink: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
   }
   .logo {
-    max-width: 110px;
-    max-height: 70px;
+    display: block;
+    max-width: 120px;
+    max-height: 64px;
     object-fit: contain;
-    margin-left: 24px;
   }
 
-  .doc-header {
+  .doc-hero {
     display: flex;
     justify-content: space-between;
-    align-items: flex-end;
+    align-items: stretch;
+    gap: 28px;
     margin-bottom: 28px;
-    padding-bottom: 18px;
-    border-bottom: 1px solid #e5e7eb;
   }
+  .doc-title-wrap { flex: 1; min-width: 0; padding-top: 4px; }
   .doc-title {
-    font-size: 32px;
-    font-weight: 800;
-    color: #111827;
-    letter-spacing: 0.5px;
-    line-height: 1;
-    text-transform: uppercase;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.045em;
+    line-height: 1.08;
+    margin: 0;
   }
-  .doc-meta { text-align: right; }
-  .meta-item { margin-bottom: 5px; }
-  .meta-label {
-    font-size: 8px;
-    color: #9ca3af;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-right: 10px;
+
+  .meta-panel {
+    flex-shrink: 0;
+    width: 248px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 14px 16px 12px;
+    background: var(--surface);
   }
-  .meta-value {
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .meta-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .meta-row:first-child { padding-top: 0; }
+  .meta-k {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--faint);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+  .meta-v {
     font-size: 12px;
     font-weight: 600;
-    color: #111827;
+    color: var(--ink);
+    text-align: right;
+    font-variant-numeric: tabular-nums lining-nums;
   }
 
-  .parties {
-    display: flex;
-    gap: 48px;
-    margin-bottom: 32px;
+  .party-card {
+    margin-bottom: 28px;
+    padding: 18px 20px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: linear-gradient(180deg, #fff 0%, var(--surface) 100%);
+    border-left: 3px solid var(--ink);
   }
-  .party { flex: 1; }
+  html[dir="rtl"] .party-card {
+    border-left: 1px solid var(--line);
+    border-right: 3px solid var(--ink);
+  }
   .party-label {
-    font-size: 8px;
-    font-weight: 700;
-    color: #9ca3af;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--faint);
     text-transform: uppercase;
-    letter-spacing: 1.2px;
-    margin-bottom: 8px;
-    padding-bottom: 4px;
-    border-bottom: 2px solid #111827;
-    display: inline-block;
+    letter-spacing: 0.12em;
+    margin-bottom: 10px;
   }
   .party-name {
-    font-size: 14px;
-    font-weight: 700;
-    color: #111827;
-    margin-bottom: 4px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+    line-height: 1.3;
   }
   .party-info {
-    font-size: 10px;
-    color: #6b7280;
-    line-height: 1.7;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.65;
   }
 
+  .table-wrap {
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 0;
+  }
   .items-table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 0;
+    table-layout: fixed;
   }
+  .items-table col.desc { width: auto; }
+  .items-table col.qty { width: 64px; }
+  .items-table col.rate { width: 22%; }
+  .items-table col.amt { width: 24%; }
   .items-table thead th {
-    background: #f9fafb;
-    padding: 10px 16px;
-    font-size: 8px;
-    font-weight: 700;
-    color: #6b7280;
+    background: var(--surface-2);
+    padding: 11px 14px 10px;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--muted);
     text-transform: uppercase;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.11em;
     text-align: left;
-    border-top: 1px solid #e5e7eb;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--line-strong);
   }
-  .items-table thead th.num { text-align: right; }
+  .items-table thead th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
   .items-table tbody td {
-    padding: 12px 16px;
-    border-bottom: 1px solid #f3f4f6;
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--line);
     vertical-align: top;
   }
+  .items-table tbody tr:last-child td { border-bottom: none; }
+  .items-table tbody tr:nth-child(even) td { background: #fcfcfc; }
   .items-table tbody td.desc {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
-    color: #111827;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    word-wrap: break-word;
   }
   .items-table tbody td.num {
     text-align: right;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
-    color: #374151;
+    color: var(--muted);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums lining-nums;
   }
   .items-table tbody td.amt {
-    font-weight: 700;
-    color: #111827;
+    font-weight: 600;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums lining-nums;
   }
 
   .totals-section {
     display: flex;
     justify-content: flex-end;
-    margin-top: 4px;
+    margin-top: 20px;
+  }
+  .totals-inner {
+    width: 100%;
+    max-width: 320px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
   }
   .totals-table {
+    width: 100%;
     border-collapse: collapse;
-    min-width: 280px;
   }
   .totals-table td {
-    padding: 7px 16px;
-    font-size: 11px;
+    padding: 9px 16px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+    font-variant-numeric: tabular-nums lining-nums;
   }
+  .totals-table tr:last-child td { border-bottom: none; }
   .totals-table td:first-child {
-    text-align: right;
+    text-align: left;
     font-weight: 500;
-    color: #6b7280;
+    color: var(--muted);
   }
   .totals-table td:last-child {
     text-align: right;
     font-weight: 600;
-    color: #1f2937;
-    min-width: 120px;
+    color: var(--ink-soft);
+    min-width: 112px;
   }
   .totals-table .note {
     font-weight: 400;
-    color: #9ca3af;
-    font-size: 9px;
+    color: var(--faint);
+    font-size: 10px;
   }
   .totals-table .grand-total td {
-    border-top: 2px solid #111827;
+    background: var(--surface-2);
     padding: 14px 16px;
-    font-size: 14px;
-    font-weight: 800;
-    color: #111827;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    border-top: 1px solid var(--line-strong);
   }
+  .totals-table .grand-total td:first-child { font-weight: 600; color: var(--ink); }
 
   .bottom-section {
-    margin-top: 36px;
+    margin-top: 32px;
     display: flex;
-    gap: 36px;
+    gap: 28px;
+    align-items: flex-start;
   }
-  .notes, .terms { flex: 1; }
+  .notes, .terms { flex: 1; min-width: 0; }
   .section-label {
-    font-size: 8px;
-    font-weight: 700;
-    color: #9ca3af;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--faint);
     text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 6px;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
   }
   .section-body {
-    font-size: 10px;
-    color: #6b7280;
-    line-height: 1.6;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.65;
     white-space: pre-wrap;
+    padding-left: 12px;
+    border-left: 2px solid var(--line-strong);
+  }
+  html[dir="rtl"] .section-body {
+    padding-left: 0;
+    padding-right: 12px;
+    border-left: none;
+    border-right: 2px solid var(--line-strong);
   }
 
   .footer {
-    margin-top: 48px;
-    padding-top: 14px;
-    border-top: 1px solid #e5e7eb;
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
     text-align: center;
   }
   .footer-text {
     font-size: 10px;
-    color: #9ca3af;
+    color: var(--faint);
     font-weight: 500;
+    letter-spacing: 0.02em;
   }
 </style>
 </head>
@@ -362,53 +456,56 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
         <div class="company-name">${escapeHtml(data.company.name)}</div>
         <div class="company-details">${companyLines.join("<br/>")}</div>
       </div>
-      ${logoHtml}
+      ${data.company.logo ? `<div class="logo-wrap">${logoHtml}</div>` : ""}
     </div>
 
-    <div class="doc-header">
-      <div class="doc-title">${docTitle}</div>
-      <div class="doc-meta">
-        <div class="meta-item">
-          <span class="meta-label">${numberLabel}</span>
-          <span class="meta-value">${escapeHtml(data.invoiceNumber)}</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">${t(TranslationKey.date)}</span>
-          <span class="meta-value">${fd(data.date)}</span>
-        </div>
+    <div class="doc-hero">
+      <div class="doc-title-wrap">
+        <h1 class="doc-title">${docTitle}</h1>
+      </div>
+      <div class="meta-panel">
+        <div class="meta-row"><span class="meta-k">${numberLabel}</span><span class="meta-v">${escapeHtml(data.invoiceNumber)}</span></div>
+        <div class="meta-row"><span class="meta-k">${t(TranslationKey.date)}</span><span class="meta-v">${fd(data.date)}</span></div>
         ${dueDateHtml}
       </div>
     </div>
 
-    <div class="parties">
-      <div class="party">
-        <div class="party-label">${toLabel}</div>
-        <div class="party-name">${escapeHtml(data.client.name)}</div>
-        <div class="party-info">${clientLines.join("<br/>")}</div>
-      </div>
+    <div class="party-card">
+      <div class="party-label">${toLabel}</div>
+      <div class="party-name">${escapeHtml(data.client.name)}</div>
+      <div class="party-info">${clientLines.join("<br/>")}</div>
     </div>
 
-    <table class="items-table">
-      <thead>
-        <tr>
-          <th>${t(TranslationKey.description)}</th>
-          ${showQty ? `<th class="num">${t(TranslationKey.quantity)}</th><th class="num">${t(TranslationKey.rate)}</th>` : ""}
-          <th class="num">${t(TranslationKey.amount)}</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${itemRows}
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table class="items-table">
+        <colgroup>
+          <col class="desc" />
+          ${showQty ? `<col class="qty" /><col class="rate" />` : ""}
+          <col class="amt" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>${t(TranslationKey.description)}</th>
+            ${showQty ? `<th class="num">${t(TranslationKey.quantity)}</th><th class="num">${t(TranslationKey.rate)}</th>` : ""}
+            <th class="num">${t(TranslationKey.amount)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemRows}
+        </tbody>
+      </table>
+    </div>
 
     <div class="totals-section">
-      <table class="totals-table">
-        ${totalRows.join("\n")}
-        <tr class="grand-total">
-          <td>${isQuote ? t(TranslationKey.grandTotal) : t(TranslationKey.totalDue)}</td>
-          <td>${fc(data.grandTotal)}</td>
-        </tr>
-      </table>
+      <div class="totals-inner">
+        <table class="totals-table">
+          ${totalRows.join("\n")}
+          <tr class="grand-total">
+            <td>${isQuote ? t(TranslationKey.grandTotal) : t(TranslationKey.totalDue)}</td>
+            <td>${fc(data.grandTotal)}</td>
+          </tr>
+        </table>
+      </div>
     </div>
 
     <div class="bottom-section">

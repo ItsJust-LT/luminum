@@ -36,11 +36,12 @@ export function getSesInboundMxHost(): string {
  */
 export function getPrescribedInboundMxHost(emailDomain: string): string {
   const d = emailDomain.toLowerCase().trim().replace(/\.$/, "");
-  if (!d) return MAIL_MX_HOST || "";
-  if (MAIL_MX_HOST) return MAIL_MX_HOST;
+  // SES inbound must use the regional endpoint; MAIL_MX_HOST is only for self_hosted (see .env.example).
   if (isSesInboundMode()) {
     return getSesInboundMxHost();
   }
+  if (!d) return MAIL_MX_HOST || "";
+  if (MAIL_MX_HOST) return MAIL_MX_HOST;
   return `mail.${d}`;
 }
 

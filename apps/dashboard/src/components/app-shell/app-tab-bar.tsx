@@ -11,7 +11,7 @@ const tabs: { id: string; label: string; href: (slug: string) => string; icon: t
   { id: 'emails', label: 'Inbox', href: (s) => `/${s}/emails`, icon: Mail, emailsOnly: true },
   { id: 'forms', label: 'Forms', href: (s) => `/${s}/forms`, icon: FileText },
   { id: 'support', label: 'Support', href: (s) => `/${s}/support`, icon: HelpCircle },
-  { id: 'more', label: 'More', href: (s) => `/${s}/settings`, icon: MoreHorizontal },
+  { id: 'more', label: 'Workspace', href: (s) => `/${s}/settings`, icon: MoreHorizontal },
 ]
 
 interface AppTabBarProps {

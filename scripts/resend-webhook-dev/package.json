@@ -1,0 +1,11 @@
+{
+  "name": "resend-webhook-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "svix": "^1.65.0"
+  }
+}

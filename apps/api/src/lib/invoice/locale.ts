@@ -29,15 +29,15 @@ type TranslationMap = Record<string, string>;
 
 const translations: Record<string, TranslationMap> = {
   en: {
-    invoice: "INVOICE",
-    quote: "QUOTE",
-    invoice_number: "Invoice Number",
-    quote_number: "Quote Number",
+    invoice: "Invoice",
+    quote: "Quote",
+    invoice_number: "Invoice number",
+    quote_number: "Quote number",
     date: "Date",
-    due_date: "Due Date",
-    valid_until: "Valid Until",
-    bill_to: "BILL TO",
-    quote_to: "QUOTE TO",
+    due_date: "Due date",
+    valid_until: "Valid until",
+    bill_to: "Bill to",
+    quote_to: "Quote for",
     from: "FROM",
     description: "Description",
     quantity: "Qty",

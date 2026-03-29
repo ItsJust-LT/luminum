@@ -200,6 +200,7 @@ jobs:
             echo "SES_RECEIPT_RULE_NAME=${{ vars.PROD_SES_RECEIPT_RULE_NAME || 'luminum-forward-to-lambda' }}"
             echo "EMAIL_INBOUND_MODE=${{ vars.PROD_EMAIL_INBOUND_MODE || 'ses' }}"
             echo "EMAIL_DNS_PERIODIC_CHECK_MS=${{ vars.PROD_EMAIL_DNS_PERIODIC_CHECK_MS || '' }}"
+            echo "SITE_AUDITS_PERIODIC_CHECK_MS=${{ vars.PROD_SITE_AUDITS_PERIODIC_CHECK_MS || '86400000' }}"
           } > .env
 
       - name: Copy .env, docker-compose.prod.yml and Caddyfile to server

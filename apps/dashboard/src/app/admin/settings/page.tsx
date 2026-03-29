@@ -8,15 +8,16 @@ import {
   Settings, 
   Shield, 
   Mail, 
-  Bell, 
   Globe, 
-  Save,
   RefreshCw,
   AlertTriangle,
-  CheckCircle,
   Crown,
   Info,
   Terminal,
+  Users,
+  Building2,
+  UserCircle,
+  ArrowRight,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
@@ -105,10 +106,98 @@ export default function AdminSettingsPage() {
               Admin Settings
             </h1>
             <p className="text-muted-foreground mt-1.5">
-              View system information and configuration
+              Platform overview, shortcuts, and configuration notes. Per-organization options (name, logo, team) live in each workspace’s settings.
             </p>
           </div>
         </motion.div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Card className="border-border/70">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Crown className="h-4 w-4 text-primary" />
+                Admin home
+              </CardTitle>
+              <CardDescription>Dashboards and high-level tools</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full justify-between" asChild>
+                <Link href="/admin">
+                  Open admin console
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                Users
+              </CardTitle>
+              <CardDescription>Roles, search, and user records</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full justify-between" asChild>
+                <Link href="/admin/users">
+                  Manage users
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                Organizations
+              </CardTitle>
+              <CardDescription>Workspaces across the platform</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full justify-between" asChild>
+                <Link href="/admin/organizations">
+                  Manage organizations
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-primary" />
+                Environment
+              </CardTitle>
+              <CardDescription>Masked server configuration (read-only)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full justify-between" asChild>
+                <Link href="/admin/environment">
+                  View environment
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70 sm:col-span-2 lg:col-span-1">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserCircle className="h-4 w-4 text-primary" />
+                Your login
+              </CardTitle>
+              <CardDescription>Personal profile (not platform-wide)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full justify-between" asChild>
+                <Link href="/account/settings">
+                  Account settings
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Refresh Button */}
         <div className="mb-8">
