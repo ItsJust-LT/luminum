@@ -9,7 +9,7 @@ import { EnhancedNotificationPopupContainer } from "@/components/notifications/e
 import { NotificationClickHandler } from "@/components/notifications/notification-click-handler";
 import { APP, METADATA } from "@/lib/constants";
 import { headers } from "next/headers";
-import { absoluteBrandingIconUrl } from "@/lib/branding-icon-url";
+import { absoluteBrandingIconUrls } from "@/lib/branding-icon-url";
 
 export async function generateMetadata(): Promise<Metadata> {
   const hdrs = await headers()
@@ -23,25 +23,22 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = isCustomDomain && orgName ? `${orgName} - Dashboard` : METADATA.defaultTitle
   const description = isCustomDomain && orgName ? `${orgName} Dashboard` : APP.tagline
 
-  const customOgImage =
-    isCustomDomain && orgName && !orgLogo?.trim() && host
-      ? `${proto}://${host}/api/proxy/api/public/org-brand?name=${encodeURIComponent(orgName)}`
-      : null
-
-  const brandingIcon =
+  const brandUrls =
     isCustomDomain && orgName && host
-      ? absoluteBrandingIconUrl({ host, proto, orgName, orgLogo })
+      ? absoluteBrandingIconUrls({ host, proto, orgName, orgLogo })
       : null
 
-  const icons: Metadata["icons"] = brandingIcon
+  const customOgImage =
+    isCustomDomain && orgName && !orgLogo?.trim() && brandUrls ? brandUrls.primary : null
+
+  const icons: Metadata["icons"] = brandUrls
     ? {
         icon: [
-          { url: brandingIcon.url, type: brandingIcon.type, sizes: "192x192" },
-          { url: brandingIcon.url, type: brandingIcon.type, sizes: "512x512" },
-          { url: brandingIcon.url, type: brandingIcon.type },
+          { url: brandUrls.icon192, type: brandUrls.type, sizes: "192x192" },
+          { url: brandUrls.icon512, type: brandUrls.type, sizes: "512x512" },
         ],
-        apple: [{ url: brandingIcon.url, sizes: "180x180", type: brandingIcon.type }],
-        shortcut: [{ url: brandingIcon.url, type: brandingIcon.type }],
+        apple: [{ url: brandUrls.icon180, sizes: "180x180", type: brandUrls.type }],
+        shortcut: [{ url: brandUrls.icon192, type: brandUrls.type }],
       }
     : {
         icon: [
@@ -59,8 +56,8 @@ export async function generateMetadata(): Promise<Metadata> {
     "application-name": appName,
     "msapplication-TileColor": "#000000",
   }
-  if (brandingIcon) {
-    other["msapplication-TileImage"] = brandingIcon.url
+  if (brandUrls) {
+    other["msapplication-TileImage"] = brandUrls.primary
   } else {
     other["msapplication-TileImage"] = "/mstile-144x144.png"
     other["msapplication-config"] = "/browserconfig.xml"

@@ -1,3 +1,5 @@
+import { isRasterImageUrl } from "@/lib/org-brand-initials"
+
 /** MIME for <link type="> and manifest icon entries. */
 export function guessImageMimeFromUrl(url: string): string {
   const u = url.split("?")[0]?.toLowerCase() || ""
@@ -9,32 +11,59 @@ export function guessImageMimeFromUrl(url: string): string {
   return "image/png"
 }
 
+function pwaPngPath(size: number): string {
+  return `/api/branding/pwa-icon?size=${size}`
+}
+
 /**
- * Absolute icon URL for tab / PWA / manifest on the current host.
- * Uses org logo when set; otherwise the public initials SVG proxy.
+ * PNG (or raster logo) URLs for tabs, install UI, and manifest.
+ * Chrome/Android often ignore SVG manifest icons and fall back to static Luminum PNGs.
  */
+export function absoluteBrandingIconUrls(input: {
+  host: string
+  proto: string
+  orgName: string
+  orgLogo: string | null | undefined
+}): {
+  icon192: string
+  icon512: string
+  icon180: string
+  type: string
+  /** Prefer for OG / single link fallbacks */
+  primary: string
+} {
+  const base = input.host ? `${input.proto}://${input.host.replace(/:\d+$/, "")}` : ""
+  const trimmed = input.orgLogo?.trim()
+  if (trimmed && isRasterImageUrl(trimmed)) {
+    const url =
+      trimmed.startsWith("http://") || trimmed.startsWith("https://")
+        ? trimmed
+        : base
+          ? `${base}${trimmed.startsWith("/") ? trimmed : `/${trimmed}`}`
+          : trimmed
+    const type = guessImageMimeFromUrl(trimmed)
+    return { icon192: url, icon512: url, icon180: url, type, primary: url }
+  }
+
+  const abs = (path: string) => (base ? `${base}${path}` : path)
+  const icon192 = abs(pwaPngPath(192))
+  const icon512 = abs(pwaPngPath(512))
+  const icon180 = abs(pwaPngPath(180))
+  return {
+    icon192,
+    icon512,
+    icon180,
+    type: "image/png",
+    primary: icon512,
+  }
+}
+
 export function absoluteBrandingIconUrl(input: {
   host: string
   proto: string
   orgName: string
   orgLogo: string | null | undefined
 }): { url: string; type: string } {
-  const base = input.host ? `${input.proto}://${input.host.replace(/:\d+$/, "")}` : ""
-  const trimmed = input.orgLogo?.trim()
-  if (trimmed) {
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      return { url: trimmed, type: guessImageMimeFromUrl(trimmed) }
-    }
-    if (trimmed.startsWith("/")) {
-      const url = base ? `${base}${trimmed}` : trimmed
-      return { url, type: guessImageMimeFromUrl(trimmed) }
-    }
-    return { url: trimmed, type: "image/png" }
-  }
-  const q = encodeURIComponent(input.orgName)
-  const path = `/api/proxy/api/public/org-brand?name=${q}`
-  return {
-    url: base ? `${base}${path}` : path,
-    type: "image/svg+xml",
-  }
+  const u = absoluteBrandingIconUrls(input)
+  return { url: u.primary, type: u.type }
 }

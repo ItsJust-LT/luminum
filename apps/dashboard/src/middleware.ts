@@ -100,28 +100,31 @@ function stripHostPort(host: string): string {
   return host.replace(/:\d+$/, "")
 }
 
+/** Browsers request these default filenames even when manifest lists other icons. */
+function brandedWellKnownPwaPath(pathname: string): number | null {
+  const n = pathname.replace(/\/$/, "") || "/"
+  if (n === "/android-chrome-192x192.png") return 192
+  if (n === "/android-chrome-512x512.png") return 512
+  if (n === "/apple-touch-icon.png") return 180
+  return null
+}
+
+function isAnonymousStaticPath(pathname: string): boolean {
+  if (pathname.startsWith("/api/")) return false
+  return /\.(png|jpe?g|gif|webp|svg|ico|woff2?|txt|xml|map)$/i.test(pathname)
+}
+
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const hostname = stripHostPort(request.headers.get("host") || "localhost")
 
   // ─── Custom domain handling ──────────────────────────────────────────
   if (!primaryHostnames.has(hostname)) {
-    // Allow API routes through (auth proxy, data proxy, etc.)
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.next()
-    }
-
     const org = await lookupCustomDomain(hostname)
     if (!org) {
       return NextResponse.redirect(new URL("/", PRIMARY_APP_URL))
     }
 
-    // Block admin routes on custom domains
-    if (pathname.startsWith("/admin")) {
-      return NextResponse.redirect(new URL("/", PRIMARY_APP_URL))
-    }
-
-    // Pass org context on the *request* so Server Components (e.g. sign-in) can read headers().
     const withOrgContext = () => {
       const h = new Headers(request.headers)
       h.set("x-custom-domain", "true")
@@ -130,6 +133,30 @@ export async function middleware(request: NextRequest) {
       h.set("x-org-logo", org.logo || "")
       h.set("x-org-id", org.organizationId)
       return h
+    }
+
+    /** All /api/* on this host need org context (Route Handlers read x-org-* headers). */
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.next({
+        request: { headers: withOrgContext() },
+      })
+    }
+
+    // Block admin routes on custom domains
+    if (pathname.startsWith("/admin")) {
+      return NextResponse.redirect(new URL("/", PRIMARY_APP_URL))
+    }
+
+    const pwaSize = brandedWellKnownPwaPath(pathname)
+    if (pwaSize !== null) {
+      const rw = new URL(`/api/branding/pwa-icon?size=${pwaSize}`, request.url)
+      return NextResponse.rewrite(rw, {
+        request: { headers: withOrgContext() },
+      })
+    }
+
+    if (isAnonymousStaticPath(pathname)) {
+      return NextResponse.next()
     }
 
     // Public paths allowed as-is (with org context)
@@ -159,6 +186,10 @@ export async function middleware(request: NextRequest) {
 
   // ─── Primary domain: existing behavior ─────────────────────────────
 
+  if (isAnonymousStaticPath(pathname)) {
+    return NextResponse.next()
+  }
+
   // Allow public pages
   if (isPublicPath(pathname)) {
     return NextResponse.next()
@@ -186,9 +217,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all paths except static files and _next.
-     */
-    "/((?!_next/static|_next/image|favicon\\.ico|icon\\.svg|apple-touch-icon|.*\\.png$|.*\\.ico$|.*\\.svg$).*)",
+    "/((?!_next/static|_next/image).*)",
   ],
 }

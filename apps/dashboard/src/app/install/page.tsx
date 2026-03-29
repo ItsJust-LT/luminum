@@ -1,7 +1,7 @@
 import InstallContent from "./install-content"
 import { headers } from "next/headers"
 import type { Metadata } from "next"
-import { absoluteBrandingIconUrl } from "@/lib/branding-icon-url"
+import { absoluteBrandingIconUrls } from "@/lib/branding-icon-url"
 
 export async function generateMetadata(): Promise<Metadata> {
   const hdrs = await headers()
@@ -12,7 +12,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const proto = hdrs.get("x-forwarded-proto") || "https"
 
   if (isCustom && orgName) {
-    const branding = absoluteBrandingIconUrl({ host, proto, orgName, orgLogo })
+    const u = absoluteBrandingIconUrls({ host, proto, orgName, orgLogo })
     const description = `Add ${orgName} to your home screen for the best experience.`
     return {
       title: { absolute: orgName },
@@ -25,12 +25,11 @@ export async function generateMetadata(): Promise<Metadata> {
       },
       icons: {
         icon: [
-          { url: branding.url, type: branding.type, sizes: "192x192" },
-          { url: branding.url, type: branding.type, sizes: "512x512" },
-          { url: branding.url, type: branding.type },
+          { url: u.icon192, type: u.type, sizes: "192x192" },
+          { url: u.icon512, type: u.type, sizes: "512x512" },
         ],
-        apple: [{ url: branding.url, sizes: "180x180", type: branding.type }],
-        shortcut: [{ url: branding.url, type: branding.type }],
+        apple: [{ url: u.icon180, sizes: "180x180", type: u.type }],
+        shortcut: [{ url: u.icon192, type: u.type }],
       },
       openGraph: {
         title: orgName,
@@ -39,13 +38,13 @@ export async function generateMetadata(): Promise<Metadata> {
         type: "website",
         images: orgLogo?.trim()
           ? [{ url: orgLogo.trim(), width: 512, height: 512, alt: orgName }]
-          : [{ url: branding.url, width: 512, height: 512, alt: orgName }],
+          : [{ url: u.primary, width: 512, height: 512, alt: orgName }],
       },
       twitter: {
         card: "summary_large_image",
         title: orgName,
         description,
-        images: orgLogo?.trim() ? [orgLogo.trim()] : [branding.url],
+        images: orgLogo?.trim() ? [orgLogo.trim()] : [u.primary],
       },
     }
   }
@@ -67,7 +66,7 @@ export default async function InstallPage() {
 
   const brandIconSrc =
     isCustom && orgName
-      ? absoluteBrandingIconUrl({ host, proto, orgName, orgLogo }).url
+      ? absoluteBrandingIconUrls({ host, proto, orgName, orgLogo }).primary
       : undefined
 
   return (

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { headers } from "next/headers"
-import { absoluteBrandingIconUrl } from "@/lib/branding-icon-url"
+import { absoluteBrandingIconUrls } from "@/lib/branding-icon-url"
 
 const DEFAULT_MANIFEST = {
   name: "Luminum Agency",
@@ -28,12 +28,12 @@ export async function GET() {
   const proto = hdrs.get("x-forwarded-proto") || "https"
 
   if (isCustomDomain && orgName) {
-    const { url, type } = absoluteBrandingIconUrl({ host, proto, orgName, orgLogo })
+    const u = absoluteBrandingIconUrls({ host, proto, orgName, orgLogo })
     const icons = [
-      { src: url, sizes: "192x192", type, purpose: "any" },
-      { src: url, sizes: "512x512", type, purpose: "any" },
-      { src: url, sizes: "192x192", type, purpose: "maskable" },
-      { src: url, sizes: "512x512", type, purpose: "maskable" },
+      { src: u.icon192, sizes: "192x192", type: u.type, purpose: "any" },
+      { src: u.icon512, sizes: "512x512", type: u.type, purpose: "any" },
+      { src: u.icon192, sizes: "192x192", type: u.type, purpose: "maskable" },
+      { src: u.icon512, sizes: "512x512", type: u.type, purpose: "maskable" },
     ]
 
     const manifest = {
