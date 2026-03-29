@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { headers } from "next/headers"
+import { absoluteBrandingIconUrl } from "@/lib/branding-icon-url"
 
 const DEFAULT_MANIFEST = {
   name: "Luminum Agency",
@@ -23,18 +24,17 @@ export async function GET() {
   const isCustomDomain = hdrs.get("x-custom-domain") === "true"
   const orgName = hdrs.get("x-org-name")
   const orgLogo = hdrs.get("x-org-logo")
+  const host = hdrs.get("x-forwarded-host") || hdrs.get("host") || ""
+  const proto = hdrs.get("x-forwarded-proto") || "https"
 
   if (isCustomDomain && orgName) {
-    const fallbackIcon = `/api/proxy/api/public/org-brand?name=${encodeURIComponent(orgName)}`
-    const icons = orgLogo
-      ? [
-          { src: orgLogo, sizes: "192x192", type: "image/png" },
-          { src: orgLogo, sizes: "512x512", type: "image/png" },
-        ]
-      : [
-          { src: fallbackIcon, sizes: "192x192", type: "image/svg+xml" },
-          { src: fallbackIcon, sizes: "512x512", type: "image/svg+xml" },
-        ]
+    const { url, type } = absoluteBrandingIconUrl({ host, proto, orgName, orgLogo })
+    const icons = [
+      { src: url, sizes: "192x192", type, purpose: "any" },
+      { src: url, sizes: "512x512", type, purpose: "any" },
+      { src: url, sizes: "192x192", type, purpose: "maskable" },
+      { src: url, sizes: "512x512", type, purpose: "maskable" },
+    ]
 
     const manifest = {
       ...DEFAULT_MANIFEST,
@@ -48,7 +48,7 @@ export async function GET() {
     return NextResponse.json(manifest, {
       headers: {
         "Content-Type": "application/manifest+json",
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "public, max-age=600, stale-while-revalidate=86400",
       },
     })
   }

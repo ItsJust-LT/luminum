@@ -9,6 +9,7 @@ import { EnhancedNotificationPopupContainer } from "@/components/notifications/e
 import { NotificationClickHandler } from "@/components/notifications/notification-click-handler";
 import { APP, METADATA } from "@/lib/constants";
 import { headers } from "next/headers";
+import { absoluteBrandingIconUrl } from "@/lib/branding-icon-url";
 
 export async function generateMetadata(): Promise<Metadata> {
   const hdrs = await headers()
@@ -26,6 +27,44 @@ export async function generateMetadata(): Promise<Metadata> {
     isCustomDomain && orgName && !orgLogo?.trim() && host
       ? `${proto}://${host}/api/proxy/api/public/org-brand?name=${encodeURIComponent(orgName)}`
       : null
+
+  const brandingIcon =
+    isCustomDomain && orgName && host
+      ? absoluteBrandingIconUrl({ host, proto, orgName, orgLogo })
+      : null
+
+  const icons: Metadata["icons"] = brandingIcon
+    ? {
+        icon: [
+          { url: brandingIcon.url, type: brandingIcon.type, sizes: "192x192" },
+          { url: brandingIcon.url, type: brandingIcon.type, sizes: "512x512" },
+          { url: brandingIcon.url, type: brandingIcon.type },
+        ],
+        apple: [{ url: brandingIcon.url, sizes: "180x180", type: brandingIcon.type }],
+        shortcut: [{ url: brandingIcon.url, type: brandingIcon.type }],
+      }
+    : {
+        icon: [
+          { url: "/favicon.ico", sizes: "any" },
+          { url: "/icon.svg", type: "image/svg+xml" },
+        ],
+        apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+      }
+
+  const other: Record<string, string> = {
+    "mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-status-bar-style": "black-translucent",
+    "apple-mobile-web-app-title": appName,
+    "application-name": appName,
+    "msapplication-TileColor": "#000000",
+  }
+  if (brandingIcon) {
+    other["msapplication-TileImage"] = brandingIcon.url
+  } else {
+    other["msapplication-TileImage"] = "/mstile-144x144.png"
+    other["msapplication-config"] = "/browserconfig.xml"
+  }
 
   return {
     title: {
@@ -76,16 +115,9 @@ export async function generateMetadata(): Promise<Metadata> {
         'max-snippet': -1,
       },
     },
-    manifest: '/manifest.json',
-    other: {
-      'mobile-web-app-capable': 'yes',
-      'apple-mobile-web-app-capable': 'yes',
-      'apple-mobile-web-app-status-bar-style': 'black-translucent',
-      'apple-mobile-web-app-title': appName,
-      'application-name': appName,
-      'msapplication-TileColor': '#000000',
-      'msapplication-config': '/browserconfig.xml',
-    },
+    manifest: "/manifest.json",
+    icons,
+    other,
   }
 }
 
@@ -102,28 +134,20 @@ export const viewport: Viewport = {
 }
 
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const hdrs = await headers()
+  const isCustomDomain = hdrs.get("x-custom-domain") === "true"
+
   return (
     <html lang="en">
-      <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.json" />
-
-        
-        {/* Apple-specific PWA meta tags */}
-        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-        <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#000000" />
-        
-        {/* Microsoft-specific PWA meta tags */}
-        <meta name="msapplication-TileImage" content="/mstile-144x144.png" />
-        <meta name="msapplication-TileColor" content="#000000" />
-        
-        {/* Additional PWA enhancements */}
+        {/* Favicon, apple-touch-icon, manifest: generateMetadata (org branding on custom domains). */}
+        {!isCustomDomain ? (
+          <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#000000" />
+        ) : null}
         <meta name="format-detection" content="telephone=no" />
         <meta name="format-detection" content="date=no" />
         <meta name="format-detection" content="address=no" />

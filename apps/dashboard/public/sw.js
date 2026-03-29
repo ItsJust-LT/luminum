@@ -98,7 +98,7 @@ self.addEventListener("notificationclose", function(event) {
 // PWA CACHING (SIMPLIFIED - NO OFFLINE FUNCTIONALITY)
 // ====================
 
-const CACHE_NAME = 'luminum-pwa-v1';
+const CACHE_NAME = 'luminum-pwa-v2';
 
 // Basic caching for essential files only
 const essentialUrlsToCache = [
