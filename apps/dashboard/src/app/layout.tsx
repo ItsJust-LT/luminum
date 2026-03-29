@@ -15,10 +15,17 @@ export async function generateMetadata(): Promise<Metadata> {
   const isCustomDomain = hdrs.get("x-custom-domain") === "true"
   const orgName = hdrs.get("x-org-name")
   const orgLogo = hdrs.get("x-org-logo")
+  const host = hdrs.get("x-forwarded-host") || hdrs.get("host") || ""
+  const proto = hdrs.get("x-forwarded-proto") || "https"
 
   const appName = isCustomDomain && orgName ? orgName : APP.name
   const title = isCustomDomain && orgName ? `${orgName} - Dashboard` : METADATA.defaultTitle
   const description = isCustomDomain && orgName ? `${orgName} Dashboard` : APP.tagline
+
+  const customOgImage =
+    isCustomDomain && orgName && !orgLogo?.trim() && host
+      ? `${proto}://${host}/api/proxy/api/public/org-brand?name=${encodeURIComponent(orgName)}`
+      : null
 
   return {
     title: {
@@ -46,15 +53,17 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       siteName: appName,
-      images: orgLogo
-        ? [{ url: orgLogo, width: 512, height: 512, alt: appName }]
-        : [{ url: '/og-image.png', width: 1200, height: 630, alt: `${APP.name} PWA` }],
+      images: orgLogo?.trim()
+        ? [{ url: orgLogo.trim(), width: 512, height: 512, alt: appName }]
+        : customOgImage
+          ? [{ url: customOgImage, width: 512, height: 512, alt: appName }]
+          : [{ url: '/og-image.png', width: 1200, height: 630, alt: `${APP.name} PWA` }],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: orgLogo ? [orgLogo] : ['/og-image.png'],
+      images: orgLogo?.trim() ? [orgLogo.trim()] : customOgImage ? [customOgImage] : ['/og-image.png'],
     },
     robots: {
       index: !isCustomDomain,

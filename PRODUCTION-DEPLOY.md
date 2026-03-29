@@ -48,6 +48,8 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 **Branded customer domains** (Admin → Organizations → custom domain): The client must create an **A** record from their full hostname (e.g. `admin.client.com`) to your **server’s public IPv4** — not a CNAME to `app.yourdomain.com` if that hostname is behind Cloudflare proxy (traffic would hit Cloudflare without a matching custom hostname). Set **`PROD_SERVER_IP`** (variable) to that IPv4 so the dashboard build shows the correct value; the API verifies the domain by resolving the A record to **`SERVER_IP`** or **`MAIL_SEND_IP`**.
 
+Add each branded dashboard origin to **`CORS_ORIGINS`** on the API (e.g. `https://admin.client.com` alongside `https://app.yourdomain.com`) so Better Auth can use that host for Google OAuth callbacks. In **Google Cloud Console** → OAuth client → **Authorized redirect URIs**, add `https://admin.client.com/api/auth/callback/google` for every custom hostname (Google does not allow wildcards here).
+
 ---
 
 ## Step 2: GitHub Secrets and Variables

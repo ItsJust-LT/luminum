@@ -118,49 +118,40 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL("/", PRIMARY_APP_URL))
     }
 
-    // Set org context headers for downstream pages/routes
-    const setOrgHeaders = (response: NextResponse) => {
-      response.headers.set("x-custom-domain", "true")
-      response.headers.set("x-org-slug", org.slug)
-      response.headers.set("x-org-name", org.name)
-      response.headers.set("x-org-logo", org.logo || "")
-      response.headers.set("x-org-id", org.organizationId)
-      return response
+    // Pass org context on the *request* so Server Components (e.g. sign-in) can read headers().
+    const withOrgContext = () => {
+      const h = new Headers(request.headers)
+      h.set("x-custom-domain", "true")
+      h.set("x-org-slug", org.slug)
+      h.set("x-org-name", org.name)
+      h.set("x-org-logo", org.logo || "")
+      h.set("x-org-id", org.organizationId)
+      return h
     }
 
     // Public paths allowed as-is (with org context)
     if (isPublicPath(pathname)) {
       if (pathname === "/") {
-        const res = NextResponse.redirect(
-          new URL("/dashboard", request.url),
-        )
-        return setOrgHeaders(res)
+        return NextResponse.redirect(new URL("/dashboard", request.url))
       }
-      const res = NextResponse.next({
-        request: {
-          headers: new Headers(request.headers),
-        },
+      return NextResponse.next({
+        request: { headers: withOrgContext() },
       })
-      return setOrgHeaders(res)
     }
 
     // Auth check for protected pages
     if (!hasSessionCookie(request)) {
       const signIn = new URL("/sign-in", request.url)
       signIn.searchParams.set("callbackUrl", pathname)
-      const res = NextResponse.redirect(signIn)
-      return setOrgHeaders(res)
+      return NextResponse.redirect(signIn)
     }
 
     // Rewrite flat routes to slug routes
     const rewriteUrl = new URL(`/${org.slug}${pathname}`, request.url)
     rewriteUrl.search = request.nextUrl.search
-    const res = NextResponse.rewrite(rewriteUrl, {
-      request: {
-        headers: new Headers(request.headers),
-      },
+    return NextResponse.rewrite(rewriteUrl, {
+      request: { headers: withOrgContext() },
     })
-    return setOrgHeaders(res)
   }
 
   // ─── Primary domain: existing behavior ─────────────────────────────

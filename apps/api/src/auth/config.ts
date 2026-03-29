@@ -5,6 +5,7 @@ import { admin } from "better-auth/plugins";
 import { organization } from "better-auth/plugins";
 import { jwt } from "better-auth/plugins";
 import { prisma } from "../lib/prisma.js";
+import { config as appConfig } from "../config.js";
 import {
   sendAppInvitation,
   sendEmailVerification,
@@ -24,16 +25,34 @@ const API_URL = (process.env.API_URL?.trim() || process.env.API_WS_URL?.trim() |
   "",
 );
 
+/** Hostnames from CORS origins so branded dashboard hosts (e.g. admin.client.com) match OAuth callback baseURL. */
+function hostnamesFromOrigins(origins: readonly string[]): string[] {
+  const hosts: string[] = [];
+  for (const o of origins) {
+    try {
+      hosts.push(new URL(o).hostname);
+    } catch {
+      /* skip invalid */
+    }
+  }
+  return [...new Set(hosts)];
+}
+
+const corsAllowedHosts = hostnamesFromOrigins(appConfig.corsOrigin);
+
 export const auth = betterAuth({
   baseURL: {
     allowedHosts: [
       "api.luminum.agency",
       "app.luminum.agency",
       "*.luminum.agency",
+      "localhost",
       "localhost:3000",
       "localhost:4000",
+      "127.0.0.1",
       "127.0.0.1:3000",
       "127.0.0.1:4000",
+      ...corsAllowedHosts,
     ],
     fallback: API_URL,
     protocol: process.env.NODE_ENV === "development" ? "http" : "https",

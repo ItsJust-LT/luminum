@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Download, Share, MoreVertical, Smartphone, Monitor, Plus, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { orgBrandIconProxyUrl } from '@/lib/org-brand-icon'
 
 type Platform = 'ios' | 'android' | 'desktop'
 
@@ -128,6 +129,12 @@ interface InstallContentProps {
 
 export default function InstallContent({ orgName, orgLogo }: InstallContentProps) {
   const appName = orgName || 'Luminum'
+  const installIconSrc = orgLogo?.trim()
+    ? orgLogo.trim()
+    : orgName
+      ? orgBrandIconProxyUrl(orgName)
+      : '/images/logo.png'
+  const installIconUnopt = !!(orgLogo?.trim() || orgName)
   const [platform, setPlatform] = useState<Platform>('ios')
   const [detected, setDetected] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
@@ -173,7 +180,7 @@ export default function InstallContent({ orgName, orgLogo }: InstallContentProps
           className="flex flex-col items-center text-center mt-4 mb-8 w-full max-w-sm"
         >
           <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-5 ring-1 ring-primary/20">
-            <Image src={orgLogo || "/images/logo.png"} alt={appName} width={36} height={36} className="h-9 w-9 object-contain" unoptimized={!!orgLogo} />
+            <Image src={installIconSrc} alt={appName} width={36} height={36} className="h-9 w-9 object-contain" unoptimized={installIconUnopt} />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight mb-2">
             Install {appName}

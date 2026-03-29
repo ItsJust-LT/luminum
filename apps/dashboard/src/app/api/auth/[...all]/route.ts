@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { copyProxyResponseHeaders } from "@/lib/api-proxy-headers"
 import { getInternalApiBaseUrl } from "@/lib/internal-api-url"
-const APP_ORIGIN = (
-  process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-).replace(/\/$/, "")
 
 function rewriteCookies(apiRes: Response): string[] {
   const cookies = apiRes.headers.getSetCookie?.() || []
@@ -23,8 +20,14 @@ async function proxyAuth(req: NextRequest) {
   const headers = new Headers(req.headers)
   headers.delete("host")
   headers.set("accept-encoding", "identity")
-  headers.set("x-forwarded-host", req.headers.get("host") || "")
-  headers.set("origin", APP_ORIGIN)
+  const host = req.headers.get("host") || ""
+  const proto =
+    req.headers.get("x-forwarded-proto") ||
+    (req.nextUrl.protocol === "https:" ? "https" : "http")
+  headers.set("x-forwarded-host", host)
+  headers.set("x-forwarded-proto", proto)
+  // Better Auth resolves OAuth redirect_uri / state from the browser origin (custom domains included).
+  headers.set("origin", req.nextUrl.origin)
 
   const body = ["GET", "HEAD"].includes(req.method)
     ? undefined

@@ -1,75 +1,19 @@
-'use client'
+import { headers } from "next/headers"
+import { SignInView, type SignInOrgBranding } from "./sign-in-view"
 
-import { SignInForm } from "@/components/auth/sign-in-form"
-import { useSession } from "@/lib/auth/client"
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
-import LoadingAnimation from "@/components/LoadingAnimation"
+export default async function SignInPage() {
+  const h = await headers()
+  const custom = h.get("x-custom-domain") === "true"
+  const orgName = h.get("x-org-name")
+  const rawLogo = (h.get("x-org-logo") || "").trim()
 
-const PRIMARY_HOSTNAMES = new Set([
-  "localhost",
-  "127.0.0.1",
-  (() => { try { return new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").hostname } catch { return "" } })(),
-])
+  const orgBranding: SignInOrgBranding | null =
+    custom && orgName
+      ? {
+          name: orgName,
+          logo: rawLogo || null,
+        }
+      : null
 
-interface OrgBranding {
-  name: string
-  logo: string | null
-}
-
-export default function SignInPage() {
-  const { data: session, isPending } = useSession()
-  const router = useRouter()
-  const [orgBranding, setOrgBranding] = useState<OrgBranding | null>(null)
-
-  const isCustomDomain = typeof window !== "undefined" && !PRIMARY_HOSTNAMES.has(window.location.hostname)
-
-  useEffect(() => {
-    if (!isPending && session?.user) {
-      router.push('/dashboard')
-    }
-  }, [session, isPending, router])
-
-  useEffect(() => {
-    if (!isCustomDomain) return
-    fetch(`/api/proxy/api/domain-lookup?domain=${encodeURIComponent(window.location.hostname)}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) setOrgBranding({ name: data.name, logo: data.logo })
-      })
-      .catch(() => {})
-  }, [isCustomDomain])
-
-  if (isPending) {
-    return <LoadingAnimation />
-  }
-
-  if (session?.user) {
-    return <LoadingAnimation />
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute inset-0 bg-grid-pattern opacity-[0.02] dark:opacity-[0.05]" />
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/5 rounded-full blur-3xl" />
-      
-      <div className="w-full max-w-md relative z-10">
-        <SignInForm orgBranding={orgBranding} />
-        {!isCustomDomain && (
-          <div className="text-center text-sm text-muted-foreground mt-8 max-w-sm mx-auto leading-relaxed">
-            By signing in, you agree to our{" "}
-            <a href="https://luminum.agency/terms-of-service" className="text-primary hover:text-primary/80 hover:underline transition-colors font-medium">
-              Terms of Service
-            </a>{" "}
-            and{" "}
-            <a href="https://luminum.agency/privacy-policy" className="text-primary hover:text-primary/80 hover:underline transition-colors font-medium">
-              Privacy Policy
-            </a>
-            .
-          </div>
-        )}
-      </div>
-    </div>
-  )
+  return <SignInView orgBranding={orgBranding} />
 }

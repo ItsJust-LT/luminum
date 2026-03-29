@@ -51,9 +51,11 @@ import { invoicesRouter } from "./routes/invoices.js";
 import { adminInvoicesRouter } from "./routes/admin-invoices.js";
 import { websiteAuditsRouter } from "./routes/website-audits.js";
 import { domainLookupRouter } from "./routes/domain-lookup.js";
+import { orgBrandPublicRouter } from "./routes/org-brand-public.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
 import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
 import { startEmailDnsPeriodicScheduler } from "./lib/start-email-dns-scheduler.js";
+import { startSiteAuditsPeriodicScheduler } from "./lib/start-site-audits-scheduler.js";
 
 const app = express();
 
@@ -69,6 +71,9 @@ app.use(
     credentials: true,
   })
 );
+
+// ─── Public org brand (SVG initials) — before auth ───────────────────────
+app.use("/api/public/org-brand", orgBrandPublicRouter);
 
 // ─── Authentication (must run before body parsers) ─────────────────────────
 app.all("/api/auth/*", toNodeHandler(auth));
@@ -199,6 +204,7 @@ httpServer.listen(config.port, () => {
   });
 
   startEmailDnsPeriodicScheduler();
+  startSiteAuditsPeriodicScheduler();
 
   // Initialize WhatsApp manager after server is listening (fan-out so multi-instance WS receive WA events)
   const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);

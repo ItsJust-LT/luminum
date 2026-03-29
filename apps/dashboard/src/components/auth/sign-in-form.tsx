@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import { signInWithEmail, signInWithGoogle } from "@/lib/auth/sign-in"
 import { SkeletonLoader } from "@/components/ui/skeleton-loader"
+import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
 
 
 
@@ -18,7 +19,17 @@ interface SignInFormProps {
   orgBranding?: { name: string; logo: string | null } | null
 }
 
+function signInBrandImageSrc(orgBranding: SignInFormProps["orgBranding"]): string {
+  if (!orgBranding) return "/images/logo.png"
+  if (orgBranding.logo?.trim()) return orgBranding.logo.trim()
+  return orgBrandIconProxyUrl(orgBranding.name)
+}
+
 export function SignInForm({ orgBranding }: SignInFormProps) {
+  const brandSrc = signInBrandImageSrc(orgBranding)
+  const brandAlt = orgBranding?.name || "Luminum Agency"
+  const brandUnoptimized = brandSrc !== "/images/logo.png"
+
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -84,12 +95,12 @@ export function SignInForm({ orgBranding }: SignInFormProps) {
       <CardHeader className="space-y-6 text-center pb-8">
         <div className="flex justify-center mb-4">
           <Image
-            src={orgBranding?.logo || "/images/logo.png"}
-            alt={orgBranding?.name || "Luminum Agency"}
-            width={32}
-            height={32}
-            className="rounded-md shadow-sm object-contain"
-            unoptimized={!!orgBranding?.logo}
+            src={brandSrc}
+            alt={brandAlt}
+            width={48}
+            height={48}
+            className="rounded-xl shadow-sm object-cover h-12 w-12"
+            unoptimized={brandUnoptimized}
           />
         </div>
         <div className="space-y-3">

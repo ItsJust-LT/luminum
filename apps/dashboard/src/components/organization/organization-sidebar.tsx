@@ -22,11 +22,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Building2, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, ChevronDown, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
+import { BookOpen, Building2, CreditCard, Crown, FileText, Globe, HelpCircle, LayoutDashboard, Settings, UserCircle, Users, ChevronDown, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { api } from "@/lib/api"
+import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
 
 interface Organization {
   id: string
@@ -51,6 +52,7 @@ interface Website {
 
 export function OrganizationSidebar({
   organization,
+  sessionUser,
   initialUnseenFormsCount = 0,
   initialUnreadEmailsCount = 0,
   initialUnreadWhatsappCount = 0,
@@ -62,7 +64,7 @@ export function OrganizationSidebar({
   isLoading: externalIsLoading = false,
 }: {
   organization: Organization
-  sessionUser?: { name?: string | null; image?: string | null }
+  sessionUser?: { name?: string | null; image?: string | null; role?: string | null }
   onSignOut?: () => Promise<void> | void
   initialUnseenFormsCount?: number
   initialUnreadEmailsCount?: number
@@ -128,7 +130,7 @@ export function OrganizationSidebar({
     }] : []),
     ...(invoicesEnabled ? [{ title: "Invoices", icon: Receipt, href: `/${slug}/invoices` }] : []),
     { title: "Team", icon: Users, href: `/${slug}/team` },
-    { title: "Settings", icon: Settings, href: `/${slug}/settings` },
+    { title: "Workspace", icon: Settings, href: `/${slug}/settings` },
   ]
 
   const managementItems = [
@@ -153,8 +155,12 @@ export function OrganizationSidebar({
                   <div className="flex items-center gap-3 w-full min-w-0">
                     <div className="flex-shrink-0">
                       <Avatar className="h-11 w-11 ring-2 ring-primary/20 transition-all duration-200 group-hover:ring-primary/40 shadow-lg">
-                        <AvatarImage 
-                          src={organization.logo || ""} 
+                        <AvatarImage
+                          src={
+                            organization.logo?.trim()
+                              ? organization.logo.trim()
+                              : orgBrandIconProxyUrl(organization.name)
+                          }
                           alt={organization.name}
                           className="object-cover"
                         />
@@ -183,8 +189,29 @@ export function OrganizationSidebar({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => router.push(`/${slug}/settings`)} className="gap-2">
                   <Settings className="h-4 w-4" />
-                  Organization Settings
+                  Workspace settings
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push(`/${slug}/team`)} className="gap-2">
+                  <Users className="h-4 w-4" />
+                  Team & invites
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/account/settings")} className="gap-2">
+                  <UserCircle className="h-4 w-4" />
+                  Your account
+                </DropdownMenuItem>
+                {sessionUser?.role === "admin" ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push("/admin")} className="gap-2">
+                      <Crown className="h-4 w-4" />
+                      Admin console
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push("/admin/settings")} className="gap-2">
+                      <Settings className="h-4 w-4" />
+                      Platform admin
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

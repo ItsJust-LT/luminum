@@ -25,12 +25,16 @@ export async function GET() {
   const orgLogo = hdrs.get("x-org-logo")
 
   if (isCustomDomain && orgName) {
+    const fallbackIcon = `/api/proxy/api/public/org-brand?name=${encodeURIComponent(orgName)}`
     const icons = orgLogo
       ? [
           { src: orgLogo, sizes: "192x192", type: "image/png" },
           { src: orgLogo, sizes: "512x512", type: "image/png" },
         ]
-      : DEFAULT_MANIFEST.icons
+      : [
+          { src: fallbackIcon, sizes: "192x192", type: "image/svg+xml" },
+          { src: fallbackIcon, sizes: "512x512", type: "image/svg+xml" },
+        ]
 
     const manifest = {
       ...DEFAULT_MANIFEST,

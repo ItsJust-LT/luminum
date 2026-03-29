@@ -17,6 +17,7 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { Building2, Settings, LogOut } from 'lucide-react'
 import NotificationBell from '@/components/NotificationBell'
 import { AppTabBar } from './app-tab-bar'
+import { orgBrandIconProxyUrl } from '@/lib/org-brand-icon'
 
 function getRoleColor(role: string) {
   switch (role) {
@@ -54,6 +55,12 @@ export function AppShellLayout({
 }: AppShellLayoutProps) {
   const router = useRouter()
   const roleColor = getRoleColor(userRole)
+  const brandSrc = organizationLogo?.trim()
+    ? organizationLogo.trim()
+    : organizationName
+      ? orgBrandIconProxyUrl(organizationName)
+      : "/images/logo.png"
+  const brandUnopt = !!(organizationLogo?.trim() || organizationName)
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background">
@@ -64,7 +71,7 @@ export function AppShellLayout({
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <div className="flex shrink-0 items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/10">
-              <Image src={organizationLogo || "/images/logo.png"} alt={organizationName || "Luminum"} width={18} height={18} className="h-4 w-4 object-contain" unoptimized={!!organizationLogo} />
+              <Image src={brandSrc} alt={organizationName || "Luminum"} width={18} height={18} className="h-4 w-4 object-contain" unoptimized={brandUnopt} />
             </div>
             <span className="truncate text-[15px] font-semibold text-foreground tracking-tight">{organizationName}</span>
           </div>
