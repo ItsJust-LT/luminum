@@ -251,7 +251,8 @@ jobs:
           host: ${{ secrets.PROD_SERVER_HOST }}
           username: ${{ secrets.PROD_SERVER_USER }}
           key: ${{ secrets.PROD_SERVER_SSH_KEY }}
-          command_timeout: 25m
+          # Slow GHCR/server links can exceed 25m when pulling several large images
+          command_timeout: 60m
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/snap/bin:$PATH"
