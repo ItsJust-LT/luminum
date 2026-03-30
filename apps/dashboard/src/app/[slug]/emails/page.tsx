@@ -581,6 +581,19 @@ export default function EmailsPage() {
                     {setupStatus.lastError}
                   </div>
                 )}
+                {setupStatus?.ses?.configured &&
+                  setupStatus.inboundPipeline &&
+                  !setupStatus.inboundPipeline.sesReceivingConfigured && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+                      <p className="font-medium">Inbound email not wired to this server yet</p>
+                      <p className="mt-1 text-muted-foreground dark:text-amber-200/90">
+                        DNS and SES can be correct, but mail will not reach the app until the operator sets{" "}
+                        <code className="text-xs">SES_INBOUND_LAMBDA_ARN</code> and{" "}
+                        <code className="text-xs">SES_LAMBDA_INBOUND_SECRET</code> on the API and deploys the Lambda (see{" "}
+                        <span className="font-medium">docs/SES-LAMBDA-INBOUND.md</span>).
+                      </p>
+                    </div>
+                  )}
                 {setupStatus?.dnsRecords && (
                   <div className="space-y-4 mt-4">
                     <p className="text-sm font-medium text-foreground">Add these DNS records for {setupStatus.domain}</p>
@@ -590,19 +603,8 @@ export default function EmailsPage() {
                         <p className="text-xs text-muted-foreground">Type: MX · Name: @ (or {setupStatus.dnsRecords.mx.name}) · Priority: {setupStatus.dnsRecords.mx.priority}</p>
                         <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.mx.value}</code>
                       </div>
-                      {setupStatus.dnsRecords.mailHostA && (
-                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">A — Mail host ({setupStatus.dnsRecords.mailHostA.fqdn})</p>
-                          <p className="text-xs text-muted-foreground">
-                            Type: A · Name: <strong>{setupStatus.dnsRecords.mailHostA.name}</strong> (under zone {setupStatus.domain})
-                          </p>
-                          <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.mailHostA.value}</code>
-                        </div>
-                      )}
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          SPF — {setupStatus.dnsRecords.inboundMode === "self_hosted" ? "Sender policy (IPv4)" : "includes Amazon SES"}
-                        </p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF — includes Amazon SES</p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: @ (or {setupStatus.dnsRecords.spf.name})</p>
                         {setupStatus.dnsRecords.spf.value ? (
                           <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.spf.value}</code>
@@ -639,7 +641,7 @@ export default function EmailsPage() {
                           )}
                         </div>
                       )}
-                      {setupStatus.dnsRecords.sesDkimCnames && setupStatus.dnsRecords.sesDkimCnames.length > 0 ? (
+                      {setupStatus.dnsRecords.sesDkimCnames.length > 0 ? (
                         <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
                           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Amazon SES (CNAME)</p>
                           <p className="text-xs text-muted-foreground">Add each CNAME exactly as shown (SES Easy DKIM).</p>
@@ -649,15 +651,6 @@ export default function EmailsPage() {
                               <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{row.value}</code>
                             </div>
                           ))}
-                        </div>
-                      ) : setupStatus.dnsRecords.dkim ? (
-                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Signing (selector: {setupStatus.dnsRecords.dkim.selector})</p>
-                          <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dkim.name}</p>
-                          {setupStatus.dnsRecords.dkim.value && (
-                            <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dkim.value}</code>
-                          )}
-                          <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.dkim.valueNote}</p>
                         </div>
                       ) : null}
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">

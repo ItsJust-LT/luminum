@@ -1,12 +1,5 @@
 import { prisma } from "./prisma.js";
-import {
-  checkDomainDmarc,
-  checkDomainMx,
-  checkDomainSpf,
-  checkDomainDkim,
-  checkSesDkimCnames,
-  isSesInboundMode,
-} from "./email-dns.js";
+import { checkDomainDmarc, checkDomainMx, checkDomainSpf, checkSesDkimCnames } from "./email-dns.js";
 import { isEmailSystemEnabled } from "./email-system.js";
 import { fetchSesEmailIdentityDetails, isSesSendEnvironmentReady, syncOrganizationSesDomainInDb } from "./email-ses.js";
 
@@ -17,10 +10,6 @@ export interface EmailDnsVerificationResult {
 }
 
 async function dkimCheckForDomain(domain: string): Promise<{ ok: boolean; error?: string }> {
-  if (!isSesInboundMode()) {
-    const d = await checkDomainDkim(domain);
-    return { ok: d.ok, error: d.error };
-  }
   const id = await fetchSesEmailIdentityDetails(domain);
   if (id.error && !id.verificationStatus) {
     return { ok: false, error: `SES: ${id.error}` };
@@ -73,22 +62,21 @@ export async function runEmailDnsVerification(): Promise<EmailDnsVerificationRes
       checkDomainDmarc(domain),
     ]);
 
-    const sesIdentityOk =
-      isSesInboundMode() && isSesSendEnvironmentReady()
-        ? (await fetchSesEmailIdentityDetails(domain)).verificationStatus === "SUCCESS"
-        : true;
+    const sesIdentityOk = isSesSendEnvironmentReady()
+      ? (await fetchSesEmailIdentityDetails(domain)).verificationStatus === "SUCCESS"
+      : true;
 
     const issues: string[] = [];
     if (!mx.ok) issues.push(`MX: ${mx.error || "invalid"}`);
     if (!spf.ok) issues.push(`SPF: ${spf.error || "missing"}`);
     if (!dkim.ok) issues.push(`DKIM: ${dkim.error || "missing"}`);
     if (!dmarc.ok) issues.push(`DMARC: ${dmarc.error || "missing"}`);
-    if (isSesInboundMode() && isSesSendEnvironmentReady() && !sesIdentityOk) {
+    if (isSesSendEnvironmentReady() && !sesIdentityOk) {
       issues.push("SES: domain identity not verified");
     }
     const compositeError = issues.length ? issues.join("; ") : null;
 
-    if (!mx.ok || !spf.ok || !dkim.ok || !dmarc.ok || (isSesInboundMode() && isSesSendEnvironmentReady() && !sesIdentityOk)) {
+    if (!mx.ok || !spf.ok || !dkim.ok || !dmarc.ok || (isSesSendEnvironmentReady() && !sesIdentityOk)) {
       await prisma.organization.update({
         where: { id: org.id },
         data: {

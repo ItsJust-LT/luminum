@@ -1,5 +1,5 @@
 /**
- * Platform-wide email (org inbox + send via mail app). When disabled, org UI shows a generic message;
+ * Platform-wide org email (inbox + outbound via Amazon SES). When disabled, org UI shows a generic message;
  * admins see details via /api/admin/email-system-status and system environment.
  */
 export function isEmailSystemEnabled(): boolean {

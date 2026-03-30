@@ -44,7 +44,7 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 4. Save the records. After propagation, `app.luminum.agency`, `api.luminum.agency`, and `analytics.luminum.agency` should resolve to your server.
 
-**Org email (inbox):** To receive and send mail for your domain, configure MX, SPF, and optionally DKIM as described in [docs/EMAIL.md](docs/EMAIL.md). The mail service runs in-repo (apps/mail) and listens on port 25 on the host; ensure port 25 is open for inbound SMTP.
+**Org email (inbox):** Outbound and inbound use **Amazon SES**. Configure DNS per [docs/EMAIL.md](docs/EMAIL.md) and wire **SES → Lambda → API** per [docs/SES-LAMBDA-INBOUND.md](docs/SES-LAMBDA-INBOUND.md). You do **not** open port 25 on your VPS for org mail.
 
 **Branded customer domains** (Admin → Organizations → custom domain): The client must create an **A** record from their full hostname (e.g. `admin.client.com`) to your **server’s public IPv4** — not a CNAME to `app.yourdomain.com` if that hostname is behind Cloudflare proxy (traffic would hit Cloudflare without a matching custom hostname). Set **`PROD_SERVER_IP`** (variable) to that IPv4 so the dashboard build shows the correct value; the API verifies the domain by resolving the A record to **`SERVER_IP`** or **`MAIL_SEND_IP`**.
 

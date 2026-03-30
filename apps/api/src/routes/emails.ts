@@ -3,18 +3,15 @@ import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { canAccessOrganization, getMemberOrAdmin } from "../lib/access.js";
 import {
-  checkDomainDkim,
   checkDomainDmarc,
   checkDomainMx,
   checkDomainSpf,
   checkSesDkimCnames,
   getPrescribedInboundMxHost,
   getExpectedSpfRecordForDomain,
-  getDkimRecordName,
   getExpectedDmarcRecord,
   getSesDkimCnameRecords,
   getSesInboundMxHost,
-  isSesInboundMode,
 } from "../lib/email-dns.js";
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
@@ -31,8 +28,6 @@ import {
 import { syncSesInboundReceiptRules } from "../lib/ses-receipt-rules.js";
 import { logger } from "../lib/logger.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
-
-const MAIL_DKIM_DNS_VALUE = (process.env.MAIL_DKIM_DNS_VALUE || "").trim();
 
 function sesDkimSetupOk(id: Awaited<ReturnType<typeof fetchSesEmailIdentityDetails>>, sesDkimDns: Awaited<ReturnType<typeof checkSesDkimCnames>>): boolean {
   if (id.dkimStatus === "SUCCESS") return true;
@@ -164,32 +159,12 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const awsReady = isSesSendEnvironmentReady();
     const expectedMxHost = domain ? getPrescribedInboundMxHost(domain) : "";
     const expectedSpfRecord = domain ? getExpectedSpfRecordForDomain(domain) : "";
-    const dkimInfo = domain ? getDkimRecordName(domain) : null;
     const expectedDmarcRecord = domain ? getExpectedDmarcRecord(domain) : "";
     const dmarcRecordName = domain ? `_dmarc.${domain}` : "";
 
-    const mailSendIp = (process.env.MAIL_SEND_IP || "").trim();
-    let mailHostA:
-      | {
-          type: "A";
-          name: string;
-          fqdn: string;
-          value: string;
-        }
-      | undefined;
-    if (!isSesInboundMode() && domain && mailSendIp && expectedMxHost) {
-      const d = domain.toLowerCase().replace(/\.$/, "");
-      const suffix = `.${d}`;
-      const fqdn = expectedMxHost.toLowerCase().replace(/\.$/, "");
-      const relative =
-        fqdn.endsWith(suffix) && fqdn.length > suffix.length ? fqdn.slice(0, -suffix.length) : fqdn;
-      mailHostA = {
-        type: "A",
-        name: relative,
-        fqdn: expectedMxHost,
-        value: mailSendIp,
-      };
-    }
+    const lambdaArn = (process.env.SES_INBOUND_LAMBDA_ARN || "").trim();
+    const lambdaSecret = (process.env.SES_LAMBDA_INBOUND_SECRET || "").trim();
+    const inboundPipeline = { sesReceivingConfigured: Boolean(lambdaArn && lambdaSecret) };
 
     let idDetails = domain ? await fetchSesEmailIdentityDetails(domain) : { dkimTokens: [] as string[] };
     let sesVerificationTxt: Awaited<ReturnType<typeof fetchSesDomainVerificationTxt>> = null;
@@ -199,13 +174,6 @@ router.get("/setup-status", async (req: Request, res: Response) => {
       : { ok: false, expectedHost: "", actualHosts: [] as { exchange: string; priority: number }[], error: "No domain" };
     let spf = domain ? await checkDomainSpf(domain) : { ok: false, error: "No domain" };
     let dmarc = domain ? await checkDomainDmarc(domain) : { ok: false, error: "No domain" };
-    let dkimSelf: Awaited<ReturnType<typeof checkDomainDkim>> = {
-      ok: true,
-      selector: "",
-      record: undefined,
-      error: undefined,
-    };
-
     let sesVerifiedAt = org.email_ses_verified_at;
     let sesLastErr = org.email_ses_last_error;
     if (domain && awsReady) {
@@ -222,52 +190,37 @@ router.get("/setup-status", async (req: Request, res: Response) => {
         checkDomainMx(domain),
         checkDomainSpf(domain),
         checkDomainDmarc(domain),
-        isSesInboundMode() ? fetchSesDomainVerificationTxt(domain) : Promise.resolve(null),
+        fetchSesDomainVerificationTxt(domain),
       ]);
     } else if (domain) {
       [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
     }
 
-    if (domain && !isSesInboundMode()) {
-      dkimSelf = await checkDomainDkim(domain);
-    }
-
     let sesDkimDns = { ok: false, records: [] as { name: string; target: string; ok: boolean; error?: string }[] };
-    if (domain && isSesInboundMode() && idDetails.dkimTokens.length > 0) {
+    if (domain && idDetails.dkimTokens.length > 0) {
       sesDkimDns = await checkSesDkimCnames(domain, idDetails.dkimTokens);
     }
 
     const sesIdentityOk = !awsReady || idDetails.verificationStatus === "SUCCESS";
-    const dkimOk = isSesInboundMode() ? sesDkimSetupOk(idDetails, sesDkimDns) : dkimSelf.ok;
+    const dkimOk = sesDkimSetupOk(idDetails, sesDkimDns);
     const setupComplete = access && hasDomain && mx.ok && spf.ok && dmarc.ok && dkimOk && sesIdentityOk;
 
     const sesDkimCnames = domain && idDetails.dkimTokens.length ? getSesDkimCnameRecords(domain, idDetails.dkimTokens) : [];
 
-    const dkimValueNote =
-      "Set MAIL_DKIM_DNS_VALUE on the API host to show the exact TXT value here, or paste the public key from your DKIM pair (private key lives in MAIL_DKIM_PRIVATE_KEY on the mail service).";
-
     const dnsRecords = domain
       ? {
-          inboundMode: (isSesInboundMode() ? "ses" : "self_hosted") as "ses" | "self_hosted",
           mx: {
             type: "MX" as const,
             name: "@",
-            value: expectedMxHost || (isSesInboundMode() ? getSesInboundMxHost() : "mail.yourdomain.com"),
+            value: expectedMxHost || getSesInboundMxHost(),
             priority: 10,
           },
-          ...(mailHostA ? { mailHostA } : {}),
           spf: {
             type: "TXT" as const,
             name: "@",
             value: expectedSpfRecord,
-            ...(!expectedSpfRecord && !isSesInboundMode()
-              ? {
-                  valueNote:
-                    "SPF must authorize your sending server by IPv4. Set MAIL_SEND_IP on the API host to your server’s public IPv4, then add the TXT value shown here once it appears.",
-                }
-              : {}),
           },
-          ...(isSesInboundMode() && sesVerificationTxt
+          ...(sesVerificationTxt
             ? {
                 sesDomainVerificationTxt: {
                   type: "TXT" as const,
@@ -279,25 +232,11 @@ router.get("/setup-status", async (req: Request, res: Response) => {
                 },
               }
             : {}),
-          ...(isSesInboundMode()
-            ? {
-                sesDkimCnames: sesDkimCnames.map((r) => ({
-                  type: "CNAME" as const,
-                  name: r.name,
-                  value: r.target,
-                })),
-              }
-            : {
-                dkim: {
-                  type: "TXT" as const,
-                  name: dkimInfo?.name ?? "",
-                  selector: dkimInfo?.selector ?? "default",
-                  ...(MAIL_DKIM_DNS_VALUE ? { value: MAIL_DKIM_DNS_VALUE } : {}),
-                  valueNote: MAIL_DKIM_DNS_VALUE
-                    ? "Paste this TXT value at your DNS provider (from MAIL_DKIM_DNS_VALUE on the server)."
-                    : dkimValueNote,
-                },
-              }),
+          sesDkimCnames: sesDkimCnames.map((r) => ({
+            type: "CNAME" as const,
+            name: r.name,
+            value: r.target,
+          })),
           dmarc: {
             type: "TXT" as const,
             name: dmarcRecordName,
@@ -309,33 +248,30 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const setupNotes = domain
       ? [
           "Use only the MX target below for this domain. Remove conflicting MX records (e.g. registrar forwarding or another provider).",
-          isSesInboundMode()
-            ? `Inbound mail is delivered through Amazon SES in ${(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim() || "your AWS region"}. MX must point to the SES regional inbound endpoint shown below.`
-            : mailSendIp
-              ? `Point the A record for the mail host (${expectedMxHost}) to ${mailSendIp}. If you use Cloudflare, use DNS only (grey cloud), not proxied, so SMTP reaches your server.`
-              : "Set MAIL_SEND_IP in the API environment to the server’s public IPv4 so we can show the exact A record and SPF line.",
-          isSesInboundMode()
-            ? "Outbound sending uses Amazon SES. Add the domain in SES (Register domain), publish verification/DKIM DNS records, SPF with include:amazonses.com, and DMARC."
-            : "Your host must allow inbound TCP 25 to the mail container for receiving mail.",
-        ].filter(Boolean)
+          `Inbound mail is delivered through Amazon SES in ${(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim() || "your AWS region"}. MX must point to the SES regional inbound endpoint shown below.`,
+          "Outbound sending uses Amazon SES. Register the domain in SES, publish verification/DKIM DNS records, SPF with include:amazonses.com, and DMARC.",
+          ...(awsReady && !inboundPipeline.sesReceivingConfigured
+            ? [
+                "Inbound delivery to the app requires SES receipt rules and Lambda: set SES_INBOUND_LAMBDA_ARN and SES_LAMBDA_INBOUND_SECRET on the API, deploy the Lambda, and allow SES to invoke it. See docs/SES-LAMBDA-INBOUND.md.",
+              ]
+            : []),
+        ]
       : undefined;
 
     const liveChecks = {
       mx,
       spf,
       dmarc,
-      dkim: isSesInboundMode()
-        ? {
-            ok: dkimOk,
-            sesStatus: idDetails.dkimStatus,
-            cnameChecks: sesDkimDns.records,
-            error: dkimOk
-              ? undefined
-              : idDetails.dkimTokens.length
-                ? sesDkimDns.records.find((r) => !r.ok)?.error || "SES DKIM CNAMEs not valid"
-                : idDetails.dkimStatus || "SES DKIM not ready",
-          }
-        : dkimSelf,
+      dkim: {
+        ok: dkimOk,
+        sesStatus: idDetails.dkimStatus,
+        cnameChecks: sesDkimDns.records,
+        error: dkimOk
+          ? undefined
+          : idDetails.dkimTokens.length
+            ? sesDkimDns.records.find((r) => !r.ok)?.error || "SES DKIM CNAMEs not valid"
+            : idDetails.dkimStatus || "SES DKIM not ready",
+      },
       sesIdentity: {
         verificationStatus: idDetails.verificationStatus,
         ok: sesIdentityOk,
@@ -374,6 +310,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
               sandbox: accountSummary.productionAccessEnabled === false,
             }
           : undefined,
+      inboundPipeline,
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -488,18 +425,15 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
     const domain = org.email_domain.domain;
     const [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
 
-    let dkimCheck:
-      | Awaited<ReturnType<typeof checkDomainDkim>>
-      | { ok: boolean; sesDkimDns?: Awaited<ReturnType<typeof checkSesDkimCnames>>; error?: string };
     let idDetails = await fetchSesEmailIdentityDetails(domain);
-    if (isSesInboundMode()) {
-      const sesDkimDns =
-        idDetails.dkimTokens.length > 0 ? await checkSesDkimCnames(domain, idDetails.dkimTokens) : { ok: false, records: [] };
-      const dkimOk = sesDkimSetupOk(idDetails, sesDkimDns);
-      dkimCheck = { ok: dkimOk, sesDkimDns, error: dkimOk ? undefined : sesDkimDns.error || idDetails.dkimStatus || "SES DKIM not ready" };
-    } else {
-      dkimCheck = await checkDomainDkim(domain);
-    }
+    const sesDkimDns =
+      idDetails.dkimTokens.length > 0 ? await checkSesDkimCnames(domain, idDetails.dkimTokens) : { ok: false, records: [] };
+    const dkimSesOk = sesDkimSetupOk(idDetails, sesDkimDns);
+    const dkimCheck = {
+      ok: dkimSesOk,
+      sesDkimDns,
+      error: dkimSesOk ? undefined : sesDkimDns.error || idDetails.dkimStatus || "SES DKIM not ready",
+    };
 
     const now = new Date();
     let sesSync: { ok: boolean; error?: string } | undefined;

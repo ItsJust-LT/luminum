@@ -21,7 +21,6 @@ import { paystackRouter } from "./routes/paystack.js";
 import { supportRouter } from "./routes/support.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { notificationPreferencesRouter } from "./routes/notification-preferences.js";
-import { webhookEmailsRouter } from "./routes/webhook-emails.js";
 import { webhookSesLambdaRouter } from "./routes/webhook-ses-lambda.js";
 import { webhookNotificationsRouter } from "./routes/webhook-notifications.js";
 import { imagesRouter } from "./routes/images.js";
@@ -83,7 +82,7 @@ app.use(
       const r = req as express.Request & { rawBody?: string };
       if (r.method !== "POST") return;
       const url = r.originalUrl || "";
-      if (!url.startsWith("/api/webhook/emails") && !url.startsWith("/api/webhook/ses-lambda-inbound")) return;
+      if (!url.startsWith("/api/webhook/ses-lambda-inbound")) return;
       r.rawBody = buf.toString("utf8");
     },
   })
@@ -122,7 +121,6 @@ app.get("/api/me", async (req, res) => {
 app.use("/api/cron", cronRouter);
 
 // ─── Webhooks & public endpoints (no auth) ──────────────────────────────────
-app.use("/api/webhook/emails", webhookEmailsRouter);
 app.use("/api/webhook/ses-lambda-inbound", webhookSesLambdaRouter);
 app.use("/api/notifications", webhookNotificationsRouter);
 app.use("/api/images", imagesRouter);

@@ -1,19 +1,8 @@
 import dns from "dns/promises";
 
-const MAIL_MX_HOST = (process.env.MAIL_MX_HOST || "").toLowerCase().replace(/\.$/, "");
-const MAIL_SEND_HOST_RAW = (process.env.MAIL_SEND_HOST || "").toLowerCase().replace(/\.$/, "");
-const MAIL_SEND_IP = (process.env.MAIL_SEND_IP || "").trim();
-const MAIL_DKIM_SELECTOR = (process.env.MAIL_DKIM_SELECTOR || "default").toLowerCase().replace(/\.$/, "");
-
-/** When `ses` (default), MX/SPF/DKIM instructions follow Amazon SES receiving + sending. Use `self_hosted` for legacy mail-server stack. */
-export function getEmailInboundMode(): "ses" | "self_hosted" {
-  const m = (process.env.EMAIL_INBOUND_MODE || "ses").trim().toLowerCase();
-  if (m === "self_hosted" || m === "mail_server" || m === "legacy") return "self_hosted";
-  return "ses";
-}
-
+/** Inbound and outbound org email use Amazon SES only (no self-hosted SMTP). */
 export function isSesInboundMode(): boolean {
-  return getEmailInboundMode() === "ses";
+  return true;
 }
 
 function domainFromMailFrom(defaultFrom: string): string {
@@ -29,49 +18,22 @@ export function getSesInboundMxHost(): string {
 }
 
 /**
- * Hostname that should appear in the customer's MX record.
- * - `MAIL_MX_HOST` overrides everything (operator single-tenant).
- * - SES mode: regional `inbound-smtp.<region>.amazonaws.com` (requires AWS_REGION).
- * - Self-hosted: `mail.<emailDomain>`.
+ * Hostname that should appear in the customer's MX record for SES receiving.
  */
-export function getPrescribedInboundMxHost(emailDomain: string): string {
-  const d = emailDomain.toLowerCase().trim().replace(/\.$/, "");
-  // SES inbound must use the regional endpoint; MAIL_MX_HOST is only for self_hosted (see .env.example).
-  if (isSesInboundMode()) {
-    return getSesInboundMxHost();
-  }
-  if (!d) return MAIL_MX_HOST || "";
-  if (MAIL_MX_HOST) return MAIL_MX_HOST;
-  return `mail.${d}`;
+export function getPrescribedInboundMxHost(_emailDomain: string): string {
+  return getSesInboundMxHost();
 }
 
-/**
- * SPF TXT we show in setup: SES sending uses `include:amazonses.com`.
- * Self-hosted + MAIL_SEND_IP: ip4-only line (legacy).
- */
-export function getExpectedSpfRecordForDomain(emailDomain: string): string {
-  if (isSesInboundMode()) {
-    return "v=spf1 include:amazonses.com -all";
-  }
-  void emailDomain;
-  if (!MAIL_SEND_IP) return "";
-  return `v=spf1 ip4:${MAIL_SEND_IP} -all`;
+/** SPF TXT for SES sending. */
+export function getExpectedSpfRecordForDomain(_emailDomain: string): string {
+  return "v=spf1 include:amazonses.com -all";
 }
 
 /** @deprecated Prefer getPrescribedInboundMxHost(domain) with the org email domain. */
 export async function getExpectedMxHost(): Promise<string> {
   const fallback = domainFromMailFrom(process.env.MAIL_FROM_DEFAULT || "noreply@luminum.agency");
-  if (!fallback) return MAIL_MX_HOST || "";
+  if (!fallback) return getSesInboundMxHost();
   return getPrescribedInboundMxHost(fallback);
-}
-
-/** DKIM TXT record name (selector._domainkey.domain) — self-hosted mail app only. */
-export function getDkimRecordName(domain: string): { name: string; selector: string } {
-  const selector = MAIL_DKIM_SELECTOR || "default";
-  return {
-    name: `${selector}._domainkey.${domain}`,
-    selector,
-  };
 }
 
 /** SES Easy DKIM CNAME targets per token from GetEmailIdentity. */
@@ -116,9 +78,7 @@ export async function checkDomainMx(domain: string): Promise<MxCheckResult> {
       ok: false,
       expectedHost: "",
       actualHosts: [],
-      error: isSesInboundMode()
-        ? "Could not determine SES inbound host (set AWS_REGION or AWS_DEFAULT_REGION)"
-        : "Could not determine inbound mail hostname for this domain",
+      error: "Could not determine SES inbound host (set AWS_REGION or AWS_DEFAULT_REGION)",
     };
   }
   try {
@@ -150,40 +110,6 @@ export interface SpfCheckResult {
 }
 
 export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
-  if (isSesInboundMode()) {
-    try {
-      const records = await dns.resolveTxt(domain);
-      const flattened = (records || []).flat();
-      const spf = flattened.find((r) => String(r).trim().toLowerCase().startsWith("v=spf1 "));
-      if (!spf) {
-        return { ok: false, error: "No SPF record found" };
-      }
-      const record = String(spf).trim();
-      const lower = record.toLowerCase();
-      const hasSes = lower.includes("include:amazonses.com") || lower.includes("include:_spf.amazonaws.com");
-      return {
-        ok: hasSes,
-        record,
-        error: hasSes ? undefined : "SPF must include Amazon SES (e.g. include:amazonses.com)",
-      };
-    } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  }
-
-  const mxHost = getPrescribedInboundMxHost(domain);
-  const expectedHost = MAIL_SEND_HOST_RAW || MAIL_MX_HOST || mxHost;
-  const mailSendIp = (MAIL_SEND_IP || "").trim().replace(/\s/g, "");
-  let actualMxHosts: string[] = [];
-  try {
-    const mxRecords = await dns.resolveMx(domain);
-    actualMxHosts = (mxRecords || []).map((r) => (r.exchange || "").toLowerCase().replace(/\.$/, "")).filter(Boolean);
-  } catch {
-    // ignore
-  }
-  if (!expectedHost && !mailSendIp && actualMxHosts.length === 0) {
-    return { ok: true, record: undefined };
-  }
   try {
     const records = await dns.resolveTxt(domain);
     const flattened = (records || []).flat();
@@ -193,25 +119,14 @@ export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
     }
     const record = String(spf).trim();
     const lower = record.toLowerCase();
-
-    if (mailSendIp) {
-      const hasIp = lower.includes(`ip4:${mailSendIp.toLowerCase()}`);
-      return {
-        ok: hasIp,
-        record,
-        error: hasIp ? undefined : `SPF must include ip4:${mailSendIp} (sender IPv4)`,
-      };
-    }
-
-    const authorizes = (host: string) => host && (lower.includes(`include:${host}`) || lower.includes(`a:${host}`));
-    const hasExpected = expectedHost && authorizes(expectedHost);
-    const hasActualMx = actualMxHosts.some((h) => authorizes(h));
-    const hasCloudflare = lower.includes("include:_spf.");
-    const ok = Boolean(hasExpected || hasActualMx || hasCloudflare);
-    return { ok, record, error: ok ? undefined : "SPF does not authorize this server" };
+    const hasSes = lower.includes("include:amazonses.com") || lower.includes("include:_spf.amazonaws.com");
+    return {
+      ok: hasSes,
+      record,
+      error: hasSes ? undefined : "SPF must include Amazon SES (e.g. include:amazonses.com)",
+    };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: message };
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -222,26 +137,9 @@ export interface DkimCheckResult {
   error?: string;
 }
 
-export async function checkDomainDkim(domain: string): Promise<DkimCheckResult> {
-  if (isSesInboundMode()) {
-    return { ok: true, selector: "", record: undefined };
-  }
-  if (!MAIL_DKIM_SELECTOR) {
-    return { ok: true, selector: "", record: undefined };
-  }
-  const name = `${MAIL_DKIM_SELECTOR}._domainkey.${domain}`;
-  try {
-    const records = await dns.resolveTxt(name);
-    const flattened = (records || []).flat();
-    const dkim = flattened.find((r) => String(r).toLowerCase().includes("v=dkim1"));
-    if (!dkim) {
-      return { ok: false, selector: MAIL_DKIM_SELECTOR, error: "No DKIM record found" };
-    }
-    return { ok: true, selector: MAIL_DKIM_SELECTOR, record: String(dkim) };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, selector: MAIL_DKIM_SELECTOR, error: message };
-  }
+/** Legacy hook; SES DKIM is validated via checkSesDkimCnames. */
+export async function checkDomainDkim(_domain: string): Promise<DkimCheckResult> {
+  return { ok: true, selector: "", record: undefined };
 }
 
 export interface SesDkimDnsCheckResult {
