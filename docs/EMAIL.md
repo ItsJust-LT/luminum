@@ -16,6 +16,8 @@
 
 ## Inbound (receiving)
 
+**Important:** DNS and SES identity can be fully correct (MX, SPF, DKIM, verification), but **mail will not reach the app** until the operator sets **`SES_INBOUND_LAMBDA_ARN`** and **`SES_LAMBDA_INBOUND_SECRET`** on the API, **restarts/redeploys** the API, and **deploys and wires the Lambda** as described in **[SES-LAMBDA-INBOUND.md](./SES-LAMBDA-INBOUND.md)**. Without that pipeline, SES has nowhere to deliver messages into Luminum.
+
 **Path:** **Amazon SES email receiving** (MX → SES) → **receipt rule** → **Lambda** → **`POST /api/webhook/ses-lambda-inbound`** on your API.
 
 - Header **`X-Luminum-Ses-Webhook-Secret`** (or Bearer) must match **`SES_LAMBDA_INBOUND_SECRET`**.

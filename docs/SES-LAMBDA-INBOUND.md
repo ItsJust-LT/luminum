@@ -2,6 +2,8 @@
 
 This runbook wires **Amazon SES receiving** so mail to your customers’ domains reaches the Luminum API and appears in **Dashboard → Emails**.
 
+**DNS and SES can be correct, but mail will not reach the app** until you complete this runbook: set **`SES_INBOUND_LAMBDA_ARN`** and **`SES_LAMBDA_INBOUND_SECRET`** on the API (then redeploy/restart), deploy the Lambda with matching **`LUMINUM_SES_WEBHOOK_SECRET`**, and allow SES to invoke the function. The dashboard **Emails** setup page shows a warning when those API variables are missing even if **Verify DNS** passes.
+
 ## Prerequisites
 
 1. **Region:** Use an AWS region where **both** [SES sending](https://docs.aws.amazon.com/ses/latest/dg/regions.html) and [SES email receiving](https://docs.aws.amazon.com/general/latest/gr/ses.html#ses_inbound_endpoints) are available. The API’s **`AWS_REGION`** must match.
@@ -65,7 +67,7 @@ The API aggregates **all** org email domains (mail enabled + domain selected) in
 
 | Symptom | Check |
 |--------|--------|
-| No mail in app | MX → correct regional `inbound-smtp`; rule set **active**; domain in rule **Recipients**; Lambda errors in CloudWatch |
+| No mail in app | **First:** API has **`SES_INBOUND_LAMBDA_ARN`** + **`SES_LAMBDA_INBOUND_SECRET`** and Lambda is deployed (without these, verified DNS/SES still delivers nowhere into Luminum). Then: MX → correct regional `inbound-smtp`; rule set **active**; domain in rule **Recipients**; Lambda errors in CloudWatch |
 | API 401/403 on webhook | `SES_LAMBDA_INBOUND_SECRET` matches Lambda env; header `X-Luminum-Ses-Webhook-Secret` or `Authorization: Bearer …` |
 | Receipt sync skipped | `SES_INBOUND_LAMBDA_ARN` empty on API |
 | Wrong region | Lambda, SES receive, and API **`AWS_REGION`** must align |
