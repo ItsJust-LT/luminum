@@ -4,6 +4,15 @@ export interface EmailDnsRecords {
   /** A record for self-hosted MX host when MAIL_SEND_IP is set */
   mailHostA?: { type: "A"; name: string; fqdn: string; value: string }
   spf: { type: "TXT"; name: string; value: string; valueNote?: string }
+  /** SES domain verification TXT at `_amazonses.<domain>` (from GetIdentityVerificationAttributes) */
+  sesDomainVerificationTxt?: {
+    type: "TXT"
+    name: string
+    nameLabel: string
+    value: string
+    verificationStatus?: string
+    error?: string
+  }
   /** Self-hosted mail-app DKIM TXT */
   dkim?: { type: "TXT"; name: string; selector: string; value?: string; valueNote: string }
   /** SES Easy DKIM CNAMEs */

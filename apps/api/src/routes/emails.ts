@@ -22,6 +22,7 @@ import { pathParam, queryParam } from "../lib/req-params.js";
 import { getOrgReplyAddress, sendOutboundViaSes } from "../lib/email-send.js";
 import {
   fetchSesAccountSummary,
+  fetchSesDomainVerificationTxt,
   fetchSesEmailIdentityDetails,
   isSesSendEnvironmentReady,
   syncOrganizationSesDomainInDb,
@@ -191,6 +192,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     }
 
     let idDetails = domain ? await fetchSesEmailIdentityDetails(domain) : { dkimTokens: [] as string[] };
+    let sesVerificationTxt: Awaited<ReturnType<typeof fetchSesDomainVerificationTxt>> = null;
     let accountSummary = await fetchSesAccountSummary();
     let mx = domain
       ? await checkDomainMx(domain)
@@ -214,12 +216,13 @@ router.get("/setup-status", async (req: Request, res: Response) => {
       });
       sesVerifiedAt = refreshed?.email_ses_verified_at ?? sesVerifiedAt;
       sesLastErr = refreshed?.email_ses_last_error ?? sesLastErr;
-      [idDetails, accountSummary, mx, spf, dmarc] = await Promise.all([
+      [idDetails, accountSummary, mx, spf, dmarc, sesVerificationTxt] = await Promise.all([
         fetchSesEmailIdentityDetails(domain),
         fetchSesAccountSummary(),
         checkDomainMx(domain),
         checkDomainSpf(domain),
         checkDomainDmarc(domain),
+        isSesInboundMode() ? fetchSesDomainVerificationTxt(domain) : Promise.resolve(null),
       ]);
     } else if (domain) {
       [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
@@ -264,6 +267,18 @@ router.get("/setup-status", async (req: Request, res: Response) => {
                 }
               : {}),
           },
+          ...(isSesInboundMode() && sesVerificationTxt
+            ? {
+                sesDomainVerificationTxt: {
+                  type: "TXT" as const,
+                  name: sesVerificationTxt.name,
+                  nameLabel: sesVerificationTxt.nameLabel,
+                  value: sesVerificationTxt.value,
+                  verificationStatus: sesVerificationTxt.verificationStatus,
+                  error: sesVerificationTxt.error,
+                },
+              }
+            : {}),
           ...(isSesInboundMode()
             ? {
                 sesDkimCnames: sesDkimCnames.map((r) => ({

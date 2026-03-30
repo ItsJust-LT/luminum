@@ -611,6 +611,34 @@ export default function EmailsPage() {
                           <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.spf.valueNote}</p>
                         )}
                       </div>
+                      {setupStatus.dnsRecords.sesDomainVerificationTxt && (
+                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Domain verification — Amazon SES (TXT)
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Required for SES to mark the domain verified. Add this TXT before or with DKIM; many DNS UIs use
+                            Name <strong>{setupStatus.dnsRecords.sesDomainVerificationTxt.nameLabel}</strong> (zone{" "}
+                            <strong>{setupStatus.domain}</strong>) — same as <code className="text-xs">{setupStatus.dnsRecords.sesDomainVerificationTxt.name}</code>.
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Type: TXT · Name: @ (apex) or <strong>{setupStatus.dnsRecords.sesDomainVerificationTxt.nameLabel}</strong>
+                          </p>
+                          {setupStatus.dnsRecords.sesDomainVerificationTxt.value ? (
+                            <code className="block text-sm bg-background px-3 py-2 rounded border break-all">
+                              {setupStatus.dnsRecords.sesDomainVerificationTxt.value}
+                            </code>
+                          ) : null}
+                          {setupStatus.dnsRecords.sesDomainVerificationTxt.error && (
+                            <p className="text-xs text-destructive">{setupStatus.dnsRecords.sesDomainVerificationTxt.error}</p>
+                          )}
+                          {setupStatus.dnsRecords.sesDomainVerificationTxt.verificationStatus && (
+                            <p className="text-xs text-muted-foreground">
+                              SES verification status: {setupStatus.dnsRecords.sesDomainVerificationTxt.verificationStatus}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {setupStatus.dnsRecords.sesDkimCnames && setupStatus.dnsRecords.sesDkimCnames.length > 0 ? (
                         <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
                           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Amazon SES (CNAME)</p>
@@ -725,7 +753,7 @@ export default function EmailsPage() {
                   </div>
                 )}
                 <p className="text-sm text-muted-foreground mt-2">
-                  After you’ve added the records at your DNS provider, click Verify DNS. We check MX, SPF, DKIM (SES CNAMEs or mail-server TXT), DMARC, and SES domain verification. If all pass, the inbox will appear.
+                  After you’ve added the records at your DNS provider, click Verify DNS. We check MX, SPF, the SES domain verification TXT (`_amazonses`), DKIM (SES CNAMEs or mail-server TXT), DMARC, and SES domain verification in AWS. If all pass, the inbox will appear.
                 </p>
               </>
             )}

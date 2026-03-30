@@ -44,12 +44,12 @@ Default **`EMAIL_INBOUND_MODE=ses`** (or unset):
 
 ### IAM sketch (API / operator)
 
-- **API:** `ses:SendEmail`, `ses:SendRawEmail`, `ses:GetEmailIdentity`, `ses:CreateEmailIdentity`, `ses:CreateReceiptRule`, `ses:UpdateReceiptRule`, `ses:DescribeReceiptRuleSet`, `ses:CreateReceiptRuleSet`, `ses:SetActiveReceiptRuleSet`, etc.
+- **API:** `ses:SendEmail`, `ses:SendRawEmail`, `ses:GetEmailIdentity`, `ses:GetIdentityVerificationAttributes` (domain verification TXT), `ses:CreateEmailIdentity`, `ses:CreateReceiptRule`, `ses:UpdateReceiptRule`, `ses:DescribeReceiptRuleSet`, `ses:CreateReceiptRuleSet`, `ses:SetActiveReceiptRuleSet`, etc.
 - **Lambda:** CloudWatch Logs; egress HTTPS to **`LUMINUM_API_URL`**; **`s3:GetObject`** only if you use a staging bucket for large mail.
 
 ## Live setup and cron
 
-- **`GET /api/emails/setup-status`**: on each load, live **`GetEmailIdentity`**, **`GetAccount`** (sandbox hint), and DNS checks (MX/SPF/DMARC/SES DKIM CNAMEs). Returns **`liveChecks`**, **`ses`**, **`sesAccount`**.
+- **`GET /api/emails/setup-status`**: on each load, live **`GetEmailIdentity`**, **`GetIdentityVerificationAttributes`** (verification TXT for the dashboard), **`GetAccount`** (sandbox hint), and DNS checks (MX/SPF/DMARC/SES DKIM CNAMEs). Returns **`liveChecks`**, **`dnsRecords`**, **`ses`**, **`sesAccount`**.
 - **`POST /api/emails/verify-dns`**: same checks, updates **`email_dns_verified_at`** / errors.
 - **`POST /api/cron/verify-email-dns`** ( **`CRON_SECRET`** ): same verification job for all orgs.
 - **`EMAIL_DNS_PERIODIC_CHECK_MS`**: if set to a positive interval (e.g. `21600000` for 6h), the API process runs that job on a **`setInterval`** after listen (no GitHub Actions schedule for email DNS).

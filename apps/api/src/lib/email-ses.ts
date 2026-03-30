@@ -1,3 +1,4 @@
+import { GetIdentityVerificationAttributesCommand, SESClient } from "@aws-sdk/client-ses";
 import {
   CreateEmailIdentityCommand,
   GetAccountCommand,
@@ -12,6 +13,21 @@ import type { SendViaMailAppPayload } from "./email-outbound-types.js";
 const SES_RAW_MAX_BYTES = 9 * 1024 * 1024; // stay under SES ~10 MiB limit
 
 let sesClient: SESv2Client | null | undefined;
+
+/** SES v1 client (GetIdentityVerificationAttributes for domain verification TXT). */
+let sesV1Client: SESClient | null | undefined;
+
+function getSesV1Client(): SESClient | null {
+  if (sesV1Client === undefined) {
+    const region = (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim();
+    if (!region) {
+      sesV1Client = null;
+      return null;
+    }
+    sesV1Client = new SESClient({ region });
+  }
+  return sesV1Client;
+}
 
 export function isSesSendEnvironmentReady(): boolean {
   const region = (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim();
@@ -153,6 +169,75 @@ export async function createSesDomainIdentity(domain: string): Promise<{ ok: boo
       return { ok: true };
     }
     return { ok: false, error: msg };
+  }
+}
+
+/** SES domain verification TXT (`_amazonses.<domain>`). From SES v1 GetIdentityVerificationAttributes. */
+export interface SesDomainVerificationTxt {
+  type: "TXT";
+  /** Full DNS name (e.g. _amazonses.example.com). */
+  name: string;
+  /** Host field for apex zones (GoDaddy, etc.): usually `_amazonses`. */
+  nameLabel: string;
+  value: string;
+  verificationStatus?: string;
+  error?: string;
+}
+
+/**
+ * Returns the verification TXT name/value while the domain is not yet verified in SES.
+ * Once status is Success, AWS clears the token — returns null (nothing to publish).
+ */
+export async function fetchSesDomainVerificationTxt(domain: string): Promise<SesDomainVerificationTxt | null> {
+  const client = getSesV1Client();
+  const d = domain.toLowerCase().replace(/\.$/, "").trim();
+  if (!client || !d) return null;
+  const name = `_amazonses.${d}`;
+  const nameLabel = "_amazonses";
+  try {
+    const out = await client.send(new GetIdentityVerificationAttributesCommand({ Identities: [d] }));
+    const attr = out.VerificationAttributes?.[d];
+    if (!attr) {
+      return {
+        type: "TXT",
+        name,
+        nameLabel,
+        value: "",
+        error: "Domain identity not found in SES for this region. Use Register in SES.",
+      };
+    }
+    const status = attr.VerificationStatus ?? "";
+    if (String(status).toLowerCase() === "success") {
+      return null;
+    }
+    const token = attr.VerificationToken?.trim() ?? "";
+    if (!token) {
+      return {
+        type: "TXT",
+        name,
+        nameLabel,
+        value: "",
+        verificationStatus: status,
+        error:
+          "SES did not return a verification token (identity may still be pending). Check the SES console or IAM policy for ses:GetIdentityVerificationAttributes.",
+      };
+    }
+    return {
+      type: "TXT",
+      name,
+      nameLabel,
+      value: token,
+      verificationStatus: status,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      type: "TXT",
+      name,
+      nameLabel,
+      value: "",
+      error: msg,
+    };
   }
 }
 
