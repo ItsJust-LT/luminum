@@ -14,12 +14,17 @@ export interface EmailListItem {
   htmlBody: string | null
   read: boolean
   createdAt: Date
+  updatedAt?: Date
   attachments: any[]
   inlineImages: any[]
   direction?: string
   outbound_provider?: string | null
   fallback_used?: boolean
   provider_message_id?: string | null
+  starred?: boolean
+  is_draft?: boolean
+  scheduled_send_at?: string | null
+  sent_at?: string | null
 }
 
 interface EmailsContextValue {

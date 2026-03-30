@@ -159,16 +159,7 @@ jobs:
             echo "S3_REGION=${{ vars.PROD_API_S3_REGION || 'us-east-1' }}"
             echo "GOOGLE_CLIENT_ID=${{ secrets.PROD_API_GOOGLE_CLIENT_ID }}"
             echo "GOOGLE_CLIENT_SECRET=${{ secrets.PROD_API_GOOGLE_CLIENT_SECRET }}"
-            # Amazon SES (outbound + identity; inbound via receipt rule → Lambda → API webhook)
-            echo "AWS_REGION=${{ vars.PROD_API_SES_REGION || vars.PROD_API_S3_REGION || 'us-east-1' }}"
-            echo "AWS_ACCESS_KEY_ID=${{ secrets.PROD_API_SES_ACCESS_KEY_ID }}"
-            echo "AWS_SECRET_ACCESS_KEY=${{ secrets.PROD_API_SES_SECRET_ACCESS_KEY }}"
-            echo "SES_CONFIGURATION_SET=${{ vars.PROD_API_SES_CONFIGURATION_SET || '' }}"
-            echo "EMAIL_SEND_SES_ORG_IDS=${{ vars.PROD_EMAIL_SEND_SES_ORG_IDS || '' }}"
-            echo "SES_LAMBDA_INBOUND_SECRET=${{ secrets.PROD_SES_LAMBDA_INBOUND_SECRET }}"
-            echo "SES_INBOUND_LAMBDA_ARN=${{ vars.PROD_SES_INBOUND_LAMBDA_ARN || '' }}"
-            echo "SES_RECEIPT_RULE_SET_NAME=${{ vars.PROD_SES_RECEIPT_RULE_SET_NAME || 'luminum-ses-inbound' }}"
-            echo "SES_RECEIPT_RULE_NAME=${{ vars.PROD_SES_RECEIPT_RULE_NAME || 'luminum-forward-to-lambda' }}"
+            echo "LUMINUM_EMAIL_SECRETS_KEY=${{ secrets.PROD_LUMINUM_EMAIL_SECRETS_KEY }}"
             echo "EMAIL_DNS_PERIODIC_CHECK_MS=${{ vars.PROD_EMAIL_DNS_PERIODIC_CHECK_MS || '' }}"
             echo "SITE_AUDITS_PERIODIC_CHECK_MS=${{ vars.PROD_SITE_AUDITS_PERIODIC_CHECK_MS || '86400000' }}"
           } > .env

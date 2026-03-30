@@ -10,6 +10,7 @@ const API_BASE =
 type ApiWithLowLevel = ApiClient & {
   get: (path: string, params?: Record<string, unknown>) => Promise<unknown>;
   post: (path: string, body?: unknown) => Promise<unknown>;
+  put: (path: string, body?: unknown) => Promise<unknown>;
   patch: (path: string, body?: unknown) => Promise<unknown>;
   del: (path: string, body?: unknown) => Promise<unknown>;
   analytics: Record<string, (...args: unknown[]) => Promise<unknown>>;

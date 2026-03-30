@@ -100,6 +100,10 @@ export default function EmailDetailPage() {
           outbound_provider: emailData.outbound_provider ?? null,
           fallback_used: !!emailData.fallback_used,
           provider_message_id: emailData.provider_message_id ?? null,
+          starred: !!emailData.starred,
+          is_draft: !!emailData.is_draft,
+          scheduled_send_at: emailData.scheduled_send_at ?? null,
+          sent_at: emailData.sent_at ?? null,
           attachments: (emailData.attachments || []).map((att: any) => ({
             filename: att.filename,
             size: att.size,

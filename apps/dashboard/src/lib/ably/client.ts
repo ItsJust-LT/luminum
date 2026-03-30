@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useRealtime } from "@/components/realtime/realtime-provider"
+import { OrganizationEvents } from "@/lib/ably/events"
 
 /**
  * Hook to get live viewer count for a website.
@@ -79,14 +80,49 @@ export function useAnalyticsPresence(websiteId: string | null | undefined) {
   return { liveCount, livePages, connected: connected || fallbackConnected }
 }
 
-/**
- * @deprecated Use useRealtime().onMessage() instead
- */
+/** Org-scoped realtime via unified WS (auto-subscribed to org:&lt;id&gt; on the server). */
 export function useOrganizationChannel(
-  _organizationId: string | null | undefined,
-  _onEvent: (eventType: string, data: any) => void
+  organizationId: string | null | undefined,
+  onEvent: (eventType: string, data: any) => void
 ) {
-  return { connected: false, channel: null }
+  const { connected, onMessage } = useRealtime()
+  const onEventRef = useRef(onEvent)
+  onEventRef.current = onEvent
+
+  const filterOrg = useCallback(
+    (data: any) =>
+      data?.organizationId == null || data.organizationId === organizationId,
+    [organizationId]
+  )
+
+  useEffect(() => {
+    if (!organizationId) return
+    const orgId = organizationId
+    const fire = (type: string, data: any) => {
+      if (data?.organizationId != null && data.organizationId !== orgId) return
+      onEventRef.current(type, data)
+    }
+    const unsubs = [
+      onMessage(OrganizationEvents.EMAIL_CREATED, (d) => fire(OrganizationEvents.EMAIL_CREATED, d)),
+      onMessage(OrganizationEvents.EMAIL_READ, (d) => fire(OrganizationEvents.EMAIL_READ, d)),
+      onMessage(OrganizationEvents.EMAIL_UPDATED, (d) => fire(OrganizationEvents.EMAIL_UPDATED, d)),
+      onMessage(OrganizationEvents.EMAIL_DELETED, (d) => fire(OrganizationEvents.EMAIL_DELETED, d)),
+      onMessage(OrganizationEvents.FORM_SUBMISSION_CREATED, (d) => {
+        if (filterOrg(d)) onEventRef.current(OrganizationEvents.FORM_SUBMISSION_CREATED, d)
+      }),
+      onMessage(OrganizationEvents.FORM_SUBMISSION_UPDATED, (d) => {
+        if (filterOrg(d)) onEventRef.current(OrganizationEvents.FORM_SUBMISSION_UPDATED, d)
+      }),
+      onMessage(OrganizationEvents.FORM_SUBMISSION_DELETED, (d) => {
+        if (filterOrg(d)) onEventRef.current(OrganizationEvents.FORM_SUBMISSION_DELETED, d)
+      }),
+    ]
+    return () => {
+      unsubs.forEach((u) => u())
+    }
+  }, [organizationId, onMessage, filterOrg])
+
+  return { connected, channel: organizationId ? `org:${organizationId}` : null }
 }
 
 /**

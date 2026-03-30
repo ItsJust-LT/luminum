@@ -8,6 +8,7 @@ import { logger } from "./lib/logger.js";
 import { requestLogMiddleware } from "./middleware/request-log.js";
 import { auth } from "./auth/config.js";
 import { attachRealtimeWS, broadcastToAdmins, broadcastToOrg } from "./lib/realtime-ws.js";
+import { setOrgBroadcast } from "./lib/org-ws-broadcast.js";
 import { prisma } from "./lib/prisma.js";
 import { setLogBroadcaster } from "./lib/log-broadcast.js";
 import { collectServerMetrics } from "./lib/server-metrics.js";
@@ -21,7 +22,7 @@ import { paystackRouter } from "./routes/paystack.js";
 import { supportRouter } from "./routes/support.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { notificationPreferencesRouter } from "./routes/notification-preferences.js";
-import { webhookSesLambdaRouter } from "./routes/webhook-ses-lambda.js";
+import { webhookResendInboundRouter } from "./routes/webhook-resend-inbound.js";
 import { webhookNotificationsRouter } from "./routes/webhook-notifications.js";
 import { imagesRouter } from "./routes/images.js";
 import { uploadsRouter } from "./routes/uploads.js";
@@ -54,6 +55,7 @@ import { orgBrandPublicRouter } from "./routes/org-brand-public.js";
 import { initWhatsAppManager } from "./whatsapp/manager.js";
 import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
 import { startEmailDnsPeriodicScheduler } from "./lib/start-email-dns-scheduler.js";
+import { startScheduledEmailPoller } from "./lib/start-scheduled-email-sender.js";
 import { startSiteAuditsPeriodicScheduler } from "./lib/start-site-audits-scheduler.js";
 
 const app = express();
@@ -74,19 +76,15 @@ app.use(
 // ─── Authentication (must run before body parsers) ─────────────────────────
 app.all("/api/auth/*", toNodeHandler(auth));
 
-// ─── Body parsing ──────────────────────────────────────────────────────────
+// ─── Resend inbound webhook (raw body required for Svix signature verification) ─
 app.use(
-  express.json({
-    limit: config.bodyLimit,
-    verify: (req, _res, buf) => {
-      const r = req as express.Request & { rawBody?: string };
-      if (r.method !== "POST") return;
-      const url = r.originalUrl || "";
-      if (!url.startsWith("/api/webhook/ses-lambda-inbound")) return;
-      r.rawBody = buf.toString("utf8");
-    },
-  })
+  "/api/webhook/resend-inbound",
+  express.raw({ type: "*/*", limit: config.bodyLimit }),
+  webhookResendInboundRouter
 );
+
+// ─── Body parsing ──────────────────────────────────────────────────────────
+app.use(express.json({ limit: config.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.bodyLimit }));
 
 // ─── Request logging (after body, before routes) ───────────────────────────
@@ -121,7 +119,6 @@ app.get("/api/me", async (req, res) => {
 app.use("/api/cron", cronRouter);
 
 // ─── Webhooks & public endpoints (no auth) ──────────────────────────────────
-app.use("/api/webhook/ses-lambda-inbound", webhookSesLambdaRouter);
 app.use("/api/notifications", webhookNotificationsRouter);
 app.use("/api/images", imagesRouter);
 app.use("/api/analytics", analyticsWebhookRouter);
@@ -201,9 +198,11 @@ httpServer.listen(config.port, () => {
 
   startEmailDnsPeriodicScheduler();
   startSiteAuditsPeriodicScheduler();
+  startScheduledEmailPoller();
 
-  // Initialize WhatsApp manager after server is listening (fan-out so multi-instance WS receive WA events)
+  // Redis fan-out so org-scoped WS events (WhatsApp, inbound email, etc.) reach every API instance
   const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);
+  setOrgBroadcast(broadcastToOrgForWhatsapp);
   initWhatsAppManager({ prisma, broadcastToOrg: broadcastToOrgForWhatsapp, broadcastToAdmins }).catch((err) => {
     logger.logError(err, "Failed to initialize WhatsApp Manager");
   });

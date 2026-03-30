@@ -55,6 +55,13 @@ function createApiClient(baseUrl: string = "") {
     });
   }
 
+  function put<T = any>(path: string, body?: any) {
+    return request<T>(path, {
+      method: "PUT",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  }
+
   function del<T = any>(path: string, body?: any) {
     return request<T>(path, {
       method: "DELETE",
@@ -77,10 +84,6 @@ function createApiClient(baseUrl: string = "") {
       post("/api/emails/setup-domain", { organizationId, websiteId }),
     verifyDns: (organizationId: string) =>
       post("/api/emails/verify-dns", { organizationId }),
-    syncSes: (organizationId: string) =>
-      post("/api/emails/sync-ses", { organizationId }),
-    sesRegisterDomain: (organizationId: string) =>
-      post("/api/emails/ses-register-domain", { organizationId }),
     getAddresses: (organizationId: string) =>
       get("/api/emails/addresses", { organizationId }),
     list: (
@@ -93,11 +96,34 @@ function createApiClient(baseUrl: string = "") {
         organizationId,
         page,
         limit,
+        mailbox: filters?.mailbox,
         read: filters?.read,
         search: filters?.search,
         from: filters?.from,
         emailAddresses: filters?.emailAddresses?.join(","),
       }),
+    folderCounts: (organizationId: string) =>
+      get("/api/emails/folder-counts", { organizationId }),
+    saveDraft: (body: {
+      organizationId: string;
+      id?: string;
+      to?: string | string[];
+      subject?: string;
+      text?: string;
+      html?: string;
+      fromLocalPart?: string;
+    }) => post("/api/emails/draft", body),
+    scheduleSend: (body: {
+      organizationId: string;
+      to: string | string[];
+      subject: string;
+      text?: string;
+      html?: string;
+      fromLocalPart?: string;
+      scheduledSendAt: string;
+    }) => post("/api/emails/schedule", body),
+    patchMeta: (id: string, body: { starred?: boolean; read?: boolean }) =>
+      patch(`/api/emails/${id}`, body),
     getById: (id: string) => get(`/api/emails/${id}`),
     markAsRead: (id: string) => post(`/api/emails/${id}/read`),
     markAsUnread: (id: string) => post(`/api/emails/${id}/unread`),
@@ -152,6 +178,12 @@ function createApiClient(baseUrl: string = "") {
       get("/api/organization-settings/storage", { organizationId }),
     getBrandedDashboardEnabled: (organizationId: string) =>
       get("/api/organization-settings/branded-dashboard-enabled", { organizationId }),
+    getResendEmail: (organizationId: string) =>
+      get("/api/organization-settings/resend-email", { organizationId }),
+    setResendEmail: (organizationId: string, apiKey: string, webhookSecret: string) =>
+      put("/api/organization-settings/resend-email", { organizationId, apiKey, webhookSecret }),
+    clearResendEmail: (organizationId: string) =>
+      del(`/api/organization-settings/resend-email?organizationId=${encodeURIComponent(organizationId)}`),
   };
 
   // ─── Organization Actions ─────────────────────────────────
@@ -802,6 +834,7 @@ function createApiClient(baseUrl: string = "") {
     /** Low-level API methods for endpoints not covered by the above. Use in client components. */
     get: <T = any>(path: string, params?: Record<string, any>) => get<T>(path, params),
     post: <T = any>(path: string, body?: any) => post<T>(path, body),
+    put: <T = any>(path: string, body?: any) => put<T>(path, body),
     patch: <T = any>(path: string, body?: any) => patch<T>(path, body),
     del: <T = any>(path: string, body?: any) => del<T>(path, body),
   };

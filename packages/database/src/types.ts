@@ -155,6 +155,8 @@ export interface EmailFilters {
   search?: string;
   from?: string;
   emailAddresses?: string[];
+  /** inbox | sent | starred | drafts | scheduled */
+  mailbox?: string;
 }
 
 export interface OrganizationSettings {
@@ -339,6 +341,7 @@ export interface AvatarResult {
 export const OrganizationEvents = {
   EMAIL_CREATED: "email:created",
   EMAIL_READ: "email:read",
+  EMAIL_UPDATED: "email:updated",
   EMAIL_DELETED: "email:deleted",
   FORM_SUBMISSION_CREATED: "form:created",
   FORM_SUBMISSION_UPDATED: "form:updated",

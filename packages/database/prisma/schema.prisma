@@ -175,16 +175,23 @@ model email {
   in_reply_to     String?      @db.Text
   references      String?      @db.Text
   sent_at         DateTime?    @db.Timestamptz(6)
-  /// mail_app | ses — which path delivered outbound mail
+  /// Legacy mail_app / ses; org mail uses resend
   outbound_provider String?    @db.VarChar(20)
   fallback_used   Boolean      @default(false)
   fallback_reason String?      @db.Text
-  provider_message_id String?  @db.VarChar(500) // e.g. Amazon SES MessageId
+  provider_message_id String?  @db.VarChar(500) // e.g. Resend message id
+  starred         Boolean      @default(false)
+  is_draft        Boolean      @default(false)
+  scheduled_send_at DateTime?  @db.Timestamptz(6)
   attachments     attachment[]
   createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @default(now()) @updatedAt @db.Timestamptz(6)
   organization    organization? @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([organization_id])
+  @@index([organization_id, direction, is_draft])
+  @@index([organization_id, scheduled_send_at])
+  @@index([organization_id, starred])
   @@index([receivedAt])
   @@index([subject])
   @@index([from])
@@ -240,9 +247,12 @@ model organization {
   email_dns_verified_at                                             DateTime?                 @db.Timestamptz(6)
   email_dns_last_check_at                                           DateTime?                 @db.Timestamptz(6)
   email_dns_last_error                                              String?                   @db.Text
-  /// Set when SES reports the org email domain identity as verified (enables SES fallback)
-  email_ses_verified_at                                             DateTime?                 @db.Timestamptz(6)
-  email_ses_last_error                                              String?                   @db.Text
+  /// AES-256-GCM ciphertext (base64); org's Resend API key (LUMINUM_EMAIL_SECRETS_KEY)
+  resend_api_key_ciphertext                                         String?                   @db.Text
+  /// Svix signing secret for Resend webhooks (encrypted)
+  resend_webhook_secret_ciphertext                                  String?                   @db.Text
+  resend_last_validated_at                                          DateTime?                 @db.Timestamptz(6)
+  resend_last_error                                                 String?                   @db.Text
   email_from_address                                                String?                   @db.VarChar(255)
   whatsapp_enabled                                                  Boolean                   @default(false)
   whatsapp_always_on                                                Boolean                   @default(false)

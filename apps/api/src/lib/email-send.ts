@@ -1,7 +1,7 @@
 import { prisma } from "./prisma.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "./email-system.js";
 import type { SendViaMailAppPayload } from "./email-outbound-types.js";
-import { assertOrgCanSendViaSes, isSesSendEnvironmentReady, sendViaSes } from "./email-ses.js";
+import { sendOutboundViaResendApi } from "./resend-org.js";
 
 export type { SendViaMailAppPayload } from "./email-outbound-types.js";
 
@@ -11,12 +11,10 @@ export interface OrgReplyAddress {
 }
 
 export interface OutboundSendResult {
-  provider: "ses";
+  provider: "resend";
   /** RFC Message-ID stored on the email row (same as request when provided). */
   messageId: string;
-  /** Kept for DB compatibility; always false with SES-only outbound. */
   fallbackUsed: false;
-  /** Amazon SES MessageId */
   providerMessageId: string;
 }
 
@@ -33,7 +31,7 @@ export function normalizeEmailLocalPart(raw: string): string {
 }
 
 /**
- * Outbound From is always an address on the org’s verified email domain (e.g. noreply@customer.com).
+ * Outbound From is always an address on the org’s email domain (e.g. noreply@customer.com).
  * Optional `fromLocalPart` sets the mailbox name (default `noreply` when omitted or empty).
  */
 export async function getOrgReplyAddress(organizationId: string, fromLocalPart?: string | null): Promise<OrgReplyAddress> {
@@ -63,33 +61,28 @@ export async function getOrgReplyAddress(organizationId: string, fromLocalPart?:
 }
 
 /**
- * Send outbound mail via Amazon SES only (org domain must be verified; optional strict DKIM).
+ * Send outbound mail via the organization’s Resend API key.
  */
-export async function sendOutboundViaSes(organizationId: string, payload: SendViaMailAppPayload): Promise<OutboundSendResult> {
+export async function sendOutboundViaResend(organizationId: string, payload: SendViaMailAppPayload): Promise<OutboundSendResult> {
   if (!isEmailSystemEnabled()) {
     throw new Error(EMAIL_SYSTEM_UNAVAILABLE_MESSAGE);
   }
-  if (!isSesSendEnvironmentReady()) {
-    throw new Error("SES is not configured (set AWS_REGION or AWS_DEFAULT_REGION and AWS credentials or instance role)");
-  }
-  const allowList = (process.env.EMAIL_SEND_SES_ORG_IDS || "").trim();
-  if (allowList) {
-    const ids = allowList
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!ids.includes(organizationId)) {
-      throw new Error("Outbound email is restricted for this organization (EMAIL_SEND_SES_ORG_IDS)");
-    }
-  }
-  await assertOrgCanSendViaSes(organizationId);
-
   const requestedMid = payload.messageId?.trim() || `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
-  const payloadWithMid = { ...payload, messageId: requestedMid };
-  const { providerMessageId } = await sendViaSes(payloadWithMid);
-  return {
-    provider: "ses",
+  const { messageId, providerMessageId } = await sendOutboundViaResendApi(organizationId, {
+    from: payload.from,
+    replyTo: payload.replyTo,
+    to: payload.to,
+    subject: payload.subject,
+    text: payload.text || "",
+    html: payload.html,
+    attachments: payload.attachments,
+    inReplyTo: payload.inReplyTo,
+    references: payload.references,
     messageId: requestedMid,
+  });
+  return {
+    provider: "resend",
+    messageId,
     fallbackUsed: false,
     providerMessageId,
   };

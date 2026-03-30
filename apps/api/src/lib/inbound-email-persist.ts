@@ -79,7 +79,7 @@ export interface PersistInboundEmailResult {
 }
 
 /**
- * Create inbound email row, upload attachments to MinIO, notify org — shared by legacy mail webhook and SES Lambda webhook.
+ * Create inbound email row, upload attachments to MinIO, notify org — shared by inbound webhooks (e.g. Resend).
  */
 export async function persistInboundEmailFromPayload(
   payload: InboundEmailWebhookLikePayload,
@@ -321,6 +321,12 @@ export async function persistInboundEmailFromPayload(
       });
     } catch {
       /* ignore notification errors */
+    }
+    try {
+      const { broadcastOrgEmailCreated } = await import("./org-ws-broadcast.js");
+      broadcastOrgEmailCreated(organizationId, email.id);
+    } catch {
+      /* ignore realtime errors */
     }
   }
 

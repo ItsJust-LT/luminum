@@ -1,27 +1,13 @@
 import { prisma } from "./prisma.js";
-import { checkDomainDmarc, checkDomainMx, checkDomainSpf, checkSesDkimCnames } from "./email-dns.js";
+import { checkDomainDmarc, checkDomainMx, checkDomainSpf } from "./email-dns.js";
 import { isEmailSystemEnabled } from "./email-system.js";
-import { fetchSesEmailIdentityDetails, isSesSendEnvironmentReady, syncOrganizationSesDomainInDb } from "./email-ses.js";
+import { decryptEmailSecret } from "./email-secrets.js";
+import { validateOrgResendDomain } from "./resend-org.js";
 
 export interface EmailDnsVerificationResult {
   checked: number;
   disabled: number;
   errors: string[];
-}
-
-async function dkimCheckForDomain(domain: string): Promise<{ ok: boolean; error?: string }> {
-  const id = await fetchSesEmailIdentityDetails(domain);
-  if (id.error && !id.verificationStatus) {
-    return { ok: false, error: `SES: ${id.error}` };
-  }
-  if (id.dkimStatus === "SUCCESS") {
-    return { ok: true };
-  }
-  if (id.dkimTokens.length === 0) {
-    return { ok: false, error: "SES DKIM not ready (no tokens yet)" };
-  }
-  const c = await checkSesDkimCnames(domain, id.dkimTokens);
-  return { ok: c.ok, error: c.ok ? undefined : c.error || "SES DKIM CNAMEs invalid" };
 }
 
 export async function runEmailDnsVerification(): Promise<EmailDnsVerificationResult> {
@@ -34,8 +20,7 @@ export async function runEmailDnsVerification(): Promise<EmailDnsVerificationRes
       id: true,
       name: true,
       email_domain_id: true,
-      email_dns_last_error: true,
-      email_dns_verified_at: true,
+      resend_api_key_ciphertext: true,
     },
   });
 
@@ -55,55 +40,82 @@ export async function runEmailDnsVerification(): Promise<EmailDnsVerificationRes
     const now = new Date();
     const domain = website.domain;
 
-    const [mx, spf, dkim, dmarc] = await Promise.all([
-      checkDomainMx(domain),
-      checkDomainSpf(domain),
-      dkimCheckForDomain(domain),
-      checkDomainDmarc(domain),
-    ]);
-
-    const sesIdentityOk = isSesSendEnvironmentReady()
-      ? (await fetchSesEmailIdentityDetails(domain)).verificationStatus === "SUCCESS"
-      : true;
+    const [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
 
     const issues: string[] = [];
-    if (!mx.ok) issues.push(`MX: ${mx.error || "invalid"}`);
+    if (!mx.ok) issues.push(`MX: ${mx.error || "lookup failed"}`);
     if (!spf.ok) issues.push(`SPF: ${spf.error || "missing"}`);
-    if (!dkim.ok) issues.push(`DKIM: ${dkim.error || "missing"}`);
     if (!dmarc.ok) issues.push(`DMARC: ${dmarc.error || "missing"}`);
-    if (isSesSendEnvironmentReady() && !sesIdentityOk) {
-      issues.push("SES: domain identity not verified");
-    }
-    const compositeError = issues.length ? issues.join("; ") : null;
 
-    if (!mx.ok || !spf.ok || !dkim.ok || !dmarc.ok || (isSesSendEnvironmentReady() && !sesIdentityOk)) {
+    let resendOk = true;
+    if (org.resend_api_key_ciphertext) {
+      try {
+        const apiKey = decryptEmailSecret(org.resend_api_key_ciphertext);
+        const v = await validateOrgResendDomain(apiKey, domain);
+        resendOk = v.ok;
+        if (!v.ok) {
+          issues.push(`Resend: ${v.error || "domain check failed"}`);
+          await prisma.organization.update({
+            where: { id: org.id },
+            data: {
+              resend_last_validated_at: now,
+              resend_last_error: v.error ?? null,
+              email_dns_verified_at: null,
+              email_dns_last_check_at: now,
+              email_dns_last_error: v.error ?? "Resend domain invalid",
+            },
+          });
+          result.disabled++;
+          result.errors.push(`Org ${org.name} (${org.id}): ${v.error}`);
+          continue;
+        }
+        await prisma.organization.update({
+          where: { id: org.id },
+          data: {
+            resend_last_validated_at: now,
+            resend_last_error: null,
+          },
+        });
+      } catch (e) {
+        issues.push(`Resend: ${e instanceof Error ? e.message : String(e)}`);
+        resendOk = false;
+      }
+    }
+
+    const compositeError = issues.length ? issues.join("; ") : null;
+    const dnsAdvisoryFail = !spf.ok || !dmarc.ok;
+
+    if (!resendOk) {
       await prisma.organization.update({
         where: { id: org.id },
         data: {
-          email_dns_verified_at: null,
           email_dns_last_check_at: now,
-          email_dns_last_error: compositeError || mx.error || "DNS / SES check failed",
+          email_dns_last_error: compositeError,
         },
       });
-      result.disabled++;
-      result.errors.push(`Org ${org.name} (${org.id}): ${compositeError || mx.error}`);
+      if (!result.errors.some((x) => x.includes(org.id))) {
+        result.errors.push(`Org ${org.name} (${org.id}): ${compositeError}`);
+      }
+      continue;
+    }
+
+    if (dnsAdvisoryFail && org.resend_api_key_ciphertext) {
+      await prisma.organization.update({
+        where: { id: org.id },
+        data: {
+          email_dns_last_check_at: now,
+          email_dns_last_error: compositeError,
+        },
+      });
+      result.errors.push(`Org ${org.name} (${org.id}): ${compositeError} (advisory)`);
     } else {
       await prisma.organization.update({
         where: { id: org.id },
         data: {
-          email_dns_verified_at: org.email_dns_verified_at ?? now,
           email_dns_last_check_at: now,
-          email_dns_last_error: null,
+          ...(dnsAdvisoryFail ? {} : { email_dns_last_error: null }),
         },
       });
-    }
-
-    if (isSesSendEnvironmentReady()) {
-      try {
-        await syncOrganizationSesDomainInDb(org.id);
-      } catch {
-        /* ignore SES sync errors in cron */
-      }
     }
   }
 

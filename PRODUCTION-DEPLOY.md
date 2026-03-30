@@ -44,7 +44,7 @@ Using **Cloudflare** for DNS (and optional proxy) and **Caddy** on the server fo
 
 4. Save the records. After propagation, `app.luminum.agency`, `api.luminum.agency`, and `analytics.luminum.agency` should resolve to your server.
 
-**Org email (inbox):** Outbound and inbound use **Amazon SES**. Configure DNS per [docs/EMAIL.md](docs/EMAIL.md) and wire **SES → Lambda → API** per [docs/SES-LAMBDA-INBOUND.md](docs/SES-LAMBDA-INBOUND.md). Even when DNS and SES look correct, **inbound mail only reaches the app** after the API has **`SES_INBOUND_LAMBDA_ARN`** and **`SES_LAMBDA_INBOUND_SECRET`** and the Lambda is deployed. You do **not** open port 25 on your VPS for org mail.
+**Org email (inbox):** Each organization uses its own **Resend** project (sending + receiving). Operators set **`LUMINUM_EMAIL_SECRETS_KEY`** (secret `PROD_LUMINUM_EMAIL_SECRETS_KEY` in GitHub Actions) so the API can store encrypted Resend keys. Configure DNS and webhooks per [docs/EMAIL.md](docs/EMAIL.md) and [docs/RESEND-INBOUND.md](docs/RESEND-INBOUND.md). You do **not** open port 25 on your VPS for org mail.
 
 **Branded customer domains** (Admin → Organizations → custom domain): The client must create an **A** record from their full hostname (e.g. `admin.client.com`) to your **server’s public IPv4** — not a CNAME to `app.yourdomain.com` if that hostname is behind Cloudflare proxy (traffic would hit Cloudflare without a matching custom hostname). Set **`PROD_SERVER_IP`** (variable) to that IPv4 so the dashboard build shows the correct value; the API verifies the domain by resolving the A record to **`SERVER_IP`** or **`MAIL_SEND_IP`**.
 
@@ -70,7 +70,8 @@ Secrets are grouped by **environment** and **app**. Production only: use the **P
 | `PROD_API_WEBHOOK_SECRET` | Shared secret for webhooks (e.g. `openssl rand -hex 24`). |
 | `PROD_API_VAPID_PUBLIC_KEY` | (Optional) For push notifications. |
 | `PROD_API_VAPID_PRIVATE_KEY` | (Optional) For push notifications. |
-| `PROD_API_RESEND_API_KEY` | (Optional) Resend API key for email. |
+| `PROD_API_RESEND_API_KEY` | Resend API key for **platform** email (auth, system). |
+| `PROD_LUMINUM_EMAIL_SECRETS_KEY` | 64 hex chars (`openssl rand -hex 32`); encrypts per-org Resend API keys and webhook secrets. |
 | `PROD_API_PAYSTACK_SECRET` | (Optional) Paystack secret key. |
 | `PROD_API_S3_ENDPOINT`, `PROD_API_S3_ACCESS_KEY_ID`, `PROD_API_S3_SECRET_ACCESS_KEY` | (Optional) S3-compatible storage for logos and file uploads. |
 | `PROD_API_GOOGLE_CLIENT_ID`, `PROD_API_GOOGLE_CLIENT_SECRET` | (Optional) Google OAuth. |

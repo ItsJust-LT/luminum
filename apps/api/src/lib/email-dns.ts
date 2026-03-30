@@ -1,8 +1,8 @@
 import dns from "dns/promises";
 
-/** Inbound and outbound org email use Amazon SES only (no self-hosted SMTP). */
+/** Org email uses Resend per-tenant; inbound MX is configured in the customer’s Resend project. */
 export function isSesInboundMode(): boolean {
-  return true;
+  return false;
 }
 
 function domainFromMailFrom(defaultFrom: string): string {
@@ -10,58 +10,23 @@ function domainFromMailFrom(defaultFrom: string): string {
   return match ? match[1].toLowerCase() : "";
 }
 
-/** Regional SES inbound SMTP endpoint hostname (receiving). */
+/** No single platform MX; return empty (admin/tools may still list actual MX via checkDomainMx). */
 export function getSesInboundMxHost(): string {
-  const region = (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim();
-  if (!region) return "";
-  return `inbound-smtp.${region}.amazonaws.com`.toLowerCase();
+  return "";
 }
 
-/**
- * Hostname that should appear in the customer's MX record for SES receiving.
- */
 export function getPrescribedInboundMxHost(_emailDomain: string): string {
-  return getSesInboundMxHost();
+  return "";
 }
 
-/** SPF TXT for SES sending. */
+/** SPF guidance for domains that send via Resend (Resend may show a different record in-dashboard). */
 export function getExpectedSpfRecordForDomain(_emailDomain: string): string {
-  return "v=spf1 include:amazonses.com -all";
+  return "v=spf1 include:amazonses.com ~all";
 }
 
-/** @deprecated Prefer getPrescribedInboundMxHost(domain) with the org email domain. */
+/** @deprecated No platform-prescribed MX. */
 export async function getExpectedMxHost(): Promise<string> {
-  const fallback = domainFromMailFrom(process.env.MAIL_FROM_DEFAULT || "noreply@luminum.agency");
-  if (!fallback) return getSesInboundMxHost();
-  return getPrescribedInboundMxHost(fallback);
-}
-
-/** SES Easy DKIM CNAME targets per token from GetEmailIdentity. */
-export function getSesDkimCnameRecords(domain: string, tokens: string[]): { name: string; target: string }[] {
-  const d = domain.toLowerCase().replace(/\.$/, "").trim();
-  const out: { name: string; target: string }[] = [];
-  for (const t of tokens) {
-    const token = String(t).trim();
-    if (!token) continue;
-    out.push({
-      name: `${token}._domainkey.${d}`,
-      target: `${token}.dkim.amazonses.com`,
-    });
-  }
-  return out;
-}
-
-/** Suggested DMARC TXT value for _dmarc.domain (for setup instructions). */
-export function getExpectedDmarcRecord(domain: string): string {
-  const rua = `mailto:dmarc@${domain}`;
-  return `v=DMARC1; p=quarantine; rua=${rua}; pct=100`;
-}
-
-/** Parse DMARC p= tag from a TXT record (case-insensitive). */
-export function parseDmarcPolicy(record: string): "none" | "quarantine" | "reject" | null {
-  const m = String(record).match(/\bp\s*=\s*(none|quarantine|reject)\b/i);
-  if (!m) return null;
-  return m[1].toLowerCase() as "none" | "quarantine" | "reject";
+  return "";
 }
 
 export interface MxCheckResult {
@@ -71,35 +36,23 @@ export interface MxCheckResult {
   error?: string;
 }
 
+/** Lists public MX for the domain (advisory only; no comparison to a fixed SES host). */
 export async function checkDomainMx(domain: string): Promise<MxCheckResult> {
-  const expected = getPrescribedInboundMxHost(domain);
-  if (!expected) {
-    return {
-      ok: false,
-      expectedHost: "",
-      actualHosts: [],
-      error: "Could not determine SES inbound host (set AWS_REGION or AWS_DEFAULT_REGION)",
-    };
-  }
   try {
     const records = await dns.resolveMx(domain);
     const actualHosts = (records || []).map((r) => ({
       exchange: (r.exchange || "").toLowerCase().replace(/\.$/, ""),
       priority: r.priority ?? 0,
     }));
-    const expectedLower = expected.toLowerCase().replace(/\.$/, "");
-    const ok = actualHosts.some(
-      (r) => r.exchange === expectedLower || r.exchange.endsWith("." + expectedLower) || r.exchange === expected
-    );
     return {
-      ok,
-      expectedHost: expected,
+      ok: true,
+      expectedHost: "",
       actualHosts,
-      error: ok ? undefined : actualHosts.length === 0 ? "No MX records found" : `MX does not point to ${expected}`,
+      error: actualHosts.length ? undefined : "No MX records found (add receiving MX in Resend for inbound)",
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, expectedHost: expected, actualHosts: [], error: message };
+    return { ok: false, expectedHost: "", actualHosts: [], error: message };
   }
 }
 
@@ -123,7 +76,7 @@ export async function checkDomainSpf(domain: string): Promise<SpfCheckResult> {
     return {
       ok: hasSes,
       record,
-      error: hasSes ? undefined : "SPF must include Amazon SES (e.g. include:amazonses.com)",
+      error: hasSes ? undefined : "SPF should include Amazon SES / Resend sending (e.g. include:amazonses.com)",
     };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -137,7 +90,6 @@ export interface DkimCheckResult {
   error?: string;
 }
 
-/** Legacy hook; SES DKIM is validated via checkSesDkimCnames. */
 export async function checkDomainDkim(_domain: string): Promise<DkimCheckResult> {
   return { ok: true, selector: "", record: undefined };
 }
@@ -148,42 +100,30 @@ export interface SesDkimDnsCheckResult {
   error?: string;
 }
 
-/**
- * Verify SES Easy DKIM CNAMEs: each `{token}._domainkey.domain` should point at `{token}.dkim.amazonses.com`.
- */
-export async function checkSesDkimCnames(domain: string, tokens: string[]): Promise<SesDkimDnsCheckResult> {
-  const rows = getSesDkimCnameRecords(domain, tokens);
-  if (rows.length === 0) {
-    return { ok: false, records: [], error: "No DKIM tokens from SES yet (create/register the domain in SES first)" };
+/** Kept for cron compatibility; with no SES tokens returns not applicable. */
+export async function checkSesDkimCnames(_domain: string, tokens: string[]): Promise<SesDkimDnsCheckResult> {
+  if (!tokens.length) {
+    return { ok: true, records: [], error: undefined };
   }
-  const results: SesDkimDnsCheckResult["records"] = [];
-  let allOk = true;
-  for (const row of rows) {
-    try {
-      const cnames = await dns.resolveCname(row.name);
-      const flat = (cnames || []).map((c) => c.toLowerCase().replace(/\.$/, ""));
-      const want = row.target.toLowerCase().replace(/\.$/, "");
-      const ok = flat.some((c) => c === want || c.endsWith("." + want));
-      if (!ok) allOk = false;
-      results.push({
-        name: row.name,
-        target: row.target,
-        ok,
-        error: ok ? undefined : flat.length ? `CNAME points to ${flat.join(", ")}, expected ${row.target}` : "CNAME not found",
-      });
-    } catch (e: unknown) {
-      allOk = false;
-      const message = e instanceof Error ? e.message : String(e);
-      results.push({ name: row.name, target: row.target, ok: false, error: message });
-    }
-  }
-  return { ok: allOk, records: results };
+  return { ok: false, records: [], error: "DKIM is managed in Resend; use the Resend dashboard for this domain." };
 }
 
 export interface DmarcCheckResult {
   ok: boolean;
   record?: string;
   error?: string;
+}
+
+export function getExpectedDmarcRecord(domain: string): string {
+  const d = domain.toLowerCase().replace(/\.$/, "").trim();
+  const rua = `mailto:dmarc@${d}`;
+  return `v=DMARC1; p=quarantine; rua=${rua}; pct=100`;
+}
+
+export function parseDmarcPolicy(record: string): "none" | "quarantine" | "reject" | null {
+  const m = String(record).match(/\bp\s*=\s*(none|quarantine|reject)\b/i);
+  if (!m) return null;
+  return m[1].toLowerCase() as "none" | "quarantine" | "reject";
 }
 
 export async function checkDomainDmarc(domain: string): Promise<DmarcCheckResult> {

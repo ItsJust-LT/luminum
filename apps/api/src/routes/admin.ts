@@ -456,15 +456,6 @@ router.post("/enable-organization-email", adminOnly, async (req: Request, res: R
     if (!website || website.organization_id !== organizationId) {
       return res.status(400).json({ success: false, error: "Website not found or does not belong to this organization" });
     }
-    const mx = await checkDomainMx(website.domain);
-    if (!mx.ok) {
-      return res.status(400).json({
-        success: false,
-        error: mx.error || "MX check failed",
-        expectedHost: mx.expectedHost,
-        actualHosts: mx.actualHosts,
-      });
-    }
     const replyAddress = email_from_address || `replies@${website.domain}`;
     const now = new Date();
     await prisma.organization.update({

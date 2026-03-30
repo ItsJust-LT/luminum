@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { useEmailsContext } from "@/lib/contexts/emails-context"
@@ -11,6 +12,7 @@ import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -30,6 +32,9 @@ import {
   CheckCircle2,
   Loader2,
   XCircle,
+  Star,
+  Clock,
+  FileEdit,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -38,8 +43,17 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { EmailAvatar } from "@/components/emails/email-avatar"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { cn } from "@/lib/utils"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { MailboxSidebar, type MailboxId, type FolderCounts } from "@/components/emails/mailbox-sidebar"
 
 function smartDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : new Date(date)
@@ -101,21 +115,31 @@ export default function EmailsPage() {
   const [websites, setWebsites] = useState<{ id: string; domain: string; name?: string }[]>([])
   const [settingDomain, setSettingDomain] = useState(false)
   const [verifyingDns, setVerifyingDns] = useState(false)
-  const [syncingSes, setSyncingSes] = useState(false)
-  const [registeringSes, setRegisteringSes] = useState(false)
   const [lastVerifyResult, setLastVerifyResult] = useState<{
     success: boolean
     error?: string
     message?: string
-    sesSync?: { ok: boolean; error?: string }
     checks?: {
-      mx: { ok: boolean; error?: string }
       spf: { ok: boolean; record?: string; error?: string }
-      dkim: { ok: boolean; selector?: string; error?: string }
       dmarc: { ok: boolean; record?: string; error?: string }
+      resend?: { ok: boolean }
     }
   } | null>(null)
+  const [resendApiKeyInput, setResendApiKeyInput] = useState("")
+  const [resendWebhookSecretInput, setResendWebhookSecretInput] = useState("")
+  const [savingResendCreds, setSavingResendCreds] = useState(false)
+  const [maskedResendKey, setMaskedResendKey] = useState<string | null>(null)
+  const [mailbox, setMailbox] = useState<MailboxId>("inbox")
+  const [folderCounts, setFolderCounts] = useState<FolderCounts>({
+    inboxUnread: 0,
+    sent: 0,
+    starred: 0,
+    drafts: 0,
+    scheduled: 0,
+  })
   const [composeOpen, setComposeOpen] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState("")
+  const [savingDraft, setSavingDraft] = useState(false)
   /** Local part only; server appends @org domain */
   const [composeFromLocal, setComposeFromLocal] = useState("noreply")
   const [composeTo, setComposeTo] = useState("")
@@ -136,6 +160,37 @@ export default function EmailsPage() {
     api.emails.getSetupStatus(organization.id).then((s) => setSetupStatus(s as EmailSetupStatus))
   }, [organization?.id])
 
+  useEffect(() => {
+    if (!organization?.id || !setupStatus?.domain) {
+      setMaskedResendKey(null)
+      return
+    }
+    api.organizationSettings
+      .getResendEmail(organization.id)
+      .then((r: { success?: boolean; maskedApiKey?: string | null }) => {
+        setMaskedResendKey(r?.maskedApiKey ?? null)
+      })
+      .catch(() => setMaskedResendKey(null))
+  }, [organization?.id, setupStatus?.domain, setupStatus?.resend?.configured])
+
+  const refreshFolderCounts = useCallback(async () => {
+    if (!organization?.id) return
+    try {
+      const r = (await api.emails.folderCounts(organization.id)) as {
+        success?: boolean
+        data?: FolderCounts
+      }
+      if (r?.success && r.data) setFolderCounts(r.data)
+    } catch {
+      /* ignore */
+    }
+  }, [organization?.id])
+
+  useEffect(() => {
+    if (!organization?.id || !setupStatus?.setupComplete) return
+    void refreshFolderCounts()
+  }, [organization?.id, setupStatus?.setupComplete, refreshFolderCounts])
+
   // When setup required and no domain, fetch websites so owner/admin can select one
   useEffect(() => {
     if (!organization?.id || !setupStatus || setupStatus.setupComplete || setupStatus.domain) return
@@ -150,8 +205,9 @@ export default function EmailsPage() {
   const showSetupRequired = !!(setupStatus && !setupStatus.setupComplete)
 
   const fetchEmails = useCallback(
-    async (pageNum: number, refresh: boolean) => {
+    async (pageNum: number, refresh: boolean, opts?: { mailbox?: MailboxId }) => {
       if (!organization?.id) return
+      const mb = opts?.mailbox ?? mailbox
       if (refresh) setLoading(true)
       else setLoadingMore(true)
       try {
@@ -160,17 +216,33 @@ export default function EmailsPage() {
           pageNum,
           50,
           {
+            mailbox: mb,
             read: filterRead,
             emailAddresses: selectedEmailAddresses.length > 0 ? selectedEmailAddresses : undefined,
             search: debouncedSearch || undefined,
           }
         )
         if (result.success && result.data) {
-          const fetchedEmails = result.data.emails as EmailListItem[]
-          const pagination = result.data.pagination
+          const fetchedEmails = (result.data.emails as EmailListItem[]).map((e) => ({
+            ...e,
+            date: e.date ? new Date(e.date as unknown as string) : new Date(),
+            createdAt: e.createdAt ? new Date(e.createdAt as unknown as string) : new Date(),
+            updatedAt: e.updatedAt ? new Date(e.updatedAt as unknown as string) : undefined,
+          }))
+          const pagination = result.data.pagination as {
+            hasMore: boolean
+            total: number
+            unreadCount?: number | null
+            inboxUnread?: number
+          }
           setHasMore(pagination.hasMore)
           setTotalCount(pagination.total)
-          setUnreadCountFromApi(pagination.unreadCount ?? null)
+          if (typeof pagination.inboxUnread === "number") {
+            setFolderCounts((prev) => ({ ...prev, inboxUnread: pagination.inboxUnread! }))
+            setUnreadCountFromApi(pagination.inboxUnread)
+          } else {
+            setUnreadCountFromApi(mb === "inbox" ? pagination.unreadCount ?? null : null)
+          }
           setOrgLoading(false)
           if (refresh) setEmails(fetchedEmails)
           else setEmails((prev) => [...prev, ...fetchedEmails])
@@ -191,7 +263,21 @@ export default function EmailsPage() {
         setLoadingMore(false)
       }
     },
-    [organization?.id, filterRead, selectedEmailAddresses, debouncedSearch, setEmails, setLoading, setLoadingMore, setHasMore, setTotalCount, setUnreadCountFromApi, setAvailableEmailAddresses, setLoadedForOrgId],
+    [
+      organization?.id,
+      mailbox,
+      filterRead,
+      selectedEmailAddresses,
+      debouncedSearch,
+      setEmails,
+      setLoading,
+      setLoadingMore,
+      setHasMore,
+      setTotalCount,
+      setUnreadCountFromApi,
+      setAvailableEmailAddresses,
+      setLoadedForOrgId,
+    ],
   )
 
   const loadMore = useCallback(() => {
@@ -220,11 +306,15 @@ export default function EmailsPage() {
     [router, organization?.slug],
   )
 
-  const handleDeleteEmail = useCallback((e: React.MouseEvent, emailId: string) => {
-    e.stopPropagation()
-    api.emails.delete(emailId)
-    setEmails((prev) => prev.filter((email) => email.id !== emailId))
-  }, [setEmails])
+  const handleDeleteEmail = useCallback(
+    (e: React.MouseEvent, emailId: string) => {
+      e.stopPropagation()
+      void api.emails.delete(emailId)
+      setEmails((prev) => prev.filter((email) => email.id !== emailId))
+      void refreshFolderCounts()
+    },
+    [setEmails, refreshFolderCounts],
+  )
 
   const handleMarkAllAsRead = useCallback(async () => {
     if (!organization?.id) return
@@ -238,10 +328,58 @@ export default function EmailsPage() {
           ? `Marked ${result.updated} email${result.updated === 1 ? "" : "s"} as read`
           : "All emails are already read"
       )
+      setFolderCounts((prev) => ({ ...prev, inboxUnread: 0 }))
+      void refreshFolderCounts()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to mark all as read")
     }
-  }, [organization?.id, setEmails, setUnreadCountFromApi])
+  }, [organization?.id, setEmails, setUnreadCountFromApi, refreshFolderCounts])
+
+  const toggleStar = useCallback(
+    async (e: React.MouseEvent, email: EmailListItem) => {
+      e.stopPropagation()
+      if (!organization?.id) return
+      const next = !email.starred
+      setEmails((prev) => {
+        if (mailbox === "starred" && !next) return prev.filter((x) => x.id !== email.id)
+        return prev.map((x) => (x.id === email.id ? { ...x, starred: next } : x))
+      })
+      try {
+        await api.emails.patchMeta(email.id, { starred: next })
+        await refreshFolderCounts()
+      } catch {
+        setEmails((prev) =>
+          prev.some((x) => x.id === email.id)
+            ? prev.map((x) => (x.id === email.id ? { ...x, starred: email.starred } : x))
+            : [{ ...email, starred: email.starred }, ...prev],
+        )
+        toast.error("Could not update star")
+      }
+    },
+    [organization?.id, setEmails, refreshFolderCounts, mailbox],
+  )
+
+  const mailboxTitle = useMemo(() => {
+    const labels: Record<MailboxId, string> = {
+      inbox: "Inbox",
+      sent: "Sent",
+      starred: "Starred",
+      drafts: "Drafts",
+      scheduled: "Scheduled",
+    }
+    return labels[mailbox]
+  }, [mailbox])
+
+  const emptyMailboxHint = useMemo(() => {
+    const hints: Record<MailboxId, string> = {
+      inbox: "Emails sent to your organization will appear here.",
+      sent: "Outbound messages show here after you send.",
+      starred: "Star an email from any folder to collect it here.",
+      drafts: "Save a draft from compose to continue later.",
+      scheduled: "Schedule a send from compose to queue it here.",
+    }
+    return hints[mailbox]
+  }, [mailbox])
 
   const extractPreview = useCallback((email: EmailListItem) => {
     if (email.textBody) return email.textBody.slice(0, 120).replace(/\s+/g, " ").trim() + (email.textBody.length > 120 ? "…" : "")
@@ -252,11 +390,11 @@ export default function EmailsPage() {
   const shouldFetchInbox = setupStatus != null && setupStatus.setupComplete === true
   useEffect(() => {
     if (!organization?.id || !shouldFetchInbox) return
-    if (hasCachedList(organization.id) && scrollPosition != null) return
+    if (hasCachedList(organization.id) && scrollPosition != null && mailbox === "inbox") return
     setPage(1)
     fetchEmails(1, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- omit scrollPosition so clearing it after restore doesn't refetch
-  }, [organization?.id, shouldFetchInbox, filterRead, debouncedSearch, selectedEmailAddresses, fetchEmails, hasCachedList, setPage])
+  }, [organization?.id, shouldFetchInbox, mailbox, filterRead, debouncedSearch, selectedEmailAddresses, fetchEmails, hasCachedList, scrollPosition, setPage])
 
   // Restore scroll position when returning from email detail (after paint so viewport exists)
   useEffect(() => {
@@ -275,16 +413,36 @@ export default function EmailsPage() {
     organization?.id || null,
     useCallback(
       (eventType: string, data: any) => {
+        const refetch = () => {
+          setPage(1)
+          fetchEmails(1, true)
+          void refreshFolderCounts()
+        }
         switch (eventType) {
           case OrganizationEvents.EMAIL_CREATED:
-            setPage(1)
-            fetchEmails(1, true)
+            refetch()
             break
           case OrganizationEvents.EMAIL_READ:
             setEmails((prev) =>
               prev.map((email) => (email.id === data.emailId ? { ...email, read: true } : email)),
             )
             setUnreadCountFromApi((prev) => (prev != null ? Math.max(0, prev - 1) : null))
+            void refreshFolderCounts()
+            break
+          case OrganizationEvents.EMAIL_UPDATED:
+            setEmails((prev) =>
+              prev.map((email) =>
+                email.id === data.emailId
+                  ? {
+                      ...email,
+                      ...(typeof data.read === "boolean" ? { read: data.read } : {}),
+                      ...(typeof data.starred === "boolean" ? { starred: data.starred } : {}),
+                    }
+                  : email
+              )
+            )
+            if (typeof data.read === "boolean") void refreshFolderCounts()
+            if (typeof data.starred === "boolean") void refreshFolderCounts()
             break
           case OrganizationEvents.EMAIL_DELETED:
             setEmails((prev) => {
@@ -294,10 +452,11 @@ export default function EmailsPage() {
               return prev.filter((email) => email.id !== data.emailId)
             })
             setTotalCount((prev) => (prev != null ? Math.max(0, prev - 1) : null))
+            void refreshFolderCounts()
             break
         }
       },
-      [fetchEmails],
+      [fetchEmails, setEmails, setPage, setUnreadCountFromApi, setTotalCount, refreshFolderCounts],
     ),
   )
 
@@ -377,7 +536,10 @@ export default function EmailsPage() {
   }
 
   const displayTotal = totalCount ?? emails.length
-  const displayUnread = unreadCountFromApi ?? emails.filter((e) => !e.read).length
+  const displayUnread =
+    mailbox === "inbox"
+      ? (unreadCountFromApi ?? folderCounts.inboxUnread)
+      : emails.filter((e) => !e.read).length
 
   const handleSendEmail = async () => {
     const to = composeTo.trim()
@@ -400,8 +562,10 @@ export default function EmailsPage() {
       setComposeTo("")
       setComposeSubject("")
       setComposeBody("")
+      setScheduleAt("")
       setPage(1)
       await fetchEmails(1, true)
+      await refreshFolderCounts()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to send email")
     } finally {
@@ -409,45 +573,104 @@ export default function EmailsPage() {
     }
   }
 
-  const handleSyncSes = async () => {
-    if (!organization?.id) return
-    setSyncingSes(true)
+  const handleScheduleSend = async () => {
+    const to = composeTo.trim()
+    const subject = composeSubject.trim()
+    const text = composeBody.trim()
+    if (!organization?.id || !to || !subject || !text || !scheduleAt) {
+      toast.error("Fill all fields and pick a send time.")
+      return
+    }
+    const when = new Date(scheduleAt)
+    if (Number.isNaN(when.getTime())) {
+      toast.error("Invalid date")
+      return
+    }
+    setSendingCompose(true)
     try {
-      const res = (await api.emails.syncSes(organization.id)) as { success?: boolean; error?: string; message?: string }
-      if (res?.success) {
-        toast.success(res?.message || "Amazon SES domain verified.")
-      } else {
-        toast.error(res?.error || "SES sync failed.")
-      }
-      const next = await api.emails.getSetupStatus(organization.id)
-      setSetupStatus(next as EmailSetupStatus)
-    } catch {
-      toast.error("SES sync failed.")
+      const result = (await api.emails.scheduleSend({
+        organizationId: organization.id,
+        fromLocalPart: composeFromLocal.trim(),
+        to: [to],
+        subject,
+        text,
+        scheduledSendAt: when.toISOString(),
+      })) as { success?: boolean; error?: string }
+      if (!result?.success) throw new Error(result?.error || "Schedule failed")
+      toast.success("Email scheduled")
+      setComposeOpen(false)
+      setComposeTo("")
+      setComposeSubject("")
+      setComposeBody("")
+      setScheduleAt("")
+      setEmails([])
+      setMailbox("scheduled")
+      setPage(1)
+      setLoadedForOrgId(null)
+      await fetchEmails(1, true, { mailbox: "scheduled" })
+      await refreshFolderCounts()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Schedule failed")
     } finally {
-      setSyncingSes(false)
+      setSendingCompose(false)
     }
   }
 
-  const handleSesRegisterDomain = async () => {
+  const handleSaveDraftCompose = async () => {
     if (!organization?.id) return
-    setRegisteringSes(true)
+    setSavingDraft(true)
     try {
-      const res = (await api.emails.sesRegisterDomain(organization.id)) as {
+      const to = composeTo.trim()
+      const result = (await api.emails.saveDraft({
+        organizationId: organization.id,
+        fromLocalPart: composeFromLocal.trim(),
+        to: to ? [to] : [],
+        subject: composeSubject.trim(),
+        text: composeBody.trim(),
+      })) as { success?: boolean; error?: string; data?: { id: string } }
+      if (!result?.success) throw new Error(result?.error || "Draft save failed")
+      toast.success("Draft saved")
+      setComposeOpen(false)
+      setEmails([])
+      setMailbox("drafts")
+      setPage(1)
+      setLoadedForOrgId(null)
+      await fetchEmails(1, true, { mailbox: "drafts" })
+      await refreshFolderCounts()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Draft save failed")
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
+  const handleSaveResendCredentials = async () => {
+    if (!organization?.id) return
+    const key = resendApiKeyInput.trim()
+    const wh = resendWebhookSecretInput.trim()
+    if (!key || !wh) {
+      toast.error("Resend API key and webhook signing secret are required.")
+      return
+    }
+    setSavingResendCreds(true)
+    try {
+      const res = (await api.organizationSettings.setResendEmail(organization.id, key, wh)) as {
         success?: boolean
         error?: string
         message?: string
       }
-      if (res?.success) {
-        toast.success(res?.message || "Domain registered in Amazon SES.")
-      } else {
-        toast.error(res?.error || "SES registration failed.")
-      }
+      if (!res?.success) throw new Error(res?.error || "Failed to save credentials")
+      toast.success(res?.message || "Resend credentials saved.")
+      setResendApiKeyInput("")
+      setResendWebhookSecretInput("")
       const next = await api.emails.getSetupStatus(organization.id)
       setSetupStatus(next as EmailSetupStatus)
-    } catch {
-      toast.error("SES registration failed.")
+      const rs = (await api.organizationSettings.getResendEmail(organization.id)) as { maskedApiKey?: string | null }
+      setMaskedResendKey(rs?.maskedApiKey ?? null)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save credentials")
     } finally {
-      setRegisteringSes(false)
+      setSavingResendCreds(false)
     }
   }
 
@@ -461,7 +684,7 @@ export default function EmailsPage() {
       try {
         const res = await api.emails.setupDomain(organization.id, websiteId)
         if (res?.success) {
-          toast.success("Domain set. Add the MX record below, then click Verify DNS.")
+          toast.success("Domain set. Configure the domain in Resend, then add API key and webhook secret.")
           const next = await api.emails.getSetupStatus(organization.id)
           setSetupStatus(next)
         } else {
@@ -483,26 +706,18 @@ export default function EmailsPage() {
           success?: boolean
           error?: string
           message?: string
-          sesSync?: { ok: boolean; error?: string }
-          sesIdentity?: { ok: boolean; status?: string }
           checks?: {
-            mx: { ok: boolean; error?: string }
             spf: { ok: boolean; record?: string; error?: string }
-            dkim: { ok: boolean; selector?: string; error?: string }
             dmarc: { ok: boolean; record?: string; error?: string }
+            resend?: { ok: boolean }
           }
         }
         setLastVerifyResult({
           success: !!res?.success,
           error: res?.error,
           message: res?.message,
-          sesSync: res?.sesSync,
           checks: res?.checks,
         })
-        if (res?.sesSync) {
-          if (res.sesSync.ok) toast.success("Amazon SES domain identity verified.")
-          else if (res.sesSync.error) toast.info("Amazon SES", { description: res.sesSync.error })
-        }
         if (res?.success) {
           toast.success(res?.message || "DNS verified. You can send and receive email.")
           const next = await api.emails.getSetupStatus(organization.id)
@@ -581,30 +796,96 @@ export default function EmailsPage() {
                     {setupStatus.lastError}
                   </div>
                 )}
-                {setupStatus?.ses?.configured &&
-                  setupStatus.inboundPipeline &&
-                  !setupStatus.inboundPipeline.sesReceivingConfigured && (
+                {setupStatus?.inboundPipeline &&
+                  !setupStatus.inboundPipeline.resendInboundReady &&
+                  setupStatus.resend &&
+                  (!setupStatus.resend.hasWebhookSecret || !setupStatus.resend.configured) && (
                     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
-                      <p className="font-medium">Inbound email not wired to this server yet</p>
+                      <p className="font-medium">Email is still being set up</p>
                       <p className="mt-1 text-muted-foreground dark:text-amber-200/90">
-                        DNS and SES can be correct, but mail will not reach the app until the operator sets{" "}
-                        <code className="text-xs">SES_INBOUND_LAMBDA_ARN</code> and{" "}
-                        <code className="text-xs">SES_LAMBDA_INBOUND_SECRET</code> on the API and deploys the Lambda (see{" "}
-                        <span className="font-medium">docs/SES-LAMBDA-INBOUND.md</span>).
+                        Save your Resend API key and webhook signing secret below, add the inbound webhook URL in Resend (event{" "}
+                        <code className="text-xs">email.received</code>), and publish the MX/DNS records Resend shows for this domain.
                       </p>
                     </div>
                   )}
+                {setupStatus?.resend?.inboundWebhookUrl && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inbound webhook URL</p>
+                    <p className="text-xs text-muted-foreground">
+                      In Resend → Webhooks, create an endpoint with this URL and subscribe to <strong>email.received</strong>.
+                    </p>
+                    <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.resend.inboundWebhookUrl}</code>
+                  </div>
+                )}
+                {canSetDomain && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3 mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resend credentials</p>
+                    <p className="text-xs text-muted-foreground">
+                      Use an API key from the same Resend project where this domain is added. The signing secret comes from the webhook
+                      configuration in Resend (Svix).
+                    </p>
+                    {maskedResendKey && (
+                      <p className="text-xs text-muted-foreground">
+                        Saved API key: <span className="font-mono">{maskedResendKey}</span>
+                        {setupStatus.resend?.hasWebhookSecret ? " · Webhook secret on file" : ""}
+                      </p>
+                    )}
+                    {!setupStatus.resend?.secretsKeyConfigured && (
+                      <p className="text-xs text-destructive">
+                        Server operator must set <code className="text-xs">LUMINUM_EMAIL_SECRETS_KEY</code> before keys can be stored.
+                      </p>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="resend-api-key">Resend API key</Label>
+                      <Input
+                        id="resend-api-key"
+                        type="password"
+                        autoComplete="off"
+                        placeholder="re_…"
+                        value={resendApiKeyInput}
+                        onChange={(e) => setResendApiKeyInput(e.target.value)}
+                        className="font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="resend-webhook-secret">Webhook signing secret</Label>
+                      <Input
+                        id="resend-webhook-secret"
+                        type="password"
+                        autoComplete="off"
+                        placeholder="From Resend → Webhooks"
+                        value={resendWebhookSecretInput}
+                        onChange={(e) => setResendWebhookSecretInput(e.target.value)}
+                        className="font-mono text-sm"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={savingResendCreds || !setupStatus.resend?.secretsKeyConfigured}
+                      onClick={handleSaveResendCredentials}
+                    >
+                      {savingResendCreds ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      Save Resend credentials
+                    </Button>
+                  </div>
+                )}
+                {!canSetDomain && (
+                  <p className="text-sm text-muted-foreground mt-4">
+                    Ask an owner or admin to add Resend credentials and complete the webhook in Resend.
+                  </p>
+                )}
                 {setupStatus?.dnsRecords && (
                   <div className="space-y-4 mt-4">
-                    <p className="text-sm font-medium text-foreground">Add these DNS records for {setupStatus.domain}</p>
+                    <p className="text-sm font-medium text-foreground">Suggested DNS records for {setupStatus.domain}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Prefer the exact records shown in your Resend dashboard for this domain (especially MX for inbound). The rows below
+                      are hints for SPF and DMARC only.
+                    </p>
                     <div className="grid gap-4 sm:grid-cols-1">
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">MX — Mail server</p>
-                        <p className="text-xs text-muted-foreground">Type: MX · Name: @ (or {setupStatus.dnsRecords.mx.name}) · Priority: {setupStatus.dnsRecords.mx.priority}</p>
-                        <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.mx.value}</code>
-                      </div>
-                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF — includes Amazon SES</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF (TXT)</p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: @ (or {setupStatus.dnsRecords.spf.name})</p>
                         {setupStatus.dnsRecords.spf.value ? (
                           <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.spf.value}</code>
@@ -613,98 +894,13 @@ export default function EmailsPage() {
                           <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.spf.valueNote}</p>
                         )}
                       </div>
-                      {setupStatus.dnsRecords.sesDomainVerificationTxt && (
-                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            Domain verification — Amazon SES (TXT)
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Required for SES to mark the domain verified. Add this TXT before or with DKIM; many DNS UIs use
-                            Name <strong>{setupStatus.dnsRecords.sesDomainVerificationTxt.nameLabel}</strong> (zone{" "}
-                            <strong>{setupStatus.domain}</strong>) — same as <code className="text-xs">{setupStatus.dnsRecords.sesDomainVerificationTxt.name}</code>.
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Type: TXT · Name: @ (apex) or <strong>{setupStatus.dnsRecords.sesDomainVerificationTxt.nameLabel}</strong>
-                          </p>
-                          {setupStatus.dnsRecords.sesDomainVerificationTxt.value ? (
-                            <code className="block text-sm bg-background px-3 py-2 rounded border break-all">
-                              {setupStatus.dnsRecords.sesDomainVerificationTxt.value}
-                            </code>
-                          ) : null}
-                          {setupStatus.dnsRecords.sesDomainVerificationTxt.error && (
-                            <p className="text-xs text-destructive">{setupStatus.dnsRecords.sesDomainVerificationTxt.error}</p>
-                          )}
-                          {setupStatus.dnsRecords.sesDomainVerificationTxt.verificationStatus && (
-                            <p className="text-xs text-muted-foreground">
-                              SES verification status: {setupStatus.dnsRecords.sesDomainVerificationTxt.verificationStatus}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      {setupStatus.dnsRecords.sesDkimCnames.length > 0 ? (
-                        <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DKIM — Amazon SES (CNAME)</p>
-                          <p className="text-xs text-muted-foreground">Add each CNAME exactly as shown (SES Easy DKIM).</p>
-                          {setupStatus.dnsRecords.sesDkimCnames.map((row, i) => (
-                            <div key={i} className="space-y-1">
-                              <p className="text-xs text-muted-foreground">Name: {row.name}</p>
-                              <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{row.value}</code>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DMARC — Reporting &amp; policy</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DMARC (TXT)</p>
                         <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dmarc.name}</p>
                         <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dmarc.value}</code>
                       </div>
                     </div>
-                    {setupStatus.sesAccount?.sandbox && (
-                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100 mt-4">
-                        Your AWS SES account appears to be in <strong>sandbox</strong> mode: you can only send to verified addresses until production access is enabled in AWS.
-                      </div>
-                    )}
-                    {setupStatus.ses?.configured && (
-                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 mt-4">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amazon SES</p>
-                        <p className="text-xs text-muted-foreground">
-                          Outbound mail sends through SES. Use <strong>Register in SES</strong> to create the domain identity (if needed), publish the DNS records above, then <strong>Verify DNS</strong> or <strong>Sync SES</strong>.
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={setupStatus.ses.domainVerified ? "default" : "secondary"}>
-                            {setupStatus.ses.domainVerified ? "SES domain verified" : "SES domain not verified"}
-                          </Badge>
-                          {setupStatus.ses.lastError && (
-                            <span className="text-xs text-destructive">{setupStatus.ses.lastError}</span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {canSetDomain ? (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              className="rounded-lg"
-                              disabled={registeringSes}
-                              onClick={handleSesRegisterDomain}
-                            >
-                              {registeringSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                              Register in SES
-                            </Button>
-                          ) : null}
-                          <Button type="button" variant="outline" size="sm" className="rounded-lg" disabled={syncingSes} onClick={handleSyncSes}>
-                            {syncingSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                            Sync SES status
-                          </Button>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                )}
-                {!setupStatus?.dnsRecords && setupStatus?.expectedMxHost && (
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Set your MX record to: <code className="bg-muted px-1.5 py-0.5 rounded">{setupStatus.expectedMxHost}</code>
-                  </p>
                 )}
                 <Button
                   onClick={handleVerifyDns}
@@ -716,29 +912,25 @@ export default function EmailsPage() {
                 </Button>
                 {lastVerifyResult?.checks && (
                   <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4 space-y-3">
-                    <p className="text-sm font-medium text-foreground">DNS check results</p>
+                    <p className="text-sm font-medium text-foreground">Check results</p>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.mx.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
-                        {lastVerifyResult.checks.mx.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                        <span className="text-sm">MX — {lastVerifyResult.checks.mx.ok ? "OK" : lastVerifyResult.checks.mx.error || "Failed"}</span>
-                      </div>
-                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.spf.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
-                        {lastVerifyResult.checks.spf.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                        <span className="text-sm">SPF — {lastVerifyResult.checks.spf.ok ? "OK" : lastVerifyResult.checks.spf.error || "Failed"}</span>
-                      </div>
-                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dkim.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
-                        {lastVerifyResult.checks.dkim.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                        <span className="text-sm">DKIM — {lastVerifyResult.checks.dkim.ok ? "OK" : (lastVerifyResult.checks.dkim as { error?: string }).error || "Failed"}</span>
-                      </div>
-                      <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dmarc.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
-                        {lastVerifyResult.checks.dmarc.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                        <span className="text-sm">DMARC — {lastVerifyResult.checks.dmarc.ok ? "OK" : lastVerifyResult.checks.dmarc.error || "Failed"}</span>
-                      </div>
-                      {lastVerifyResult.sesSync && setupStatus?.ses?.configured && (
-                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2 sm:col-span-2", lastVerifyResult.sesSync.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-amber-500/10 text-amber-900 dark:text-amber-200")}>
-                          {lastVerifyResult.sesSync.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                      {lastVerifyResult.checks.spf && (
+                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.spf.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
+                          {lastVerifyResult.checks.spf.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                          <span className="text-sm">SPF — {lastVerifyResult.checks.spf.ok ? "OK" : lastVerifyResult.checks.spf.error || "Failed"}</span>
+                        </div>
+                      )}
+                      {lastVerifyResult.checks.dmarc && (
+                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dmarc.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
+                          {lastVerifyResult.checks.dmarc.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
+                          <span className="text-sm">DMARC — {lastVerifyResult.checks.dmarc.ok ? "OK" : lastVerifyResult.checks.dmarc.error || "Failed"}</span>
+                        </div>
+                      )}
+                      {lastVerifyResult.checks.resend && (
+                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2 sm:col-span-2", lastVerifyResult.checks.resend.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-amber-500/10 text-amber-900 dark:text-amber-200")}>
+                          {lastVerifyResult.checks.resend.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
                           <span className="text-sm">
-                            Amazon SES domain — {lastVerifyResult.sesSync.ok ? "verified" : lastVerifyResult.sesSync.error || "Not verified — complete SES DNS or Register in SES"}
+                            Resend domain — {lastVerifyResult.checks.resend.ok ? "validated" : "not validated — check API key and domain in Resend"}
                           </span>
                         </div>
                       )}
@@ -746,7 +938,8 @@ export default function EmailsPage() {
                   </div>
                 )}
                 <p className="text-sm text-muted-foreground mt-2">
-                  After you’ve added the records at your DNS provider, click Verify DNS. We check MX, SPF, the SES domain verification TXT (`_amazonses`), DKIM (SES CNAMEs or mail-server TXT), DMARC, and SES domain verification in AWS. If all pass, the inbox will appear.
+                  <strong>Verify DNS</strong> re-checks your domain against Resend (with your saved API key) and runs advisory SPF/DMARC
+                  lookups. When Resend validates and credentials + webhook are in place, the inbox unlocks.
                 </p>
               </>
             )}
@@ -758,108 +951,257 @@ export default function EmailsPage() {
 
   return (
     <AppPageContainer fullWidth>
-      {/* Hero header */}
-      <div className="relative overflow-hidden app-hero bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 p-4 sm:p-6 md:p-8 lg:p-10">
-        <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))]" />
-        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 sm:gap-6">
-          <div className="space-y-1 sm:space-y-2 min-w-0">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <div className="p-2 sm:p-2.5 bg-primary/10 rounded-xl shadow-sm shrink-0">
-                <Mail className="h-6 w-6 sm:h-7 sm:w-7 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-foreground truncate">
-                  Inbox
-                </h1>
-                <p className="text-muted-foreground mt-0.5 text-sm sm:text-base truncate">
-                  {loading ? "Loading…" : displayTotal === 0 ? "No emails yet" : `${displayTotal.toLocaleString()} email${displayTotal === 1 ? "" : "s"}${displayUnread > 0 ? ` · ${displayUnread.toLocaleString()} unread` : ""}`}
-                </p>
-              </div>
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { setPage(1); fetchEmails(1, true) }}
-            disabled={loading}
-            className="shrink-0"
+      <div className="flex flex-col md:flex-row min-h-[min(100dvh,920px)] gap-0">
+        <MailboxSidebar
+          active={mailbox}
+          counts={folderCounts}
+          onSelect={(m) => {
+            setMailbox(m)
+            setPage(1)
+            setLoadedForOrgId(null)
+            setEmails([])
+          }}
+        />
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 px-3 sm:px-5 lg:px-8 pb-8 pt-3 md:pt-4">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="relative overflow-hidden app-hero bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 p-4 sm:p-6 md:p-8 lg:p-10 border border-border/40 rounded-2xl shadow-sm"
           >
-            <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
-            Refresh
-          </Button>
-          {setupStatus?.ses?.configured && (
-            <Button variant="outline" size="sm" className="shrink-0" disabled={syncingSes} onClick={handleSyncSes} title="Refresh Amazon SES domain verification status">
-              {syncingSes ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Sync SES
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleMarkAllAsRead}
-            disabled={loading || displayUnread === 0}
-            className="shrink-0"
-          >
-            <Check className="h-4 w-4 mr-2" />
-            Mark all read
-          </Button>
-          <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="shrink-0">
-                <Send className="h-4 w-4 mr-2" />
-                Compose
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>New email</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <p className="text-sm text-muted-foreground">From</p>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Input
-                      placeholder="noreply"
-                      value={composeFromLocal}
-                      onChange={(e) => setComposeFromLocal(e.target.value)}
-                      className="min-w-0 flex-1"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    <span className="text-sm text-muted-foreground shrink-0 truncate max-w-[55%]">
-                      @{setupStatus?.domain ?? "…"}
-                    </span>
+            <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] pointer-events-none" />
+            <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  <motion.div
+                    layout
+                    className="p-2 sm:p-2.5 bg-primary/10 rounded-xl shadow-sm shrink-0 ring-1 ring-primary/10"
+                    whileHover={{ scale: 1.03 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                  >
+                    <Mail className="h-6 w-6 sm:h-7 sm:w-7 text-primary" />
+                  </motion.div>
+                  <div className="min-w-0">
+                    <h1 className="text-2xl sm:text-3xl md:text-[2rem] font-semibold tracking-tight text-foreground truncate">
+                      {mailboxTitle}
+                    </h1>
+                    <p className="text-muted-foreground mt-0.5 text-sm sm:text-[0.9375rem] leading-snug truncate">
+                      {loading
+                        ? "Loading…"
+                        : displayTotal === 0
+                          ? "No messages in this folder"
+                          : `${displayTotal.toLocaleString()} message${displayTotal === 1 ? "" : "s"}${
+                              mailbox === "inbox" && displayUnread > 0
+                                ? ` · ${displayUnread.toLocaleString()} unread`
+                                : ""
+                            }`}
+                    </p>
                   </div>
                 </div>
-                <Input
-                  placeholder="To (email address)"
-                  value={composeTo}
-                  onChange={(e) => setComposeTo(e.target.value)}
-                />
-                <Input
-                  placeholder="Subject"
-                  value={composeSubject}
-                  onChange={(e) => setComposeSubject(e.target.value)}
-                />
-                <Textarea
-                  placeholder="Message"
-                  value={composeBody}
-                  onChange={(e) => setComposeBody(e.target.value)}
-                  className="min-h-[220px]"
-                />
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setComposeOpen(false)} disabled={sendingCompose}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSendEmail} disabled={sendingCompose || !composeTo.trim() || !composeSubject.trim() || !composeBody.trim()}>
-                    {sendingCompose ? "Sending..." : "Send"}
-                  </Button>
-                </div>
               </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setPage(1)
+                    void fetchEmails(1, true)
+                  }}
+                  disabled={loading}
+                  className="rounded-xl border-border/60 shadow-sm"
+                >
+                  <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
+                  Refresh
+                </Button>
+                {mailbox === "inbox" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleMarkAllAsRead()}
+                    disabled={loading || displayUnread === 0}
+                    className="rounded-xl border-border/60 shadow-sm"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Mark all read
+                  </Button>
+                ) : null}
+                <Sheet open={composeOpen} onOpenChange={setComposeOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="shrink-0 rounded-xl shadow-md shadow-primary/15 bg-primary hover:bg-primary/90 transition-transform active:scale-[0.98]"
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      Compose
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent
+                    side="right"
+                    className="w-full sm:max-w-[min(100vw-1rem,480px)] p-0 gap-0 flex flex-col border-l border-border/80 bg-background/95 backdrop-blur-xl data-[state=open]:duration-300"
+                  >
+                    <div className="relative overflow-hidden border-b border-border/60 bg-gradient-to-br from-primary/14 via-primary/5 to-transparent px-6 pt-7 pb-5">
+                      <SheetHeader className="space-y-1.5 text-left">
+                        <SheetTitle className="text-xl font-semibold tracking-tight">Compose</SheetTitle>
+                        <SheetDescription className="text-[13px] leading-relaxed">
+                          Mail sends through your verified domain on Resend. Recipients see a professional from-address.
+                        </SheetDescription>
+                      </SheetHeader>
+                    </div>
+                    <Tabs defaultValue="send" className="flex-1 flex flex-col min-h-0">
+                      <TabsList className="mx-4 mt-4 grid grid-cols-3 h-11 rounded-xl bg-muted/60 p-1">
+                        <TabsTrigger value="send" className="rounded-lg text-xs sm:text-sm gap-1.5 data-[state=active]:shadow-sm">
+                          <Send className="h-3.5 w-3.5 opacity-70" />
+                          Send
+                        </TabsTrigger>
+                        <TabsTrigger value="schedule" className="rounded-lg text-xs sm:text-sm gap-1.5 data-[state=active]:shadow-sm">
+                          <Clock className="h-3.5 w-3.5 opacity-70" />
+                          Schedule
+                        </TabsTrigger>
+                        <TabsTrigger value="draft" className="rounded-lg text-xs sm:text-sm gap-1.5 data-[state=active]:shadow-sm">
+                          <FileEdit className="h-3.5 w-3.5 opacity-70" />
+                          Draft
+                        </TabsTrigger>
+                      </TabsList>
+                      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 min-h-0">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">From</Label>
+                          <div className="flex items-center gap-2 min-w-0 rounded-xl border border-border/80 bg-muted/20 px-3 py-2">
+                            <Input
+                              placeholder="noreply"
+                              value={composeFromLocal}
+                              onChange={(e) => setComposeFromLocal(e.target.value)}
+                              className="min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 h-9 px-0"
+                              autoComplete="off"
+                              spellCheck={false}
+                            />
+                            <span className="text-sm text-muted-foreground shrink-0 truncate max-w-[50%]">
+                              @{setupStatus?.domain ?? "…"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="compose-to" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            To
+                          </Label>
+                          <Input
+                            id="compose-to"
+                            placeholder="recipient@example.com"
+                            value={composeTo}
+                            onChange={(e) => setComposeTo(e.target.value)}
+                            className="rounded-xl h-11 border-border/80"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="compose-subject" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Subject
+                          </Label>
+                          <Input
+                            id="compose-subject"
+                            placeholder="What’s this about?"
+                            value={composeSubject}
+                            onChange={(e) => setComposeSubject(e.target.value)}
+                            className="rounded-xl h-11 border-border/80"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="compose-body" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Message
+                          </Label>
+                          <Textarea
+                            id="compose-body"
+                            placeholder="Write your message…"
+                            value={composeBody}
+                            onChange={(e) => setComposeBody(e.target.value)}
+                            className="min-h-[200px] rounded-xl border-border/80 text-[15px] leading-relaxed resize-y"
+                          />
+                        </div>
+                        <TabsContent value="send" className="mt-0 space-y-3 outline-none">
+                          <p className="text-xs text-muted-foreground">Delivered immediately via Resend.</p>
+                          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
+                            <Button
+                              variant="ghost"
+                              className="rounded-xl"
+                              onClick={() => setComposeOpen(false)}
+                              disabled={sendingCompose}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              className="rounded-xl shadow-md shadow-primary/20"
+                              onClick={() => void handleSendEmail()}
+                              disabled={
+                                sendingCompose || !composeTo.trim() || !composeSubject.trim() || !composeBody.trim()
+                              }
+                            >
+                              {sendingCompose ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Sending…
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="h-4 w-4 mr-2" />
+                                  Send now
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="schedule" className="mt-0 space-y-3 outline-none">
+                          <div className="space-y-1.5">
+                            <Label htmlFor="schedule-at" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                              Send at
+                            </Label>
+                            <Input
+                              id="schedule-at"
+                              type="datetime-local"
+                              value={scheduleAt}
+                              onChange={(e) => setScheduleAt(e.target.value)}
+                              className="rounded-xl h-11 border-border/80"
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            We’ll queue the message and send it at the chosen time (UTC from your browser).
+                          </p>
+                          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
+                            <Button variant="ghost" className="rounded-xl" onClick={() => setComposeOpen(false)} disabled={sendingCompose}>
+                              Cancel
+                            </Button>
+                            <Button
+                              className="rounded-xl"
+                              onClick={() => void handleScheduleSend()}
+                              disabled={
+                                sendingCompose ||
+                                !composeTo.trim() ||
+                                !composeSubject.trim() ||
+                                !composeBody.trim() ||
+                                !scheduleAt
+                              }
+                            >
+                              {sendingCompose ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Clock className="h-4 w-4 mr-2" />}
+                              Schedule send
+                            </Button>
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="draft" className="mt-0 space-y-3 outline-none">
+                          <p className="text-xs text-muted-foreground">Save without sending. Open Drafts to continue editing.</p>
+                          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
+                            <Button variant="ghost" className="rounded-xl" onClick={() => setComposeOpen(false)} disabled={savingDraft}>
+                              Cancel
+                            </Button>
+                            <Button variant="secondary" className="rounded-xl" onClick={() => void handleSaveDraftCompose()} disabled={savingDraft}>
+                              {savingDraft ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileEdit className="h-4 w-4 mr-2" />}
+                              Save draft
+                            </Button>
+                          </div>
+                        </TabsContent>
+                      </div>
+                    </Tabs>
+                  </SheetContent>
+                </Sheet>
+              </div>
+            </div>
+          </motion.div>
 
       {/* Toolbar */}
       <div className="space-y-3 sm:space-y-4">
@@ -991,79 +1333,131 @@ export default function EmailsPage() {
             <div className="rounded-full bg-muted/50 p-6 mb-4">
               <Mail className="h-12 w-12 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-1">No emails found</h3>
-            <p className="text-sm text-muted-foreground max-w-sm">
+            <h3 className="text-lg font-semibold text-foreground mb-1 tracking-tight">Nothing here yet</h3>
+            <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
               {debouncedSearch || selectedEmailAddresses.length > 0 || filterRead !== undefined
                 ? "Try changing your filters or search."
-                : "Emails sent to your organization will appear here."}
+                : emptyMailboxHint}
             </p>
           </div>
         ) : (
           <div ref={listContainerRef} className="h-full">
           <ScrollArea className="h-[calc(100vh-22rem)] md:h-[calc(100vh-20rem)]">
-            <div className="divide-y">
-              {emails.map((email) => (
-                <div
-                  key={email.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleEmailClick(email)}
-                  onMouseEnter={() => handleEmailHover(email.id)}
-                  onKeyDown={(e) => e.key === "Enter" && handleEmailClick(email)}
-                  className={cn(
-                    "flex items-start gap-3 sm:gap-4 px-3 py-3.5 sm:px-4 sm:py-4 md:px-5 transition-colors cursor-pointer group active:bg-muted/50",
-                    "hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 min-h-[72px] sm:min-h-0",
-                    !email.read && "bg-primary/5 hover:bg-primary/10 border-l-4 border-l-primary",
-                    email.read && "border-l-4 border-l-transparent",
-                  )}
-                >
-                  <EmailAvatar email={email.from} size={40} className="h-9 w-9 sm:h-10 sm:w-10" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                      <span className={cn("text-sm truncate", !email.read ? "font-semibold text-foreground" : "text-foreground")}>
-                        {email.from || "Unknown"}
-                      </span>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                        {smartDate(email.date)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mb-0.5 min-w-0">
-                      <p className={cn("text-sm truncate flex-1 min-w-0", !email.read ? "font-medium text-foreground" : "text-muted-foreground")}>
-                        {email.subject || "(No subject)"}
-                      </p>
-                      {email.direction === "outbound" && email.outbound_provider === "ses" && (
-                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
-                          {email.fallback_used ? "SES fallback" : "SES"}
-                        </Badge>
-                      )}
-                      {email.direction === "outbound" && email.outbound_provider === "mail_app" && !email.fallback_used && (
-                        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5 hidden sm:inline-flex">
-                          Mail server
-                        </Badge>
-                      )}
-                    </div>
-                    {extractPreview(email) && (
-                      <p className="text-xs text-muted-foreground line-clamp-1">{extractPreview(email)}</p>
+            <div className="divide-y divide-border/60">
+              <AnimatePresence initial={false}>
+                {emails.map((email) => (
+                  <motion.div
+                    key={email.id}
+                    role="button"
+                    tabIndex={0}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                    onClick={() => handleEmailClick(email)}
+                    onMouseEnter={() => handleEmailHover(email.id)}
+                    onKeyDown={(e) => e.key === "Enter" && handleEmailClick(email)}
+                    className={cn(
+                      "flex items-start gap-3 sm:gap-4 px-3 py-3.5 sm:px-4 sm:py-4 md:px-5 transition-colors cursor-pointer group active:bg-muted/50",
+                      "hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 min-h-[72px] sm:min-h-0",
+                      !email.read && mailbox === "inbox" && "bg-primary/[0.06] hover:bg-primary/10 border-l-[3px] border-l-primary",
+                      (email.read || mailbox !== "inbox") && "border-l-[3px] border-l-transparent",
                     )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {email.attachments?.length > 0 && (
-                      <span className="text-muted-foreground p-1.5" title={`${email.attachments.length} attachment(s)`}>
-                        <Paperclip className="h-4 w-4" />
-                      </span>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                      onClick={(e) => handleDeleteEmail(e, email.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Delete</span>
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                  >
+                    <EmailAvatar email={email.from} size={40} className="h-9 w-9 sm:h-10 sm:w-10 ring-1 ring-border/40" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                        <span
+                          className={cn(
+                            "text-[13px] sm:text-sm truncate tracking-tight",
+                            !email.read && mailbox === "inbox" ? "font-semibold text-foreground" : "font-medium text-foreground",
+                          )}
+                        >
+                          {email.from || "Unknown"}
+                        </span>
+                        <span className="text-[11px] sm:text-xs text-muted-foreground whitespace-nowrap shrink-0 tabular-nums">
+                          {email.scheduled_send_at && !email.sent_at
+                            ? smartDate(email.scheduled_send_at)
+                            : smartDate(email.date)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mb-0.5 min-w-0 flex-wrap">
+                        <p
+                          className={cn(
+                            "text-[13px] sm:text-sm truncate flex-1 min-w-0 leading-snug",
+                            !email.read && mailbox === "inbox" ? "font-medium text-foreground" : "text-muted-foreground",
+                          )}
+                        >
+                          {email.subject || "(No subject)"}
+                        </p>
+                        {email.is_draft ? (
+                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5 border-amber-500/40 text-amber-800 dark:text-amber-200">
+                            Draft
+                          </Badge>
+                        ) : null}
+                        {email.scheduled_send_at && !email.sent_at && !email.is_draft ? (
+                          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-5 gap-0.5">
+                            <Clock className="h-2.5 w-2.5" />
+                            Scheduled
+                          </Badge>
+                        ) : null}
+                        {email.direction === "outbound" && email.outbound_provider === "resend" && (
+                          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
+                            Resend
+                          </Badge>
+                        )}
+                        {email.direction === "outbound" && email.outbound_provider === "ses" && (
+                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
+                            SES (legacy)
+                          </Badge>
+                        )}
+                        {email.direction === "outbound" && email.outbound_provider === "mail_app" && !email.fallback_used && (
+                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5 hidden sm:inline-flex">
+                            Mail server (legacy)
+                          </Badge>
+                        )}
+                      </div>
+                      {extractPreview(email) && (
+                        <p className="text-[11px] sm:text-xs text-muted-foreground line-clamp-1 leading-relaxed">
+                          {extractPreview(email)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-8 w-8 rounded-lg transition-colors",
+                          email.starred
+                            ? "text-amber-500 opacity-100"
+                            : "text-muted-foreground opacity-70 sm:opacity-0 sm:group-hover:opacity-100",
+                        )}
+                        onClick={(e) => void toggleStar(e, email)}
+                        aria-pressed={email.starred}
+                      >
+                        <Star className={cn("h-4 w-4", email.starred && "fill-amber-400 text-amber-500")} />
+                        <span className="sr-only">{email.starred ? "Unstar" : "Star"}</span>
+                      </Button>
+                      {email.attachments?.length > 0 && (
+                        <span className="text-muted-foreground p-1.5" title={`${email.attachments.length} attachment(s)`}>
+                          <Paperclip className="h-4 w-4" />
+                        </span>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        onClick={(e) => handleDeleteEmail(e, email.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Delete</span>
+                      </Button>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
 
             {hasMore && (
@@ -1092,6 +1486,8 @@ export default function EmailsPage() {
           </ScrollArea>
           </div>
         )}
+      </div>
+        </div>
       </div>
     </AppPageContainer>
   )

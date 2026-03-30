@@ -2,38 +2,21 @@ import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { canAccessOrganization, getMemberOrAdmin } from "../lib/access.js";
-import {
-  checkDomainDmarc,
-  checkDomainMx,
-  checkDomainSpf,
-  checkSesDkimCnames,
-  getPrescribedInboundMxHost,
-  getExpectedSpfRecordForDomain,
-  getExpectedDmarcRecord,
-  getSesDkimCnameRecords,
-  getSesInboundMxHost,
-} from "../lib/email-dns.js";
+import { checkDomainDmarc, checkDomainSpf, getExpectedDmarcRecord } from "../lib/email-dns.js";
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
-import { getOrgReplyAddress, sendOutboundViaSes } from "../lib/email-send.js";
-import {
-  fetchSesAccountSummary,
-  fetchSesDomainVerificationTxt,
-  fetchSesEmailIdentityDetails,
-  isSesSendEnvironmentReady,
-  syncOrganizationSesDomainInDb,
-  createSesDomainIdentity,
-} from "../lib/email-ses.js";
-import { syncSesInboundReceiptRules } from "../lib/ses-receipt-rules.js";
+import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
 import { logger } from "../lib/logger.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
-
-function sesDkimSetupOk(id: Awaited<ReturnType<typeof fetchSesEmailIdentityDetails>>, sesDkimDns: Awaited<ReturnType<typeof checkSesDkimCnames>>): boolean {
-  if (id.dkimStatus === "SUCCESS") return true;
-  if (id.dkimTokens.length > 0 && sesDkimDns.ok) return true;
-  return false;
-}
+import { decryptEmailSecret, isEmailSecretsKeyConfigured } from "../lib/email-secrets.js";
+import { getOrgWithResendFields, validateOrgResendDomain } from "../lib/resend-org.js";
+import { mailboxOrderBy, mailboxWhere, parseMailbox } from "../lib/email-mailbox.js";
+import {
+  broadcastOrgEmailDeleted,
+  broadcastOrgEmailOutboundSent,
+  broadcastOrgEmailUpdated,
+} from "../lib/org-ws-broadcast.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -123,7 +106,7 @@ router.get("/unread-count", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/emails/setup-status?organizationId=... — live AWS GetEmailIdentity + DNS checks on each load
+// GET /api/emails/setup-status?organizationId=... — Resend + optional SPF/DMARC hints
 router.get("/setup-status", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) {
@@ -147,8 +130,10 @@ router.get("/setup-status", async (req: Request, res: Response) => {
         email_dns_last_check_at: true,
         email_dns_last_error: true,
         email_from_address: true,
-        email_ses_verified_at: true,
-        email_ses_last_error: true,
+        resend_api_key_ciphertext: true,
+        resend_webhook_secret_ciphertext: true,
+        resend_last_validated_at: true,
+        resend_last_error: true,
         email_domain: { select: { domain: true } },
       },
     });
@@ -156,87 +141,33 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const access = !!org.emails_enabled;
     const hasDomain = !!org.email_domain_id && !!org.email_domain;
     const domain = org.email_domain?.domain ?? "";
-    const awsReady = isSesSendEnvironmentReady();
-    const expectedMxHost = domain ? getPrescribedInboundMxHost(domain) : "";
-    const expectedSpfRecord = domain ? getExpectedSpfRecordForDomain(domain) : "";
+    const hasApiKey = Boolean(org.resend_api_key_ciphertext);
+    const hasWebhookSecret = Boolean(org.resend_webhook_secret_ciphertext);
+    const dnsVerified = Boolean(org.email_dns_verified_at);
+    const secretsKeyConfigured = isEmailSecretsKeyConfigured();
+    const inboundPipeline = {
+      resendInboundReady: hasApiKey && hasWebhookSecret && dnsVerified,
+    };
+    const setupComplete = access && hasDomain && inboundPipeline.resendInboundReady;
+
     const expectedDmarcRecord = domain ? getExpectedDmarcRecord(domain) : "";
     const dmarcRecordName = domain ? `_dmarc.${domain}` : "";
-
-    const lambdaArn = (process.env.SES_INBOUND_LAMBDA_ARN || "").trim();
-    const lambdaSecret = (process.env.SES_LAMBDA_INBOUND_SECRET || "").trim();
-    const inboundPipeline = { sesReceivingConfigured: Boolean(lambdaArn && lambdaSecret) };
-
-    let idDetails = domain ? await fetchSesEmailIdentityDetails(domain) : { dkimTokens: [] as string[] };
-    let sesVerificationTxt: Awaited<ReturnType<typeof fetchSesDomainVerificationTxt>> = null;
-    let accountSummary = await fetchSesAccountSummary();
-    let mx = domain
-      ? await checkDomainMx(domain)
-      : { ok: false, expectedHost: "", actualHosts: [] as { exchange: string; priority: number }[], error: "No domain" };
-    let spf = domain ? await checkDomainSpf(domain) : { ok: false, error: "No domain" };
-    let dmarc = domain ? await checkDomainDmarc(domain) : { ok: false, error: "No domain" };
-    let sesVerifiedAt = org.email_ses_verified_at;
-    let sesLastErr = org.email_ses_last_error;
-    if (domain && awsReady) {
-      await syncOrganizationSesDomainInDb(organizationId);
-      const refreshed = await prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { email_ses_verified_at: true, email_ses_last_error: true },
-      });
-      sesVerifiedAt = refreshed?.email_ses_verified_at ?? sesVerifiedAt;
-      sesLastErr = refreshed?.email_ses_last_error ?? sesLastErr;
-      [idDetails, accountSummary, mx, spf, dmarc, sesVerificationTxt] = await Promise.all([
-        fetchSesEmailIdentityDetails(domain),
-        fetchSesAccountSummary(),
-        checkDomainMx(domain),
-        checkDomainSpf(domain),
-        checkDomainDmarc(domain),
-        fetchSesDomainVerificationTxt(domain),
-      ]);
-    } else if (domain) {
-      [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
-    }
-
-    let sesDkimDns = { ok: false, records: [] as { name: string; target: string; ok: boolean; error?: string }[] };
-    if (domain && idDetails.dkimTokens.length > 0) {
-      sesDkimDns = await checkSesDkimCnames(domain, idDetails.dkimTokens);
-    }
-
-    const sesIdentityOk = !awsReady || idDetails.verificationStatus === "SUCCESS";
-    const dkimOk = sesDkimSetupOk(idDetails, sesDkimDns);
-    const setupComplete = access && hasDomain && mx.ok && spf.ok && dmarc.ok && dkimOk && sesIdentityOk;
-
-    const sesDkimCnames = domain && idDetails.dkimTokens.length ? getSesDkimCnameRecords(domain, idDetails.dkimTokens) : [];
+    const [spf, dmarc] = domain
+      ? await Promise.all([checkDomainSpf(domain), checkDomainDmarc(domain)])
+      : [
+          { ok: false, error: "No domain" as string | undefined },
+          { ok: false, error: "No domain" as string | undefined },
+        ];
 
     const dnsRecords = domain
       ? {
-          mx: {
-            type: "MX" as const,
-            name: "@",
-            value: expectedMxHost || getSesInboundMxHost(),
-            priority: 10,
-          },
           spf: {
             type: "TXT" as const,
             name: "@",
-            value: expectedSpfRecord,
+            value: "v=spf1 include:amazonses.com ~all",
+            valueNote:
+              "Use the SPF value shown in your Resend domain settings if it differs. Resend may provide a different include when sending is enabled.",
           },
-          ...(sesVerificationTxt
-            ? {
-                sesDomainVerificationTxt: {
-                  type: "TXT" as const,
-                  name: sesVerificationTxt.name,
-                  nameLabel: sesVerificationTxt.nameLabel,
-                  value: sesVerificationTxt.value,
-                  verificationStatus: sesVerificationTxt.verificationStatus,
-                  error: sesVerificationTxt.error,
-                },
-              }
-            : {}),
-          sesDkimCnames: sesDkimCnames.map((r) => ({
-            type: "CNAME" as const,
-            name: r.name,
-            value: r.target,
-          })),
           dmarc: {
             type: "TXT" as const,
             name: dmarcRecordName,
@@ -247,69 +178,62 @@ router.get("/setup-status", async (req: Request, res: Response) => {
 
     const setupNotes = domain
       ? [
-          "Use only the MX target below for this domain. Remove conflicting MX records (e.g. registrar forwarding or another provider).",
-          `Inbound mail is delivered through Amazon SES in ${(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "").trim() || "your AWS region"}. MX must point to the SES regional inbound endpoint shown below.`,
-          "Outbound sending uses Amazon SES. Register the domain in SES, publish verification/DKIM DNS records, SPF with include:amazonses.com, and DMARC.",
-          ...(awsReady && !inboundPipeline.sesReceivingConfigured
-            ? [
-                "Inbound delivery to the app requires SES receipt rules and Lambda: set SES_INBOUND_LAMBDA_ARN and SES_LAMBDA_INBOUND_SECRET on the API, deploy the Lambda, and allow SES to invoke it. See docs/SES-LAMBDA-INBOUND.md.",
-              ]
+          "Each organization uses its own Resend project. Add your domain in Resend, enable sending and receiving, and publish the DNS records Resend shows (MX for inbound, SPF/DKIM as provided).",
+          `Webhook URL (paste in Resend → Webhooks, event email.received): ${config.apiUrl}/api/webhook/resend-inbound`,
+          "Owners/admins must save the Resend API key and webhook signing secret under organization email settings.",
+          ...(!secretsKeyConfigured
+            ? ["Server operator: set LUMINUM_EMAIL_SECRETS_KEY (64 hex chars) so API keys can be stored encrypted."]
+            : []),
+          ...(!hasApiKey || !hasWebhookSecret
+            ? ["Email is being set up until both the Resend API key and webhook signing secret are saved."]
             : []),
         ]
       : undefined;
 
     const liveChecks = {
-      mx,
       spf,
       dmarc,
-      dkim: {
-        ok: dkimOk,
-        sesStatus: idDetails.dkimStatus,
-        cnameChecks: sesDkimDns.records,
-        error: dkimOk
-          ? undefined
-          : idDetails.dkimTokens.length
-            ? sesDkimDns.records.find((r) => !r.ok)?.error || "SES DKIM CNAMEs not valid"
-            : idDetails.dkimStatus || "SES DKIM not ready",
-      },
-      sesIdentity: {
-        verificationStatus: idDetails.verificationStatus,
-        ok: sesIdentityOk,
-        error: idDetails.error,
+      resend: {
+        hasApiKey,
+        hasWebhookSecret,
+        dnsVerified,
+        lastError: org.resend_last_error ?? null,
       },
     };
+
+    let resendLive: { ok: boolean; error?: string | null; health?: unknown } | null = null;
+    if (hasApiKey && domain && org.resend_api_key_ciphertext) {
+      try {
+        const k = decryptEmailSecret(org.resend_api_key_ciphertext);
+        const v = await validateOrgResendDomain(k, domain);
+        resendLive = { ok: v.ok, error: v.error ?? null, health: v.health };
+      } catch (e) {
+        resendLive = { ok: false, error: e instanceof Error ? e.message : "Could not verify domain with Resend" };
+      }
+    }
 
     res.json({
       success: true,
       access,
       setupComplete,
       domain: domain || undefined,
-      expectedMxHost: expectedMxHost || undefined,
       lastCheckAt: new Date().toISOString(),
-      lastError: org.email_dns_last_error ?? undefined,
+      lastError: org.email_dns_last_error ?? org.resend_last_error ?? undefined,
       emailFromAddress: org.email_from_address ?? undefined,
       dnsRecords,
       setupNotes,
       liveChecks,
-      ses: awsReady
-        ? {
-            configured: true,
-            domainVerified: !!sesVerifiedAt || idDetails.verificationStatus === "SUCCESS",
-            verifiedAt: sesVerifiedAt?.toISOString(),
-            lastError: sesLastErr ?? idDetails.error,
-            identityStatus: idDetails.verificationStatus,
-            dkimStatus: idDetails.dkimStatus,
-            dkimTokens: idDetails.dkimTokens,
-          }
-        : { configured: false, domainVerified: false },
-      sesAccount:
-        awsReady && !accountSummary.error
-          ? {
-              productionAccessEnabled: accountSummary.productionAccessEnabled,
-              sendingEnabled: accountSummary.sendingEnabled,
-              sandbox: accountSummary.productionAccessEnabled === false,
-            }
-          : undefined,
+      resend: {
+        configured: hasApiKey,
+        domainVerified: dnsVerified,
+        verifiedAt: org.email_dns_verified_at?.toISOString() ?? null,
+        lastValidatedAt: org.resend_last_validated_at?.toISOString() ?? null,
+        lastError: org.resend_last_error ?? null,
+        hasWebhookSecret,
+        secretsKeyConfigured,
+        inboundWebhookUrl: `${config.apiUrl}/api/webhook/resend-inbound`,
+        live: resendLive,
+      },
       inboundPipeline,
     });
   } catch (error: any) {
@@ -340,77 +264,16 @@ router.post("/setup-domain", async (req: Request, res: Response) => {
         email_dns_last_error: null,
       },
     });
-    void syncSesInboundReceiptRules().catch(() => {});
-    res.json({ success: true, message: "Domain set. Add SES DNS records (MX, SPF, DKIM, DMARC) then click Verify DNS." });
+    res.json({
+      success: true,
+      message: "Domain set. Configure the domain in your Resend project, then save API key and webhook secret in organization settings.",
+    });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
 });
 
-// POST /api/emails/sync-ses — refresh Amazon SES domain verification status for the org (no DNS checks).
-router.post("/sync-ses", async (req: Request, res: Response) => {
-  try {
-    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
-    if (!isSesSendEnvironmentReady()) {
-      return res.status(400).json({ success: false, error: "SES is not configured on this server (set AWS_REGION and credentials)" });
-    }
-    const { organizationId } = req.body as { organizationId?: string };
-    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
-    const sync = await syncOrganizationSesDomainInDb(organizationId);
-    if (sync.ok) {
-      return res.json({ success: true, message: "SES domain identity verified", domain: sync.domain });
-    }
-    return res.json({
-      success: false,
-      error: sync.error || "SES domain not verified",
-      domain: sync.domain,
-    });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "SES sync failed";
-    res.status(400).json({ success: false, error: msg });
-  }
-});
-
-// POST /api/emails/ses-register-domain — CreateEmailIdentity in SES + sync receipt rules (owner/admin).
-router.post("/ses-register-domain", async (req: Request, res: Response) => {
-  try {
-    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
-    if (!isSesSendEnvironmentReady()) {
-      return res.status(400).json({ success: false, error: "SES is not configured on this server" });
-    }
-    const { organizationId } = req.body as { organizationId?: string };
-    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member || (member.role !== "owner" && member.role !== "admin")) {
-      return res.status(403).json({ success: false, error: "Only owners and admins can register the domain in SES" });
-    }
-    const org = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { email_domain: { select: { domain: true } } },
-    });
-    const domain = org?.email_domain?.domain;
-    if (!domain) return res.status(400).json({ success: false, error: "Set an email domain first (website)" });
-    const created = await createSesDomainIdentity(domain);
-    if (!created.ok) {
-      return res.status(400).json({ success: false, error: created.error || "Failed to create SES identity" });
-    }
-    await syncOrganizationSesDomainInDb(organizationId);
-    const receipt = await syncSesInboundReceiptRules();
-    return res.json({
-      success: true,
-      message: "Domain registered in SES. Add DNS records shown on the mail setup page, then Verify DNS.",
-      domain,
-      receiptRules: receipt.skipped ? { skipped: true } : { ok: receipt.ok, domainCount: receipt.domainCount, error: receipt.error },
-    });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "SES register failed";
-    res.status(400).json({ success: false, error: msg });
-  }
-});
-
-// POST /api/emails/verify-dns — MX/SPF/DMARC + SES identity & DKIM (live), persist verification timestamps.
+// POST /api/emails/verify-dns — Re-validate org domain against stored Resend API key; optional SPF/DMARC advisory
 router.post("/verify-dns", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
@@ -419,91 +282,56 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { email_domain_id: true, email_domain: { select: { domain: true } } },
+      select: {
+        email_domain_id: true,
+        resend_api_key_ciphertext: true,
+        email_domain: { select: { domain: true } },
+      },
     });
     if (!org?.email_domain_id || !org.email_domain) return res.status(400).json({ success: false, error: "No email domain set. Select a domain first." });
     const domain = org.email_domain.domain;
-    const [mx, spf, dmarc] = await Promise.all([checkDomainMx(domain), checkDomainSpf(domain), checkDomainDmarc(domain)]);
-
-    let idDetails = await fetchSesEmailIdentityDetails(domain);
-    const sesDkimDns =
-      idDetails.dkimTokens.length > 0 ? await checkSesDkimCnames(domain, idDetails.dkimTokens) : { ok: false, records: [] };
-    const dkimSesOk = sesDkimSetupOk(idDetails, sesDkimDns);
-    const dkimCheck = {
-      ok: dkimSesOk,
-      sesDkimDns,
-      error: dkimSesOk ? undefined : sesDkimDns.error || idDetails.dkimStatus || "SES DKIM not ready",
-    };
-
-    const now = new Date();
-    let sesSync: { ok: boolean; error?: string } | undefined;
-    if (isSesSendEnvironmentReady()) {
-      try {
-        const s = await syncOrganizationSesDomainInDb(organizationId);
-        sesSync = { ok: s.ok, error: s.error };
-      } catch (e) {
-        sesSync = { ok: false, error: e instanceof Error ? e.message : String(e) };
-      }
-      idDetails = await fetchSesEmailIdentityDetails(domain);
+    if (!org.resend_api_key_ciphertext) {
+      return res.status(400).json({ success: false, error: "Save your Resend API key in organization settings first." });
     }
-
-    const sesIdentityOk = !isSesSendEnvironmentReady() || idDetails.verificationStatus === "SUCCESS";
-    const dkimOk = dkimCheck.ok;
-    const allOk = mx.ok && spf.ok && dkimOk && dmarc.ok && sesIdentityOk;
-
-    const dkimFailMsg =
-      (dkimCheck as { error?: string }).error ||
-      ("sesDkimDns" in dkimCheck && dkimCheck.sesDkimDns?.error) ||
-      "DKIM check failed";
-
-    const buildError = () =>
-      (!mx.ok && (mx.error || "MX check failed")) ||
-      (!spf.ok && (spf.error || "SPF check failed")) ||
-      (!dkimOk && dkimFailMsg) ||
-      (!dmarc.ok && (dmarc.error || "DMARC check failed")) ||
-      (!sesIdentityOk && "SES domain identity not verified") ||
-      "DNS check failed";
-
-    if (allOk) {
+    let apiKey: string;
+    try {
+      apiKey = decryptEmailSecret(org.resend_api_key_ciphertext);
+    } catch {
+      return res.status(503).json({ success: false, error: "Could not decrypt API key (check LUMINUM_EMAIL_SECRETS_KEY)." });
+    }
+    const check = await validateOrgResendDomain(apiKey, domain);
+    const now = new Date();
+    const [spf, dmarc] = await Promise.all([checkDomainSpf(domain), checkDomainDmarc(domain)]);
+    if (check.ok) {
       await prisma.organization.update({
         where: { id: organizationId },
-        data: { email_dns_verified_at: now, email_dns_last_check_at: now, email_dns_last_error: null },
+        data: {
+          email_dns_verified_at: now,
+          email_dns_last_check_at: now,
+          email_dns_last_error: null,
+          resend_last_validated_at: now,
+          resend_last_error: null,
+        },
       });
       return res.json({
         success: true,
-        message: "DNS verified. You can send and receive email.",
-        expectedHost: mx.expectedHost,
-        actualHosts: mx.actualHosts,
-        checks: {
-          mx,
-          spf,
-          dkim: dkimCheck,
-          dmarc,
-        },
-        sesSync,
-        sesIdentity: { ok: sesIdentityOk, status: idDetails.verificationStatus },
+        message: "Resend domain is verified with sending and receiving enabled. Ensure the inbound webhook is configured.",
+        checks: { spf, dmarc, resend: { ok: true, health: check.health } },
       });
     }
     await prisma.organization.update({
       where: { id: organizationId },
       data: {
         email_dns_last_check_at: now,
-        email_dns_last_error: buildError(),
+        email_dns_last_error: check.error ?? "Resend validation failed",
+        resend_last_validated_at: now,
+        resend_last_error: check.error ?? null,
       },
     });
-    res.json({
+    return res.json({
       success: false,
-      error: buildError(),
-      expectedHost: mx.expectedHost,
-      actualHosts: mx.actualHosts,
-      checks: {
-        mx,
-        spf,
-        dkim: dkimCheck,
-        dmarc,
-      },
-      sesSync,
-      sesIdentity: { ok: sesIdentityOk, status: idDetails.verificationStatus },
+      error: check.error || "Resend validation failed",
+      checks: { spf, dmarc, resend: { ok: false, health: check.health } },
     });
   } catch (error: unknown) {
     const reqWithId = req as Request & { requestId?: string };
@@ -548,7 +376,7 @@ router.post("/send", async (req: Request, res: Response) => {
         }
       }
     }
-    const sendResult = await sendOutboundViaSes(organizationId, {
+    const sendResult = await sendOutboundViaResend(organizationId, {
       from, replyTo, to: toList, subject,
       text: text || "", html: html || undefined,
       attachments: attachments.length ? attachments : undefined,
@@ -566,12 +394,16 @@ router.post("/send", async (req: Request, res: Response) => {
         messageId: sendResult.messageId,
         sent_at: new Date(),
         receivedAt: null,
+        read: true,
+        starred: false,
+        is_draft: false,
         outbound_provider: sendResult.provider,
         fallback_used: false,
         fallback_reason: null,
         provider_message_id: sendResult.providerMessageId ?? null,
       },
     });
+    broadcastOrgEmailOutboundSent(organizationId, emailRecord.id);
     const reqWithId = req as Request & { requestId?: string };
     logger.info("Email sent (outbound)", {
       to: toList,
@@ -605,7 +437,190 @@ router.post("/send", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/emails?organizationId=...&page=1&limit=20&read=true&search=...&from=...&emailAddresses=a,b
+// GET /api/emails/folder-counts?organizationId=...
+router.get("/folder-counts", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    const organizationId = queryParam(req, "organizationId");
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { emails_enabled: true } });
+    if (!org?.emails_enabled) return res.status(400).json({ success: false, error: "Emails not enabled" });
+    const base = { organization_id: organizationId };
+    const [inboxUnread, sent, starred, drafts, scheduled] = await Promise.all([
+      prisma.email.count({ where: { ...base, direction: "inbound", is_draft: false, read: false } }),
+      prisma.email.count({ where: { ...base, direction: "outbound", is_draft: false, sent_at: { not: null } } }),
+      prisma.email.count({ where: { ...base, starred: true, is_draft: false } }),
+      prisma.email.count({ where: { ...base, is_draft: true } }),
+      prisma.email.count({
+        where: { ...base, direction: "outbound", is_draft: false, sent_at: null, scheduled_send_at: { not: null } },
+      }),
+    ]);
+    res.json({ success: true, data: { inboxUnread, sent, starred, drafts, scheduled } });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/emails/draft — create or update draft (owner content)
+router.post("/draft", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    const { organizationId, id, to, subject, text, html, fromLocalPart } = req.body as {
+      organizationId?: string;
+      id?: string;
+      to?: string | string[];
+      subject?: string;
+      text?: string;
+      html?: string;
+      fromLocalPart?: string;
+    };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { emails_enabled: true } });
+    if (!org?.emails_enabled) return res.status(400).json({ success: false, error: "Emails not enabled" });
+
+    let fromAddr: string;
+    let replyTo: string;
+    try {
+      ({ from: fromAddr, replyTo } = await getOrgReplyAddress(organizationId, fromLocalPart));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(400).json({ success: false, error: msg });
+    }
+
+    const toList = Array.isArray(to) ? to : to ? [to] : [];
+    const toJson = JSON.stringify(toList);
+
+    if (id) {
+      const existing = await prisma.email.findFirst({
+        where: { id, organization_id: organizationId, is_draft: true },
+      });
+      if (!existing) return res.status(404).json({ success: false, error: "Draft not found" });
+      const updated = await prisma.email.update({
+        where: { id },
+        data: {
+          from: fromAddr,
+          to: toJson,
+          subject: subject ?? "",
+          text: text ?? null,
+          html: html ?? null,
+          read: true,
+        },
+      });
+      broadcastOrgEmailUpdated(organizationId, updated.id);
+      return res.json({ success: true, data: { id: updated.id } });
+    }
+
+    const created = await prisma.email.create({
+      data: {
+        organization_id: organizationId,
+        from: fromAddr,
+        to: toJson,
+        subject: subject ?? "",
+        text: text ?? null,
+        html: html ?? null,
+        direction: "outbound",
+        is_draft: true,
+        read: true,
+        starred: false,
+        receivedAt: null,
+        sent_at: null,
+      },
+    });
+    broadcastOrgEmailOutboundSent(organizationId, created.id);
+    return res.json({ success: true, data: { id: created.id } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/emails/schedule — queue outbound send at scheduledSendAt (ISO)
+router.post("/schedule", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    const { organizationId, to: toInput, subject, text, html, fromLocalPart, scheduledSendAt } = req.body as {
+      organizationId?: string;
+      to?: string | string[];
+      subject?: string;
+      text?: string;
+      html?: string;
+      fromLocalPart?: string;
+      scheduledSendAt?: string;
+    };
+    if (!organizationId || !subject || (!text && !html) || !scheduledSendAt) {
+      return res.status(400).json({ success: false, error: "organizationId, subject, body, scheduledSendAt required" });
+    }
+    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+
+    const when = new Date(scheduledSendAt);
+    if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() + 60_000) {
+      return res.status(400).json({ success: false, error: "Schedule at least 1 minute in the future" });
+    }
+
+    const toList = Array.isArray(toInput) ? toInput : toInput ? [toInput] : [];
+    if (toList.length === 0) return res.status(400).json({ success: false, error: "At least one recipient required" });
+
+    let from: string;
+    try {
+      ({ from } = await getOrgReplyAddress(organizationId, fromLocalPart));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(400).json({ success: false, error: msg });
+    }
+
+    const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@scheduled>`;
+    const row = await prisma.email.create({
+      data: {
+        organization_id: organizationId,
+        from,
+        to: JSON.stringify(toList),
+        subject,
+        text: text || null,
+        html: html || null,
+        direction: "outbound",
+        messageId,
+        scheduled_send_at: when,
+        sent_at: null,
+        is_draft: false,
+        read: true,
+        starred: false,
+        receivedAt: null,
+      },
+    });
+    broadcastOrgEmailOutboundSent(organizationId, row.id);
+    res.json({ success: true, data: { id: row.id, scheduledSendAt: when.toISOString() } });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/emails/:id — starred and/or read
+router.patch("/:id", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    const id = pathParam(req, "id");
+    const { starred, read } = req.body as { starred?: boolean; read?: boolean };
+    if (starred === undefined && read === undefined) {
+      return res.status(400).json({ success: false, error: "starred and/or read required" });
+    }
+    const email = await prisma.email.findUnique({ where: { id: id! }, select: { organization_id: true } });
+    if (!email?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
+    if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+
+    const data: { starred?: boolean; read?: boolean } = {};
+    if (typeof starred === "boolean") data.starred = starred;
+    if (typeof read === "boolean") data.read = read;
+    await prisma.email.update({ where: { id: id! }, data });
+
+    broadcastOrgEmailUpdated(email.organization_id, id!, data);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/emails?organizationId=...&mailbox=inbox|sent|...&page=...
 router.get("/", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabledList(res);
@@ -619,56 +634,93 @@ router.get("/", async (req: Request, res: Response) => {
     const from = queryParam(req, "from");
     const emailAddressesRaw = queryParam(req, "emailAddresses");
     const emailAddresses = emailAddressesRaw ? emailAddressesRaw.split(",") : undefined;
+    const mailbox = parseMailbox(queryParam(req, "mailbox") ?? undefined);
 
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { emails_enabled: true } });
     if (!org?.emails_enabled) return res.status(400).json({ success: false, error: "Emails not enabled" });
 
-    const where: any = { organization_id: organizationId };
-    if (read !== undefined) where.read = read;
-    if (from) where.from = { contains: from, mode: "insensitive" };
+    const where: Record<string, unknown> = { ...mailboxWhere(organizationId, mailbox) };
+    if (read !== undefined) (where as any).read = read;
+    if (from) (where as any).from = { contains: from, mode: "insensitive" };
 
-    const andConditions: any[] = [];
+    const andConditions: object[] = [];
     if (emailAddresses && emailAddresses.length > 0) {
-      const emailFilters: any[] = [];
-      emailAddresses.forEach(email => {
-        emailFilters.push({ from: { contains: email.toLowerCase(), mode: "insensitive" } });
-        emailFilters.push({ to: { contains: email.toLowerCase(), mode: "insensitive" } });
+      const emailFilters: object[] = [];
+      emailAddresses.forEach((em) => {
+        emailFilters.push({ from: { contains: em.toLowerCase(), mode: "insensitive" } });
+        emailFilters.push({ to: { contains: em.toLowerCase(), mode: "insensitive" } });
       });
       andConditions.push({ OR: emailFilters });
     }
     if (search) {
-      andConditions.push({ OR: [
-        { subject: { contains: search, mode: "insensitive" } },
-        { from: { contains: search, mode: "insensitive" } },
-        { text: { contains: search, mode: "insensitive" } },
-      ]});
+      andConditions.push({
+        OR: [
+          { subject: { contains: search, mode: "insensitive" } },
+          { from: { contains: search, mode: "insensitive" } },
+          { text: { contains: search, mode: "insensitive" } },
+        ],
+      });
     }
-    if (andConditions.length > 0) where.AND = andConditions;
+    if (andConditions.length > 0) (where as any).AND = andConditions;
 
-    const [total, unreadCount] = await Promise.all([
-      prisma.email.count({ where }),
-      prisma.email.count({ where: { ...where, read: false } }),
+    const inboxUnreadWhere = {
+      organization_id: organizationId,
+      direction: "inbound" as const,
+      is_draft: false,
+      read: false,
+    };
+
+    const [total, unreadInFolder, inboxUnread] = await Promise.all([
+      prisma.email.count({ where: where as any }),
+      prisma.email.count({ where: { ...(where as object), read: false } as any }),
+      prisma.email.count({ where: inboxUnreadWhere }),
     ]);
 
+    const unreadCount = mailbox === "inbox" ? unreadInFolder : 0;
+
     const emails = await prisma.email.findMany({
-      where, orderBy: { receivedAt: "desc" }, skip: (page - 1) * limit, take: limit,
+      where: where as any,
+      orderBy: mailboxOrderBy(mailbox),
+      skip: (page - 1) * limit,
+      take: limit,
       include: { attachments: true },
     });
 
     const transformed = emails.map((e: any) => {
       let toArray: string[] = [];
-      if (e.to) { try { const p = JSON.parse(e.to); toArray = Array.isArray(p) ? p : [p]; } catch { toArray = [e.to]; } }
+      if (e.to) {
+        try {
+          const p = JSON.parse(e.to);
+          toArray = Array.isArray(p) ? p : [p];
+        } catch {
+          toArray = [e.to];
+        }
+      }
+      const dateRaw = e.sent_at || e.receivedAt || e.scheduled_send_at || e.createdAt;
       return {
-        id: e.id, from: e.from || "", to: toArray, cc: [], bcc: [],
-        subject: e.subject || "", date: e.receivedAt || e.createdAt,
-        textBody: e.text || null, htmlBody: e.html || null, read: e.read, createdAt: e.createdAt,
-        direction: (e as any).direction ?? "inbound",
-        outbound_provider: (e as any).outbound_provider ?? null,
-        fallback_used: !!(e as any).fallback_used,
-        provider_message_id: (e as any).provider_message_id ?? null,
-        in_reply_to: (e as any).in_reply_to ?? undefined,
+        id: e.id,
+        from: e.from || "",
+        to: toArray,
+        cc: [],
+        bcc: [],
+        subject: e.subject || "",
+        date: dateRaw,
+        textBody: e.text || null,
+        htmlBody: e.html || null,
+        read: e.read,
+        createdAt: e.createdAt,
+        updatedAt: e.updatedAt,
+        direction: e.direction ?? "inbound",
+        outbound_provider: e.outbound_provider ?? null,
+        fallback_used: !!e.fallback_used,
+        provider_message_id: e.provider_message_id ?? null,
+        in_reply_to: e.in_reply_to ?? undefined,
+        starred: !!e.starred,
+        is_draft: !!e.is_draft,
+        scheduled_send_at: e.scheduled_send_at ?? null,
+        sent_at: e.sent_at ?? null,
         attachments: e.attachments.map((a: any) => {
           const base = config.apiUrl.replace(/\/$/, "");
           const url = a.r2Key ? `${base}/api/files/${encodeURIComponent(a.r2Key)}` : a.url;
@@ -678,7 +730,22 @@ router.get("/", async (req: Request, res: Response) => {
       };
     });
 
-    res.json({ success: true, data: { emails: transformed, pagination: { page, limit, total, unreadCount, totalPages: Math.ceil(total / limit), hasMore: page * limit < total } } });
+    res.json({
+      success: true,
+      data: {
+        mailbox,
+        emails: transformed,
+        pagination: {
+          page,
+          limit,
+          total,
+          unreadCount,
+          inboxUnread,
+          totalPages: Math.ceil(total / limit),
+          hasMore: page * limit < total,
+        },
+      },
+    });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
@@ -717,6 +784,7 @@ router.post("/:id/read", async (req: Request, res: Response) => {
     if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     await prisma.email.update({ where: { id: id! }, data: { read: true } });
+    broadcastOrgEmailUpdated(email.organization_id, id!, { read: true });
 
     const notifications = await prisma.notifications.findMany({ where: { user_id: req.user.id, read: false }, select: { id: true, data: true } });
     const matchingIds = notifications.filter((n: any) => (n.data as any)?.emailId === id).map(n => n.id);
@@ -739,6 +807,7 @@ router.post("/:id/unread", async (req: Request, res: Response) => {
     if (!(await canAccessOrganization(email.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
 
     await prisma.email.update({ where: { id: id! }, data: { read: false } });
+    broadcastOrgEmailUpdated(email.organization_id, id!, { read: false });
 
     res.json({ success: true });
   } catch (error: any) {
@@ -759,7 +828,7 @@ router.post("/mark-all-read", async (req: Request, res: Response) => {
     }
 
     const result = await prisma.email.updateMany({
-      where: { organization_id: organizationId, read: false },
+      where: { organization_id: organizationId, read: false, direction: "inbound", is_draft: false },
       data: { read: true },
     });
 
@@ -806,7 +875,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
     const reSubject = (original.subject || "").toLowerCase().startsWith("re:") ? (original.subject || "") : `Re: ${original.subject || ""}`;
     const refs = [original.references, original.messageId].filter(Boolean).join(" ");
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
-    const sendResult = await sendOutboundViaSes(original.organization_id, {
+    const sendResult = await sendOutboundViaResend(original.organization_id, {
       from, replyTo, to: [toAddr], subject: reSubject,
       text: text || "", html: html || undefined,
       inReplyTo: original.messageId || undefined, references: refs || undefined, messageId,
@@ -825,12 +894,16 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
         references: refs || undefined,
         sent_at: new Date(),
         receivedAt: null,
+        read: true,
+        starred: false,
+        is_draft: false,
         outbound_provider: sendResult.provider,
         fallback_used: false,
         fallback_reason: null,
         provider_message_id: sendResult.providerMessageId ?? null,
       },
     });
+    broadcastOrgEmailOutboundSent(original.organization_id, emailRecord.id);
     const reqWithId = req as Request & { requestId?: string };
     logger.info("Email sent (reply)", {
       emailId: emailRecord.id,
@@ -881,6 +954,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
 
     const orgId = email.organization_id;
     await prisma.email.delete({ where: { id: id! } });
+    broadcastOrgEmailDeleted(orgId, id!);
 
     if (orgId) {
       const { updateOrganizationStorage } = await import("../lib/utils/storage.js");

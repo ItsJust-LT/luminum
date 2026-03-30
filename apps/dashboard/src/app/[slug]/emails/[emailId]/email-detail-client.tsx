@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { api } from "@/lib/api"
@@ -68,6 +68,10 @@ interface Email {
   provider_message_id?: string | null
   attachments: any[]
   inlineImages: any[]
+  starred?: boolean
+  is_draft?: boolean
+  scheduled_send_at?: string | null
+  sent_at?: string | null
 }
 
 interface EmailDetailClientProps {
@@ -132,6 +136,26 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
   const [textPreviewContent, setTextPreviewContent] = useState<string | null>(null)
   const [replyText, setReplyText] = useState("")
   const [sendingReply, setSendingReply] = useState(false)
+  const [starred, setStarred] = useState(!!email.starred)
+  const [starSaving, setStarSaving] = useState(false)
+
+  useEffect(() => {
+    setStarred(!!email.starred)
+  }, [email.id, email.starred])
+
+  const toggleStar = useCallback(async () => {
+    const next = !starred
+    setStarred(next)
+    setStarSaving(true)
+    try {
+      await api.emails.patchMeta(email.id, { starred: next })
+    } catch {
+      setStarred(!next)
+      toast.error("Could not update star")
+    } finally {
+      setStarSaving(false)
+    }
+  }, [email.id, starred])
 
   const getAttachmentEndpoint = (attachmentIndex: number, download = false) =>
     `${(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "")}/api/emails/${encodeURIComponent(email.id)}/attachment/${attachmentIndex}${download ? "?download=1" : ""}`
@@ -435,20 +459,32 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
                 <Calendar className="h-3.5 w-3.5" />
                 {formatDate(email.date)}
               </span>
+              {email.is_draft ? (
+                <Badge variant="outline" className="border-amber-500/40 text-amber-800 dark:text-amber-200">
+                  Draft
+                </Badge>
+              ) : null}
+              {email.scheduled_send_at && !email.sent_at && !email.is_draft ? (
+                <Badge variant="secondary" className="gap-1">
+                  <span className="opacity-70">Scheduled</span>
+                  <span className="tabular-nums">{formatDate(email.scheduled_send_at)}</span>
+                </Badge>
+              ) : null}
             </div>
             {email.direction === "outbound" && (
               <div className="flex flex-wrap items-center gap-2 pt-2">
+                {email.outbound_provider === "resend" && (
+                  <Badge variant="secondary">Sent via Resend</Badge>
+                )}
                 {email.outbound_provider === "ses" && (
-                  <Badge variant="secondary">
-                    {email.fallback_used ? "Sent via Amazon SES (fallback)" : "Sent via Amazon SES"}
-                  </Badge>
+                  <Badge variant="outline">Sent via SES (legacy)</Badge>
                 )}
                 {email.outbound_provider === "mail_app" && !email.fallback_used && (
-                  <Badge variant="outline">Sent via mail server</Badge>
+                  <Badge variant="outline">Sent via mail server (legacy)</Badge>
                 )}
-                {email.outbound_provider === "ses" && email.provider_message_id && (
+                {email.provider_message_id && (
                   <span className="text-xs text-muted-foreground font-mono truncate max-w-full" title={email.provider_message_id}>
-                    SES id: {email.provider_message_id}
+                    Message id: {email.provider_message_id}
                   </span>
                 )}
               </div>
@@ -481,8 +517,16 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
                       </button>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
-                        <Star className="h-4 w-4" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn("h-8 w-8 rounded-lg", starred && "text-amber-500")}
+                        onClick={() => void toggleStar()}
+                        disabled={starSaving}
+                        aria-pressed={starred}
+                      >
+                        <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-500")} />
+                        <span className="sr-only">{starred ? "Unstar" : "Star"}</span>
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
                         <Reply className="h-4 w-4" />

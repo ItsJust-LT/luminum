@@ -1,83 +1,33 @@
-# Email: How It Works and Where Things Live
+# Email (organization inbox and send)
 
-## Where is the send-email UI?
+- **Inbox and list:** Dashboard → **`/[slug]/emails`**. Lists inbound and outbound mail and **mail setup** (domain, Resend, DNS hints).
+- **Send API:** **`POST /api/emails/send`** and **`POST /api/emails/:id/reply`** (`apps/api/src/routes/emails.ts`). Outbound uses **each organization’s Resend project** (`sendOutboundViaResend` in `apps/api/src/lib/email-send.ts`).
+- **Platform / auth email:** System messages (invites, password reset, etc.) use the global **`RESEND_API_KEY`** on the API and dashboard — separate from per-tenant mail.
 
-- **Inbox and list:** Dashboard → **`/[slug]/emails`**. Lists inbound/outbound mail and **mail setup** (domain, DNS, SES).
-- **Send API:** **`POST /api/emails/send`** and **`POST /api/emails/:id/reply`** (`apps/api/src/routes/emails.ts`). Outbound is **Amazon SES only** (`sendOutboundViaSes` in `apps/api/src/lib/email-send.ts`).
+## Per-organization Resend
 
-## Outbound (sending)
+1. Each org selects an **email domain** tied to a **website** domain (`POST /api/emails/setup-domain`).
+2. In **their** [Resend](https://resend.com) project they add that domain, enable **sending** and **receiving**, and publish the **MX / SPF / DKIM** records Resend shows.
+3. An **owner or admin** saves the org’s **API key** and **webhook signing secret** via **`PUT /api/organization-settings/resend-email`** (encrypted at rest with **`LUMINUM_EMAIL_SECRETS_KEY`** on the server).
+4. In Resend → **Webhooks**, they add URL **`{API_URL}/api/webhook/resend-inbound`** and subscribe to **`email.received`**, using the same signing secret stored in Luminum.
 
-1. **From / Reply-To** come from **`getOrgReplyAddress`** (address on the org’s selected website domain).
-2. **`sendOutboundViaSes`** builds raw MIME and calls **`sendViaSes`** (`@aws-sdk/client-sesv2`) when **`AWS_REGION`** (or **`AWS_DEFAULT_REGION`**) and credentials (or instance role) are set.
-3. The domain must be a **verified SES domain identity** with DNS aligned to SES. Optional **`SES_FROM_STRICT=true`** requires Easy DKIM **SUCCESS** before send.
-4. Optional **`EMAIL_SEND_SES_ORG_IDS`**: comma-separated org IDs allowed to send; empty = any org that passes SES checks.
+Status and hints: **`GET /api/emails/setup-status`**. Re-validation: **`POST /api/emails/verify-dns`** (calls Resend’s domain APIs with the stored key plus optional SPF/DMARC DNS checks).
 
-**Sandbox:** Until production access is granted in that region, SES only sends to verified identities.
+## Inbound path
 
-## Inbound (receiving)
+**Resend** → **`POST /api/webhook/resend-inbound`** (Svix-signed body) → the API verifies the signature with the org’s webhook secret, fetches full content via Resend **Receiving** APIs, then **`persistInboundEmailFromPayload`** (`apps/api/src/lib/inbound-email-persist.ts`) stores the row and uploads attachments to **S3-compatible** storage. Successful creates broadcast **`email:created`** to the org WebSocket channel.
 
-**Important:** DNS and SES identity can be fully correct (MX, SPF, DKIM, verification), but **mail will not reach the app** until the operator sets **`SES_INBOUND_LAMBDA_ARN`** and **`SES_LAMBDA_INBOUND_SECRET`** on the API, **restarts/redeploys** the API, and **deploys and wires the Lambda** as described in **[SES-LAMBDA-INBOUND.md](./SES-LAMBDA-INBOUND.md)**. Without that pipeline, SES has nowhere to deliver messages into Luminum.
+See [RESEND-INBOUND.md](./RESEND-INBOUND.md) for webhook and operator checklist.
 
-**Path:** **Amazon SES email receiving** (MX → SES) → **receipt rule** → **Lambda** → **`POST /api/webhook/ses-lambda-inbound`** on your API.
+## Environment (API)
 
-- Header **`X-Luminum-Ses-Webhook-Secret`** (or Bearer) must match **`SES_LAMBDA_INBOUND_SECRET`**.
-- The API parses MIME (**`mailparser`**), **`persistInboundEmailFromPayload`** (`apps/api/src/lib/inbound-email-persist.ts`) stores the row, uploads attachments to **MinIO/S3-compatible** storage, emits **`email_received`**.
+| Variable | Role |
+|----------|------|
+| `EMAIL_SYSTEM_ENABLED` | Set `false` to disable org email features globally. |
+| `LUMINUM_EMAIL_SECRETS_KEY` | 64 hex chars; encrypts per-org Resend API key and webhook secret. |
+| `RESEND_API_KEY` | Platform-only sends (auth, system); not used for org inbox/send. |
+| `EMAIL_DNS_PERIODIC_CHECK_MS` | Optional periodic `verify-email-dns` logic (advisory + Resend state). |
 
-**Operator setup:** See **[SES-LAMBDA-INBOUND.md](./SES-LAMBDA-INBOUND.md)** (Lambda deploy, env, IAM, GitHub variables).
+## Historical rows
 
-**Large messages:** Above SES’s Lambda inline size, add an S3 receipt action and extend the Lambda to **`GetObject`** then POST to the API.
-
-## Multi-organization / multi-domain
-
-- Each org picks **one website domain** for email (`email_domain_id`).
-- **`collectInboundEmailDomains`** (`apps/api/src/lib/ses-receipt-rules.ts`) gathers all distinct domains for orgs with mail enabled.
-- **`syncSesInboundReceiptRules`** updates **one** receipt rule’s **`Recipients`** list (all those domains) when **`SES_INBOUND_LAMBDA_ARN`** is set. New domains are picked up when an owner/admin uses **Register in SES** / verify flow, and on the **periodic email job** if configured.
-
-Confirm **SES email receiving** exists in your chosen region: [SES inbound endpoints](https://docs.aws.amazon.com/general/latest/gr/ses.html#ses_inbound_endpoints).
-
-## DNS (SES)
-
-| Purpose | Records |
-|--------|---------|
-| **MX** | Priority **10** → **`inbound-smtp.<AWS_REGION>.amazonaws.com`**. Only this MX for the domain used for mail. |
-| **SPF** | TXT at apex: **`v=spf1 include:amazonses.com -all`**. |
-| **DKIM** | Easy DKIM **CNAMEs** from SES: `{token}._domainkey.domain` → `{token}.dkim.amazonses.com`. |
-| **Domain verification** | TXT at **`_amazonses.<domain>`** (token from SES / **`GetIdentityVerificationAttributes`**); dashboard shows this when pending. |
-| **DMARC** | TXT at **`_dmarc.domain`**, **`p=quarantine`** or **`p=reject`**. |
-
-## SES identity and receipt rules
-
-- **`POST /api/emails/ses-register-domain`** (owner/admin): **`CreateEmailIdentity`**, DB sync, **`syncSesInboundReceiptRules`** (if Lambda ARN set).
-- Rule set: **`SES_RECEIPT_RULE_SET_NAME`** (default `luminum-ses-inbound`), rule: **`SES_RECEIPT_RULE_NAME`**.
-
-### IAM (API user)
-
-Include at least: `ses:SendEmail`, `ses:SendRawEmail`, `ses:GetEmailIdentity`, `ses:GetIdentityVerificationAttributes`, `ses:CreateEmailIdentity`, receipt-rule APIs (`CreateReceiptRule`, `UpdateReceiptRule`, `DescribeReceiptRuleSet`, `CreateReceiptRuleSet`, `SetActiveReceiptRuleSet`, etc.).
-
-## Live setup and cron
-
-- **`GET /api/emails/setup-status`**: **`GetEmailIdentity`**, **`GetIdentityVerificationAttributes`**, **`GetAccount`**, DNS checks, **`inboundPipeline.sesReceivingConfigured`** (Lambda ARN + secret present).
-- **`POST /api/emails/verify-dns`**: persists **`email_dns_verified_at`** when checks pass.
-- **`POST /api/cron/verify-email-dns`** (`CRON_SECRET`): batch job for all orgs.
-- **`EMAIL_DNS_PERIODIC_CHECK_MS`**: in-process interval; also triggers **receipt rule sync** when Lambda ARN is set.
-
-## Env vars (API)
-
-| Variable | Purpose |
-|----------|---------|
-| `AWS_REGION` / `AWS_DEFAULT_REGION` | SES + receipt rules |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | API credentials (or use instance role) |
-| `SES_CONFIGURATION_SET` | Optional on send |
-| `SES_FROM_STRICT` | Require DKIM SUCCESS before send |
-| `EMAIL_SEND_SES_ORG_IDS` | Optional outbound org allowlist |
-| `SES_LAMBDA_INBOUND_SECRET` | Lambda → API webhook |
-| `SES_INBOUND_LAMBDA_ARN` | Lambda for receipt rule |
-| `SES_RECEIPT_RULE_SET_NAME` / `SES_RECEIPT_RULE_NAME` | Rule identifiers |
-| `EMAIL_DNS_PERIODIC_CHECK_MS` | Periodic DNS + receipt sync |
-| `WEBHOOK_SECRET` | Analytics / other HMAC webhooks (not org email) |
-| `MAIL_SEND_IP` / `SERVER_IP` | Branded custom-domain A record checks (Admin) |
-
-## Logging
-
-- **Outbound:** `"Email sent (outbound)"` / `"Email sent (reply)"` with SES MessageId.
-- **Inbound:** `"Email received (inbound)"` after Lambda webhook ingest.
+Older **`email`** rows may show **`outbound_provider`** `ses` or `mail_app`. New outbound uses **`resend`**.
