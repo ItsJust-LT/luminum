@@ -268,6 +268,10 @@ function createApiClient(baseUrl: string = "") {
         tax_id?: string | null;
       }
     ) => patch(`/api/admin/organizations/${encodeURIComponent(id)}`, data),
+    getOrganizationResend: (id: string) => get(`/api/admin/organizations/${encodeURIComponent(id)}/resend`),
+    patchOrganizationResend: (id: string, data: { apiKey?: string; webhookSecret?: string }) =>
+      patch(`/api/admin/organizations/${encodeURIComponent(id)}/resend`, data),
+    clearOrganizationResend: (id: string) => del(`/api/admin/organizations/${encodeURIComponent(id)}/resend`),
     inviteOrganizationMember: (organizationId: string, data: { email: string; role?: string }) =>
       post(`/api/admin/organizations/${encodeURIComponent(organizationId)}/invite`, data),
     addOrganizationMember: (

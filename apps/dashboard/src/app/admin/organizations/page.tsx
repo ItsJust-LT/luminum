@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -25,21 +24,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import {
   Building2,
   Users,
   Search,
   Filter,
   MoreHorizontal,
   Eye,
-  Plus,
   RefreshCw,
   AlertCircle,
   Globe,
@@ -53,11 +43,6 @@ import {
   BookOpen,
   Receipt,
   Layout,
-  Copy,
-  CheckCircle,
-  Loader2,
-  ShieldCheck,
-  Info,
   SlidersHorizontal,
 } from "lucide-react"
 import { api } from "@/lib/api"
@@ -65,23 +50,12 @@ import { AdminOrganizationCreatorDialog } from "@/components/dashboard/admin-org
 import { formatDate, formatNumber } from "@/lib/utils"
 import { toast } from "sonner"
 
-/** Shown in DNS instructions; must match API SERVER_IP (or MAIL_SEND_IP) for Verify Domain to succeed. */
-const BRANDED_DOMAIN_ORIGIN_IP =
-  (typeof process.env.NEXT_PUBLIC_SERVER_IP === "string" && process.env.NEXT_PUBLIC_SERVER_IP.trim()) || ""
-
 export default function AdminOrganizationsPage() {
-  const router = useRouter()
   const [organizations, setOrganizations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [togglingFeature, setTogglingFeature] = useState<string | null>(null)
-  const [domainDialogOrg, setDomainDialogOrg] = useState<any | null>(null)
-  const [domainPrefix, setDomainPrefix] = useState("admin")
-  const [domainBase, setDomainBase] = useState("")
-  const [dnsDialogOrg, setDnsDialogOrg] = useState<any | null>(null)
-  const [verifying, setVerifying] = useState<string | null>(null)
 
   const fetchOrganizations = async () => {
     setLoading(true)
@@ -115,98 +89,6 @@ export default function AdminOrganizationsPage() {
     return <Badge variant="secondary" className="text-xs">{sub.status}</Badge>
   }
 
-  const toggleFeature = async (org: any, feature: "analytics" | "email" | "whatsapp" | "blogs" | "invoices", enable: boolean) => {
-    const key = `${org.id}-${feature}`
-    setTogglingFeature(key)
-    try {
-      if (feature === "analytics") {
-        await (enable ? api.admin.enableAnalytics(org.id) : api.admin.disableAnalytics(org.id))
-      } else if (feature === "email") {
-        await (enable ? api.admin.enableEmailAccess(org.id) : api.admin.disableEmail(org.id))
-      } else if (feature === "blogs") {
-        await (enable ? api.admin.enableBlogs(org.id) : api.admin.disableBlogs(org.id))
-      } else if (feature === "invoices") {
-        await (enable ? api.admin.enableInvoices(org.id) : api.admin.disableInvoices(org.id))
-      } else {
-        await (enable ? api.admin.enableWhatsapp(org.id) : api.admin.disableWhatsapp(org.id))
-      }
-      const featureLabels: Record<string, string> = { analytics: "Analytics", email: "Email", blogs: "Blogs", whatsapp: "WhatsApp", invoices: "Invoices" }
-      toast.success(`${featureLabels[feature]} ${enable ? "enabled" : "disabled"}`)
-      fetchOrganizations()
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update")
-    } finally {
-      setTogglingFeature(null)
-    }
-  }
-
-  const toggleBrandedDashboard = async (org: any, enable: boolean) => {
-    setTogglingFeature(`${org.id}-branded`)
-    try {
-      await (enable ? api.admin.enableBrandedDashboard(org.id) : api.admin.disableBrandedDashboard(org.id))
-      toast.success(`Branded dashboard ${enable ? "enabled" : "disabled"}`)
-      fetchOrganizations()
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update")
-    } finally {
-      setTogglingFeature(null)
-    }
-  }
-
-  const handleSetCustomDomain = async () => {
-    if (!domainDialogOrg) return
-    setTogglingFeature(`${domainDialogOrg.id}-domain`)
-    try {
-      const result = await api.admin.setCustomDomain(domainDialogOrg.id, domainPrefix, domainBase) as any
-      if (result.success === false) {
-        toast.error(result.error || "Failed to set domain")
-      } else {
-        toast.success(`Custom domain set: ${domainPrefix}.${domainBase}. Add an A record to the server IP (DNS Setup), then verify.`)
-        setDomainDialogOrg(null)
-        fetchOrganizations()
-      }
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to set domain")
-    } finally {
-      setTogglingFeature(null)
-    }
-  }
-
-  const handleRemoveCustomDomain = async (org: any) => {
-    setTogglingFeature(`${org.id}-domain`)
-    try {
-      await api.admin.removeCustomDomain(org.id)
-      toast.success("Custom domain removed")
-      fetchOrganizations()
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to remove domain")
-    } finally {
-      setTogglingFeature(null)
-    }
-  }
-
-  const handleVerifyDomain = async (org: any) => {
-    setVerifying(org.id)
-    try {
-      const result = await api.admin.verifyCustomDomain(org.id) as any
-      if (result.verified) {
-        toast.success("Domain verified successfully!")
-      } else {
-        toast.info(result.message || "DNS not yet configured")
-      }
-      fetchOrganizations()
-    } catch (err: any) {
-      toast.error(err?.message || "Verification failed")
-    } finally {
-      setVerifying(null)
-    }
-  }
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    toast.success("Copied to clipboard")
-  }
-
   const filtered = organizations.filter((org) => {
     const matchesSearch = !search.trim() ||
       org.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -231,8 +113,9 @@ export default function AdminOrganizationsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Organizations</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage all organizations on the platform
+          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+            Manage all organizations on the platform. Open <strong>Organization settings</strong> from the row menu to
+            change feature flags, mail (Resend), branding, domains, and membership.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
@@ -434,89 +317,13 @@ export default function AdminOrganizationsPage() {
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {!org.analytics_enabled ? (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "analytics", true)} disabled={!!togglingFeature}>
-                              <BarChart3 className="h-4 w-4 mr-2" /> Enable Analytics
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "analytics", false)} disabled={!!togglingFeature}>
-                              <BarChart3 className="h-4 w-4 mr-2" /> Disable Analytics
-                            </DropdownMenuItem>
-                          )}
-                          {!org.emails_enabled ? (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "email", true)} disabled={!!togglingFeature}>
-                              <Mail className="h-4 w-4 mr-2" /> Enable Email
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "email", false)} disabled={!!togglingFeature}>
-                              <Mail className="h-4 w-4 mr-2" /> Disable Email
-                            </DropdownMenuItem>
-                          )}
-                          {!org.whatsapp_enabled ? (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "whatsapp", true)} disabled={!!togglingFeature}>
-                              <MessageCircle className="h-4 w-4 mr-2" /> Enable WhatsApp
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "whatsapp", false)} disabled={!!togglingFeature}>
-                              <MessageCircle className="h-4 w-4 mr-2" /> Disable WhatsApp
-                            </DropdownMenuItem>
-                          )}
-                          {!org.blogs_enabled ? (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "blogs", true)} disabled={!!togglingFeature}>
-                              <BookOpen className="h-4 w-4 mr-2" /> Enable Blogs
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "blogs", false)} disabled={!!togglingFeature}>
-                              <BookOpen className="h-4 w-4 mr-2" /> Disable Blogs
-                            </DropdownMenuItem>
-                          )}
-                          {!org.invoices_enabled ? (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "invoices", true)} disabled={!!togglingFeature}>
-                              <Receipt className="h-4 w-4 mr-2" /> Enable Invoices
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => toggleFeature(org, "invoices", false)} disabled={!!togglingFeature}>
-                              <Receipt className="h-4 w-4 mr-2" /> Disable Invoices
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          {!org.branded_dashboard_enabled ? (
-                            <DropdownMenuItem onClick={() => toggleBrandedDashboard(org, true)} disabled={!!togglingFeature}>
-                              <Layout className="h-4 w-4 mr-2" /> Enable Branded Dashboard
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => toggleBrandedDashboard(org, false)} disabled={!!togglingFeature}>
-                              <Layout className="h-4 w-4 mr-2" /> Disable Branded Dashboard
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={() => {
-                            setDomainPrefix(org.custom_domain_prefix || "admin")
-                            setDomainBase(org.custom_domain ? org.custom_domain.replace(`${org.custom_domain_prefix || "admin"}.`, "") : "")
-                            setDomainDialogOrg(org)
-                          }} disabled={!!togglingFeature}>
-                            <Globe className="h-4 w-4 mr-2" /> Set Custom Domain
-                          </DropdownMenuItem>
-                          {org.custom_domain && (
-                            <>
-                              <DropdownMenuItem onClick={() => handleRemoveCustomDomain(org)} disabled={!!togglingFeature}>
-                                <AlertCircle className="h-4 w-4 mr-2" /> Remove Custom Domain
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleVerifyDomain(org)} disabled={!!verifying}>
-                                {verifying === org.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
-                                Verify Domain DNS
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setDnsDialogOrg(org)}>
-                                <Info className="h-4 w-4 mr-2" /> Show DNS Setup
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          <DropdownMenuSeparator />
+                        <DropdownMenuContent align="end" className="w-56">
                           <DropdownMenuItem asChild>
-                            <Link href={`/admin/settings/organization?slug=${encodeURIComponent(org.slug)}`}>
-                              <SlidersHorizontal className="h-4 w-4 mr-2" /> Admin organization settings
+                            <Link href={`/admin/settings/organization/${encodeURIComponent(org.slug)}`}>
+                              <SlidersHorizontal className="mr-2 h-4 w-4" /> Organization settings
                             </Link>
                           </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem asChild>
                             <Link href={`/${org.slug}/dashboard`}>
                               <ExternalLink className="h-4 w-4 mr-2" /> View Dashboard
@@ -554,132 +361,6 @@ export default function AdminOrganizationsPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Set Custom Domain Dialog */}
-      <Dialog open={!!domainDialogOrg} onOpenChange={(open) => !open && setDomainDialogOrg(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Set Custom Domain</DialogTitle>
-            <DialogDescription>
-              Configure a custom branded domain for <strong>{domainDialogOrg?.name}</strong>.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="domain-prefix">Subdomain prefix</Label>
-              <Input
-                id="domain-prefix"
-                value={domainPrefix}
-                onChange={(e) => setDomainPrefix(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                placeholder="admin"
-              />
-              <p className="text-xs text-muted-foreground">e.g., admin, dashboard, portal</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="domain-base">Client domain</Label>
-              <Input
-                id="domain-base"
-                value={domainBase}
-                onChange={(e) => setDomainBase(e.target.value.toLowerCase().trim())}
-                placeholder="acme.com"
-              />
-            </div>
-            {domainPrefix && domainBase && (
-              <div className="rounded-md bg-muted p-3 space-y-1">
-                <p className="text-sm font-medium">Preview</p>
-                <p className="text-lg font-mono">{domainPrefix}.{domainBase}</p>
-                <p className="text-xs text-muted-foreground">
-                  After saving, add an <strong>A</strong> record at the client&apos;s DNS host pointing this hostname to your platform server IP (see Show DNS Setup). Avoid CNAME to your primary app URL if it uses Cloudflare proxy.
-                </p>
-              </div>
-            )}
-            <Button
-              onClick={handleSetCustomDomain}
-              disabled={!domainPrefix || !domainBase || !!togglingFeature}
-              className="w-full"
-            >
-              {togglingFeature?.endsWith("-domain") ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
-              ) : (
-                "Save Custom Domain"
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* DNS Setup Dialog */}
-      <Dialog open={!!dnsDialogOrg} onOpenChange={(open) => !open && setDnsDialogOrg(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>DNS Setup for {dnsDialogOrg?.name}</DialogTitle>
-            <DialogDescription>
-              The client must point the full hostname at your platform server with an <strong>A</strong> record. Verification checks that this hostname resolves to the same IPv4 as <code className="text-xs">SERVER_IP</code> on the API.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge variant={dnsDialogOrg?.custom_domain_verified ? "default" : "secondary"}>
-                {dnsDialogOrg?.custom_domain_verified ? (
-                  <><CheckCircle className="h-3 w-3 mr-1" /> Verified</>
-                ) : (
-                  "Not Verified"
-                )}
-              </Badge>
-              <span className="text-sm font-mono text-muted-foreground">{dnsDialogOrg?.custom_domain}</span>
-            </div>
-
-            {!BRANDED_DOMAIN_ORIGIN_IP && (
-              <p className="text-xs rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100">
-                Set <code className="text-xs">NEXT_PUBLIC_SERVER_IP</code> when building the dashboard so this panel shows the correct IP. It must match <code className="text-xs">SERVER_IP</code> (or <code className="text-xs">MAIL_SEND_IP</code>) on the API or verification will not match what operators see here.
-              </p>
-            )}
-
-            <Card>
-              <CardContent className="pt-4 pb-3 space-y-2">
-                <p className="text-sm font-semibold">A record (required)</p>
-                <p className="text-xs text-muted-foreground">
-                  At the client&apos;s DNS (e.g. registrar), create an <strong>A</strong> record for the full hostname below. Use your origin IPv4 — the same value as API <code className="text-xs">SERVER_IP</code>.
-                </p>
-                <div className="flex items-center gap-2 bg-muted rounded-md p-2">
-                  <code className="text-sm flex-1 font-mono break-all">
-                    A {dnsDialogOrg?.custom_domain} &rarr; {BRANDED_DOMAIN_ORIGIN_IP || "« set NEXT_PUBLIC_SERVER_IP »"}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={!BRANDED_DOMAIN_ORIGIN_IP}
-                    onClick={() => BRANDED_DOMAIN_ORIGIN_IP && copyToClipboard(BRANDED_DOMAIN_ORIGIN_IP)}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <p className="text-xs text-muted-foreground border-l-2 border-muted-foreground/30 pl-3">
-              Do <strong>not</strong> use a CNAME from the customer domain to your primary dashboard hostname (e.g. <code className="text-xs">app.example.com</code>) when that hostname is proxied through Cloudflare. DNS will resolve to Cloudflare&apos;s anycast IPs, and their edge cannot serve arbitrary customer hostnames without Custom Hostnames (SSL for SaaS). An <strong>A</strong> record to your server IP lets Caddy obtain certificates and route traffic correctly.
-            </p>
-
-            <p className="text-xs text-muted-foreground">
-              After propagation (often 5–30 minutes), use <strong>Verify Domain DNS</strong> or <strong>Verify Now</strong> below.
-            </p>
-
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                handleVerifyDomain(dnsDialogOrg)
-                setDnsDialogOrg(null)
-              }}
-              disabled={!!verifying}
-            >
-              {verifying ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
-              Verify Now
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

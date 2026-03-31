@@ -43,7 +43,6 @@ import {
   FileText as LogsIcon,
   Terminal,
   Receipt,
-  SlidersHorizontal,
 } from "lucide-react"
 
 interface AdminSidebarProps {
@@ -67,7 +66,6 @@ export function AdminSidebar({
   const navigationItems = [
     { title: "Overview", href: "/admin", icon: LayoutDashboard },
     { title: "Organizations", href: "/admin/organizations", icon: Building2 },
-    { title: "Organization settings", href: "/admin/settings/organization", icon: SlidersHorizontal },
     { title: "Users", href: "/admin/users", icon: Users },
     {
       title: "Platform Analytics",
@@ -104,8 +102,10 @@ export function AdminSidebar({
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin"
     if (href === "/admin/settings")
-      return pathname === "/admin/settings" || pathname === "/admin/settings/"
-    if (href === "/admin/settings/organization") return pathname?.startsWith("/admin/settings/organization") ?? false
+      return (
+        (pathname === "/admin/settings" || pathname === "/admin/settings/") &&
+        !pathname?.startsWith("/admin/settings/organization")
+      )
     return pathname?.startsWith(href)
   }
 

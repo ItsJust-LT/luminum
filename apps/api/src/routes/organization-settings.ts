@@ -6,25 +6,13 @@ import * as s3 from "../lib/storage/s3.js";
 import { orgImagesKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import { isEmailSystemEnabled } from "../lib/email-system.js";
-import {
-  decryptEmailSecret,
-  encryptEmailSecret,
-  getEmailSecretsKeyIssue,
-  isEmailSecretsKeyConfigured,
-} from "../lib/email-secrets.js";
-import {
-  getOrgWithResendFields,
-  maskResendApiKey,
-  validateOrgResendDomain,
-} from "../lib/resend-org.js";
+import { decryptEmailSecret, getEmailSecretsKeyIssue, isEmailSecretsKeyConfigured } from "../lib/email-secrets.js";
+import { getOrgWithResendFields, maskResendApiKey } from "../lib/resend-org.js";
 import { config } from "../config.js";
+import { invalidateDomainLookupCacheForOrganization } from "../lib/invalidate-domain-lookup-cache.js";
 
 const router = Router();
 router.use(requireAuth);
-
-function canManageResendCredentials(role: string): boolean {
-  return role === "owner" || role === "admin";
-}
 
 // GET /api/organization-settings/emails-enabled?organizationId=...
 router.get("/emails-enabled", async (req: Request, res: Response) => {
@@ -242,6 +230,7 @@ router.post("/upload-logo", async (req: Request, res: Response) => {
     } catch {}
 
     await prisma.organization.update({ where: { id: organizationId }, data: { logo: url } });
+    await invalidateDomainLookupCacheForOrganization(organizationId);
     res.json({ success: true, data: { logoUrl: url } });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -285,17 +274,24 @@ router.delete("/logo", async (req: Request, res: Response) => {
     }
 
     await prisma.organization.update({ where: { id: organizationId }, data: { logo: null } });
+    await invalidateDomainLookupCacheForOrganization(organizationId);
     res.json({ success: true });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
 });
 
-// GET /api/organization-settings/resend-email?organizationId=... — status for mail setup (any member)
+// GET /api/organization-settings/resend-email?organizationId=... — disabled for members (use GET /api/emails/setup-status); platform admins use GET /api/admin/organizations/:id/resend
 router.get("/resend-email", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (req.user?.role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        error: "Resend credential details are only available to platform administrators.",
+      });
+    }
     const member = await getMemberOrAdmin(organizationId, req.user);
     if (!member) return res.status(403).json({ success: false, error: "Access denied" });
     const org = await getOrgWithResendFields(organizationId);
@@ -331,93 +327,22 @@ router.get("/resend-email", async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/organization-settings/resend-email — owner/admin: save API key + webhook signing secret
-router.put("/resend-email", async (req: Request, res: Response) => {
-  try {
-    const { organizationId, apiKey, webhookSecret } = req.body as {
-      organizationId?: string;
-      apiKey?: string;
-      webhookSecret?: string;
-    };
-    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member || !canManageResendCredentials(member.role)) {
-      return res.status(403).json({ success: false, error: "Only owners and admins can update Resend credentials" });
-    }
-    const key = typeof apiKey === "string" ? apiKey.trim() : "";
-    const wh = typeof webhookSecret === "string" ? webhookSecret.trim() : "";
-    if (!key.startsWith("re_") || key.length < 10) {
-      return res.status(400).json({ success: false, error: "Invalid Resend API key format" });
-    }
-    if (wh.length < 8) {
-      return res.status(400).json({ success: false, error: "Webhook signing secret is required (from Resend → Webhooks)" });
-    }
-    const org = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { email_domain_id: true, email_domain: { select: { domain: true } } },
-    });
-    if (!org?.email_domain_id || !org.email_domain?.domain) {
-      return res.status(400).json({ success: false, error: "Select an email domain for this organization first" });
-    }
-    const domain = org.email_domain.domain;
-    const check = await validateOrgResendDomain(key, domain);
-    const now = new Date();
-    if (!check.ok) {
-      await prisma.organization.update({
-        where: { id: organizationId },
-        data: { resend_last_error: check.error ?? "validation failed", resend_last_validated_at: now },
-      });
-      return res.status(400).json({ success: false, error: check.error });
-    }
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: {
-        resend_api_key_ciphertext: encryptEmailSecret(key),
-        resend_webhook_secret_ciphertext: encryptEmailSecret(wh),
-        resend_last_validated_at: now,
-        resend_last_error: null,
-        email_dns_verified_at: now,
-        email_dns_last_error: null,
-      },
-    });
-    const encrypted = isEmailSecretsKeyConfigured();
-    res.json({
-      success: true,
-      message: encrypted
-        ? "Resend credentials saved. Add the inbound webhook URL in Resend (email.received)."
-        : "Resend credentials saved (stored without AES — set LUMINUM_EMAIL_SECRETS_KEY on the API for encrypted storage). Add the inbound webhook URL in Resend (email.received).",
-      storedEncrypted: encrypted,
-    });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed";
-    res.status(400).json({ success: false, error: msg });
-  }
+// PUT /api/organization-settings/resend-email — disabled: platform admins configure Resend under Admin → Organization settings
+router.put("/resend-email", async (_req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error:
+      "Resend API keys and webhook secrets are managed in the platform admin console (Admin → Organization settings → Mail / Resend).",
+  });
 });
 
-// DELETE /api/organization-settings/resend-email?organizationId=... — owner/admin
-router.delete("/resend-email", async (req: Request, res: Response) => {
-  try {
-    const organizationId = req.query.organizationId as string;
-    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member || !canManageResendCredentials(member.role)) {
-      return res.status(403).json({ success: false, error: "Access denied" });
-    }
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: {
-        resend_api_key_ciphertext: null,
-        resend_webhook_secret_ciphertext: null,
-        resend_last_validated_at: null,
-        resend_last_error: null,
-        email_dns_verified_at: null,
-      },
-    });
-    res.json({ success: true });
-  } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed";
-    res.json({ success: false, error: msg });
-  }
+// DELETE /api/organization-settings/resend-email — disabled (platform admin only)
+router.delete("/resend-email", async (_req: Request, res: Response) => {
+  res.status(403).json({
+    success: false,
+    error:
+      "Clearing Resend credentials is only available to platform administrators in the admin console.",
+  });
 });
 
 // GET /api/organization-settings/branded-dashboard-enabled?organizationId=...

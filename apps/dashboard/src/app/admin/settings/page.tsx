@@ -15,7 +15,6 @@ import {
   Users,
   Terminal,
   Info,
-  SlidersHorizontal,
 } from "lucide-react"
 import { useState, useEffect, useCallback } from "react"
 import { api } from "@/lib/api"
@@ -103,13 +102,14 @@ export default function AdminSettingsPage() {
               Platform settings
             </h1>
             <p className="text-muted-foreground mt-1.5 max-w-3xl">
-              Environment overview and shortcuts. To edit <strong>any</strong> organization (name, logo, team, slug)
-              as platform admin, open{" "}
-              <Link href="/admin/settings/organization" className="underline font-medium text-foreground">
-                Organization settings
-              </Link>
-              . Tenant-facing UI lives under{" "}
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">/{'{slug}'}/settings</code>.
+              Environment overview and shortcuts. To edit <strong>any</strong> organization (features, mail, branding,
+              team) as platform admin, open{" "}
+              <Link href="/admin/organizations" className="underline font-medium text-foreground">
+                Organizations
+              </Link>{" "}
+              and choose <strong>Organization settings</strong> on the row menu —{" "}
+              <code className="text-xs bg-muted px-1 py-0.5 rounded">/admin/settings/organization/[slug]</code>. Tenant
+              UI lives under <code className="text-xs bg-muted px-1 py-0.5 rounded">/{'{slug}'}/settings</code>.
             </p>
           </div>
         </motion.div>
@@ -119,14 +119,14 @@ export default function AdminSettingsPage() {
           <AlertTitle>Admin console</AlertTitle>
           <AlertDescription className="text-muted-foreground">
             <Button variant="secondary" size="sm" className="mr-2 mb-2 sm:mb-0" asChild>
-              <Link href="/admin/settings/organization" className="gap-2 inline-flex items-center">
-                <SlidersHorizontal className="h-4 w-4" />
-                Organization settings
+              <Link href="/admin/organizations" className="gap-2 inline-flex items-center">
+                <Building2 className="h-4 w-4" />
+                Organizations
               </Link>
             </Button>
             <span className="block sm:inline sm:ml-1">
-              Manage any org without being a member. The <strong>Your workspace</strong> tab below is a shortcut if you
-              belong to an organization.
+              Pick a row, then <strong>Organization settings</strong>, for per-tenant admin. The{" "}
+              <strong>Your workspace</strong> tab below is a shortcut if you belong to an organization.
             </span>{" "}
             <Link href="/admin/users" className="underline font-medium text-foreground">
               Users
@@ -263,25 +263,25 @@ export default function AdminSettingsPage() {
                 <CardContent className="py-10 text-center space-y-4 text-muted-foreground">
                   <p>You are not a member of an organization on this account.</p>
                   <p className="text-sm">
-                    As platform admin you can still manage every organization from{" "}
-                    <Link href="/admin/settings/organization" className="underline font-medium text-foreground">
-                      Organization settings
-                    </Link>
-                    .
+                    As platform admin you can open any tenant from{" "}
+                    <Link href="/admin/organizations" className="underline font-medium text-foreground">
+                      Organizations
+                    </Link>{" "}
+                    → Organization settings.
                   </p>
                   <Button asChild variant="outline">
-                    <Link href="/admin/settings/organization">Open organization settings</Link>
+                    <Link href="/admin/organizations">Open organizations</Link>
                   </Button>
                 </CardContent>
               </Card>
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Shortcut to the first organization on your account. For the full org picker (all tenants), use{" "}
-                  <Link href="/admin/settings/organization" className="underline font-medium text-foreground">
-                    Organization settings
-                  </Link>
-                  .
+                  Shortcut to the first organization on your account. For every tenant, use{" "}
+                  <Link href="/admin/organizations" className="underline font-medium text-foreground">
+                    Organizations
+                  </Link>{" "}
+                  → Organization settings.
                 </p>
                 <AdminOrganizationSettingsPanel
                   activeSlug={workspaceSlug}
@@ -333,7 +333,7 @@ export default function AdminSettingsPage() {
                     <Link href="/admin/organizations">Open organizations</Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link href="/admin/settings/organization">Org settings</Link>
+                    <Link href="/admin/organizations">Per-org settings</Link>
                   </Button>
                 </CardContent>
               </Card>

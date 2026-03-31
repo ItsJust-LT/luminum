@@ -19,6 +19,14 @@ import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 import { getAdminSystemEnvironmentSnapshot } from "../lib/system-environment.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
 import { cacheDel } from "../lib/redis-cache.js";
+import { invalidateDomainLookupCacheForOrganization } from "../lib/invalidate-domain-lookup-cache.js";
+import { config } from "../config.js";
+import { decryptEmailSecret, getEmailSecretsKeyIssue, isEmailSecretsKeyConfigured } from "../lib/email-secrets.js";
+import { getOrgWithResendFields, maskResendApiKey } from "../lib/resend-org.js";
+import {
+  patchOrganizationResendCredentials,
+  clearOrganizationResendCredentials,
+} from "../lib/org-resend-credentials-admin.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -184,9 +192,86 @@ router.patch("/organizations/:id", adminOnly, async (req: Request, res: Response
         invitations: { where: { status: "pending" } },
       },
     });
+    await invalidateDomainLookupCacheForOrganization(id);
     jsonSafe(res, { success: true, organization: org });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/admin/organizations/:id/resend — Resend mail credentials status (platform admin)
+router.get("/organizations/:id/resend", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const organizationId = pathParam(req, "id");
+    if (!organizationId) return res.status(400).json({ success: false, error: "Missing organization id" });
+    const org = await getOrgWithResendFields(organizationId);
+    if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
+    const domain = org.email_domain?.domain ?? null;
+    let maskedKey: string | null = null;
+    if (org.resend_api_key_ciphertext) {
+      try {
+        maskedKey = maskResendApiKey(decryptEmailSecret(org.resend_api_key_ciphertext));
+      } catch {
+        maskedKey = "•••• (decrypt error)";
+      }
+    }
+    const hasWebhook = Boolean(org.resend_webhook_secret_ciphertext);
+    const secretsReady = isEmailSecretsKeyConfigured();
+    const secretsIssue = getEmailSecretsKeyIssue();
+    res.json({
+      success: true,
+      secretsKeyConfigured: secretsReady,
+      secretsKeyIssue: secretsReady ? undefined : secretsIssue,
+      hasApiKey: Boolean(org.resend_api_key_ciphertext),
+      hasWebhookSecret: hasWebhook,
+      maskedApiKey: maskedKey,
+      emailDomain: domain,
+      emailDnsVerifiedAt: org.email_dns_verified_at?.toISOString() ?? null,
+      lastValidatedAt: org.resend_last_validated_at?.toISOString() ?? null,
+      lastError: org.resend_last_error ?? null,
+      inboundWebhookUrl: `${config.apiUrl}/api/webhook/resend-inbound`,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.json({ success: false, error: msg });
+  }
+});
+
+// PATCH /api/admin/organizations/:id/resend — update API key and/or webhook secret (platform admin)
+router.patch("/organizations/:id/resend", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const organizationId = pathParam(req, "id");
+    if (!organizationId) return res.status(400).json({ success: false, error: "Missing organization id" });
+    const body = req.body as { apiKey?: string; webhookSecret?: string };
+    const result = await patchOrganizationResendCredentials(organizationId, {
+      apiKey: body.apiKey,
+      webhookSecret: body.webhookSecret,
+    });
+    if (!result.ok) {
+      return res.status(result.status).json({ success: false, error: result.error });
+    }
+    res.json({
+      success: true,
+      message: result.message,
+      storedEncrypted: result.storedEncrypted,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.status(400).json({ success: false, error: msg });
+  }
+});
+
+// DELETE /api/admin/organizations/:id/resend — clear stored Resend credentials (platform admin)
+router.delete("/organizations/:id/resend", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const organizationId = pathParam(req, "id");
+    if (!organizationId) return res.status(400).json({ success: false, error: "Missing organization id" });
+    const ok = await clearOrganizationResendCredentials(organizationId);
+    if (!ok) return res.status(404).json({ success: false, error: "Organization not found" });
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.json({ success: false, error: msg });
   }
 });
 

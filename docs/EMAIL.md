@@ -8,8 +8,8 @@
 
 1. Each org selects an **email domain** tied to a **website** domain (`POST /api/emails/setup-domain`).
 2. In **their** [Resend](https://resend.com) project they add that domain, enable **sending** and **receiving**, and publish the **MX / SPF / DKIM** records Resend shows.
-3. An **owner or admin** saves the org’s **API key** and **webhook signing secret** via **`PUT /api/organization-settings/resend-email`** (encrypted at rest with **`LUMINUM_EMAIL_SECRETS_KEY`** on the server).
-4. In Resend → **Webhooks**, they add URL **`{API_URL}/api/webhook/resend-inbound`** and subscribe to **`email.received`**, using the same signing secret stored in Luminum.
+3. A **platform administrator** saves the org’s **API key** and **webhook signing secret** via **`PATCH /api/admin/organizations/:id/resend`** (optional: update key or secret independently; encrypted at rest when **`LUMINUM_EMAIL_SECRETS_KEY`** is set on the API). Tenant **`PUT /api/organization-settings/resend-email`** is disabled (403).
+4. In Resend → **Webhooks**, add URL **`{API_URL}/api/webhook/resend-inbound`** and subscribe to **`email.received`**, using the same signing secret stored in Luminum.
 
 Status and hints: **`GET /api/emails/setup-status`**. Re-validation: **`POST /api/emails/verify-dns`** (calls Resend’s domain APIs with the stored key plus optional SPF/DMARC DNS checks).
 

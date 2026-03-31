@@ -45,9 +45,12 @@ import {
   ChevronsUpDown,
   Trash2,
   Check,
+  ArrowLeft,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TransferOwnershipDialog } from "@/components/dashboard/transfer-ownership-dialog"
+import { AdminOrganizationResendSection } from "@/components/admin/admin-organization-resend-section"
+import { AdminOrganizationPlatformFeatures } from "@/components/admin/admin-organization-platform-features"
 
 export type AdminOrgListItem = { id: string; name: string; slug: string }
 
@@ -75,6 +78,16 @@ type WorkspaceOrg = {
   tax_id?: string | null
   members?: OrgMember[]
   invitations?: InvitationRow[]
+  analytics_enabled?: boolean
+  emails_enabled?: boolean
+  whatsapp_enabled?: boolean
+  blogs_enabled?: boolean
+  invoices_enabled?: boolean
+  branded_dashboard_enabled?: boolean
+  custom_domain?: string | null
+  custom_domain_prefix?: string | null
+  custom_domain_verified?: boolean
+  email_dns_verified_at?: string | Date | null
 }
 
 export type AdminOrganizationSettingsPanelProps = {
@@ -83,6 +96,10 @@ export type AdminOrganizationSettingsPanelProps = {
   onActiveSlugChange?: (slug: string) => void
   /** Show dropdown to pick any organization (platform admin). */
   showOrganizationPicker: boolean
+  /** Back link + org title row for `/admin/settings/organization/[slug]`. */
+  showSlugPageChrome?: boolean
+  /** e.g. redirect to organizations list when slug is unknown. */
+  onOrganizationNotFound?: () => void
   organizations?: AdminOrgListItem[]
   /** Prefix for form element ids when multiple panels could exist (a11y). */
   idPrefix?: string
@@ -94,6 +111,8 @@ export function AdminOrganizationSettingsPanel({
   activeSlug,
   onActiveSlugChange,
   showOrganizationPicker,
+  showSlugPageChrome = false,
+  onOrganizationNotFound,
   organizations = [],
   idPrefix = "",
   onOrganizationDeleted,
@@ -136,6 +155,7 @@ export function AdminOrganizationSettingsPanel({
 
   const loadOrg = useCallback(async (slug: string) => {
     setLoading(true)
+    setOrg((prev) => (prev?.slug === slug ? prev : null))
     try {
       const res = (await api.admin.getOrganizationBySlug(slug)) as {
         success?: boolean
@@ -145,6 +165,7 @@ export function AdminOrganizationSettingsPanel({
       if (!res.success || !res.organization) {
         toast.error(res.error || "Could not load organization")
         setOrg(null)
+        onOrganizationNotFound?.()
         return
       }
       const o = res.organization
@@ -163,7 +184,7 @@ export function AdminOrganizationSettingsPanel({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [onOrganizationNotFound])
 
   useEffect(() => {
     if (activeSlug) loadOrg(activeSlug)
@@ -406,9 +427,47 @@ export function AdminOrganizationSettingsPanel({
     <div className="space-y-6">
       {pickerCard}
 
+      {showSlugPageChrome && activeSlug ? (
+        <div className="rounded-xl border border-border/60 bg-muted/20 p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+            <Button variant="outline" size="sm" asChild className="w-fit shrink-0">
+              <Link href="/admin/organizations">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to organizations
+              </Link>
+            </Button>
+            {loading && !org ? (
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <Skeleton className="h-14 w-14 shrink-0 rounded-xl" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-8 max-w-sm" />
+                  <Skeleton className="h-4 w-36" />
+                </div>
+              </div>
+            ) : org ? (
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <Avatar className="h-14 w-14 shrink-0 rounded-xl border-2 border-border">
+                  <AvatarImage src={org.logo || ""} className="object-cover" />
+                  <AvatarFallback className="rounded-xl text-lg">
+                    {org.name?.slice(0, 2).toUpperCase() || "?"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <h1 className="truncate text-2xl font-bold tracking-tight">{org.name}</h1>
+                  <p className="font-mono text-sm text-muted-foreground">/{org.slug}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">This organization could not be loaded.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {loading && !org ? (
         <div className="space-y-4">
-          <Skeleton className="h-40 w-full" />
+          {!showSlugPageChrome ? <Skeleton className="h-40 w-full" /> : null}
+          <Skeleton className="h-48 w-full" />
           <Skeleton className="h-64 w-full" />
         </div>
       ) : !org ? (
@@ -428,6 +487,33 @@ export function AdminOrganizationSettingsPanel({
           </Link>
         </Button>
       </div>
+
+      <AdminOrganizationPlatformFeatures
+        org={{
+          id: org.id,
+          slug: org.slug,
+          name: org.name,
+          analytics_enabled: org.analytics_enabled ?? false,
+          emails_enabled: org.emails_enabled ?? false,
+          whatsapp_enabled: org.whatsapp_enabled ?? false,
+          blogs_enabled: org.blogs_enabled ?? false,
+          invoices_enabled: org.invoices_enabled ?? false,
+          branded_dashboard_enabled: org.branded_dashboard_enabled ?? false,
+          custom_domain: org.custom_domain ?? null,
+          custom_domain_prefix: org.custom_domain_prefix ?? null,
+          custom_domain_verified: org.custom_domain_verified ?? false,
+          email_dns_verified_at: org.email_dns_verified_at ?? null,
+        }}
+        onUpdated={refresh}
+      />
+
+      {org.id && org.slug ? (
+        <AdminOrganizationResendSection
+          organizationId={org.id}
+          organizationSlug={org.slug}
+          onUpdated={refresh}
+        />
+      ) : null}
 
       <Card>
         <CardHeader>
