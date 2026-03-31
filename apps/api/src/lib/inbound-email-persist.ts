@@ -32,7 +32,7 @@ export function stripNulDeep(value: unknown): unknown {
   return value;
 }
 
-function extractEmailAddress(emailString: string): string {
+export function extractEmailAddress(emailString: string): string {
   const match = emailString.match(/<([^>]+)>/);
   return match ? match[1] : emailString.trim();
 }
@@ -354,6 +354,21 @@ export async function persistInboundEmailFromPayload(
     } catch {
       /* ignore realtime errors */
     }
+    void import("./email-inbound-forward.js")
+      .then(({ deliverInboundForwardCopies }) =>
+        deliverInboundForwardCopies({
+          organizationId,
+          toHeader: toString,
+          subject: subjectSanitized,
+          text: textContent,
+          html: htmlContent,
+          fromHeader: fromString,
+          requestId,
+        }),
+      )
+      .catch((err) => {
+        logger.warn("Inbound forward scheduling failed", { error: String(err), organizationId, requestId });
+      });
   }
 
   logger.debug("Inbound persist done", { durationMs: Date.now() - startTime }, requestId);

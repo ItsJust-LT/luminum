@@ -107,6 +107,9 @@ export default function SlugLayout({
   const whatsappNavPath = orgNavPath(slug, flatRoutes, "whatsapp")
   const isWhatsappRoute =
     pathname === whatsappNavPath || (pathname?.startsWith(`${whatsappNavPath}/`) ?? false)
+  const emailsNavPath = orgNavPath(slug, flatRoutes, "emails")
+  const isMailRoute =
+    pathname === emailsNavPath || (pathname?.startsWith(`${emailsNavPath}/`) ?? false)
 
   useEffect(() => {
     if (!isPending && session) {
@@ -715,8 +718,8 @@ export default function SlugLayout({
             </header>
 
             <main className={cn(
-              "flex-1 bg-background/50",
-              isWhatsappRoute ? "overflow-hidden p-0" : "overflow-auto p-3 md:p-6",
+              "flex-1 bg-background/50 min-h-0 flex flex-col",
+              isWhatsappRoute || isMailRoute ? "overflow-hidden p-0" : "overflow-auto p-3 md:p-6",
             )}>
               {children}
             </main>

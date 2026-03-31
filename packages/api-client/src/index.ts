@@ -208,6 +208,8 @@ function createApiClient(baseUrl: string = "") {
           defaultFromLocal?: string | null;
         };
         personal?: { signatureHtml?: string; signatureText?: string };
+        mailboxSignatures?: unknown;
+        forwardingRules?: unknown;
         signatureHtml?: string;
         signatureText?: string;
         signatureEnabled?: boolean;

@@ -1,5 +1,7 @@
 import sanitizeHtml from "sanitize-html";
 import { prisma } from "./prisma.js";
+import { normalizeEmailLocalPart } from "./email-send.js";
+import { parseMailboxSignaturesJson } from "./mail-organization-json.js";
 
 export function outboundHtmlFromPlainText(text: string): string {
   const esc = text
@@ -93,7 +95,7 @@ export function sanitizeComposeHtml(raw: string): string {
 export async function mergeOutboundWithSignature(
   organizationId: string,
   body: { text: string; html?: string | null },
-  options?: { actorUserId?: string | null }
+  options?: { actorUserId?: string | null; fromLocalPart?: string | null }
 ): Promise<{ text: string; html: string | undefined }> {
   const mainText =
     (body.text?.trim() ? body.text : body.html?.trim() ? stripHtmlToPlain(body.html) : "") || "";
@@ -104,6 +106,7 @@ export async function mergeOutboundWithSignature(
       email_signature_enabled: true,
       email_signature_html: true,
       email_signature_text: true,
+      email_mailbox_signatures: true,
     },
   });
 
@@ -129,6 +132,19 @@ export async function mergeOutboundWithSignature(
     if (pHtml || pText) {
       sigHtmlStored = pHtml;
       sigTextStored = pText;
+    }
+  }
+  if (!sigHtmlStored && !sigTextStored && options?.fromLocalPart) {
+    const localNorm = normalizeEmailLocalPart(options.fromLocalPart);
+    if (localNorm) {
+      const mailboxRules = parseMailboxSignaturesJson(org.email_mailbox_signatures);
+      const hit = mailboxRules.find((r) => normalizeEmailLocalPart(r.localPart) === localNorm);
+      const mh = hit?.signatureHtml?.trim() ?? "";
+      const mt = hit?.signatureText?.trim() ?? "";
+      if (mh || mt) {
+        sigHtmlStored = mh;
+        sigTextStored = mt;
+      }
     }
   }
   if (!sigHtmlStored && !sigTextStored) {

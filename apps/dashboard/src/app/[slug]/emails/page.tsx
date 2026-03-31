@@ -2,8 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
+import { useMailWorkspace } from "@/lib/contexts/mail-workspace-context"
+import { orgNavPath } from "@/lib/org-nav-path"
+import { useCustomDomain } from "@/lib/hooks/use-custom-domain"
 import { useEmailsContext } from "@/lib/contexts/emails-context"
 import type { EmailListItem } from "@/lib/contexts/emails-context"
 import { api } from "@/lib/api"
@@ -30,7 +34,6 @@ import {
   InboxIcon,
   Star,
   Clock,
-  Settings2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -39,10 +42,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { EmailAvatar } from "@/components/emails/email-avatar"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { cn } from "@/lib/utils"
-import { MailboxSidebar, type MailboxId, type FolderCounts } from "@/components/emails/mailbox-sidebar"
+import type { MailboxId, FolderCounts } from "@/components/emails/mailbox-sidebar"
 import { MailProvisioningView } from "@/components/emails/mail-provisioning-view"
-import { MailComposeFullscreen } from "@/components/emails/mail-compose-fullscreen"
-import { MailEmailSettingsSheet } from "@/components/emails/mail-email-settings-sheet"
 
 function formatScheduledSendInLocalTime(iso: Date | string): string {
   const d = typeof iso === "string" ? new Date(iso) : iso
@@ -81,6 +82,8 @@ function smartDate(date: Date | string): string {
 
 export default function EmailsPage() {
   const { organization } = useOrganization()
+  const { isCustomDomain } = useCustomDomain()
+  const { mailbox, setMailbox, folderCounts, setFolderCounts, refreshFolderCounts } = useMailWorkspace()
   const ctx = useEmailsContext()
   const {
     emails,
@@ -116,16 +119,6 @@ export default function EmailsPage() {
   const [orgLoading, setOrgLoading] = useState(false)
   const [emailSelectorOpen, setEmailSelectorOpen] = useState(false)
   const [setupStatus, setSetupStatus] = useState<EmailSetupStatus | null>(null)
-  const [mailbox, setMailbox] = useState<MailboxId>("inbox")
-  const [folderCounts, setFolderCounts] = useState<FolderCounts>({
-    inboxUnread: 0,
-    sent: 0,
-    starred: 0,
-    drafts: 0,
-    scheduled: 0,
-  })
-  const [composeOpen, setComposeOpen] = useState(false)
-  const [mailSettingsOpen, setMailSettingsOpen] = useState(false)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
@@ -152,25 +145,27 @@ export default function EmailsPage() {
     return () => window.clearInterval(id)
   }, [organization?.id, setupStatus?.access, setupStatus?.setupComplete])
 
-  const refreshFolderCounts = useCallback(async () => {
-    if (!organization?.id) return
-    try {
-      const r = (await api.emails.folderCounts(organization.id)) as {
-        success?: boolean
-        data?: FolderCounts
-      }
-      if (r?.success && r.data) setFolderCounts(r.data)
-    } catch {
-      /* ignore */
-    }
-  }, [organization?.id])
-
   useEffect(() => {
-    if (!organization?.id || !setupStatus?.setupComplete) return
+    if (!setupStatus?.setupComplete || !organization?.id) return
     void refreshFolderCounts()
-  }, [organization?.id, setupStatus?.setupComplete, refreshFolderCounts])
+  }, [setupStatus?.setupComplete, organization?.id, refreshFolderCounts])
+
+  const mailboxResetBoot = useRef(true)
+  useEffect(() => {
+    if (mailboxResetBoot.current) {
+      mailboxResetBoot.current = false
+      return
+    }
+    setPage(1)
+    setLoadedForOrgId(null)
+    setEmails([])
+  }, [mailbox, setPage, setLoadedForOrgId, setEmails])
 
   const router = useRouter()
+  const emailsBase =
+    organization?.slug != null ? orgNavPath(organization.slug, isCustomDomain, "emails") : "/emails"
+  const composeHref = `${emailsBase}/compose`
+  const settingsHref = `${emailsBase}/settings`
   const showSetupRequired = !!(setupStatus && !setupStatus.setupComplete)
 
   const fetchEmails = useCallback(
@@ -604,20 +599,11 @@ export default function EmailsPage() {
     return <MailProvisioningView workspaceName={organization?.name} />
   }
   return (
-    <AppPageContainer fullWidth className="!space-y-0 !px-0 pb-8 pt-0 sm:pt-1 -mx-4 w-[calc(100%+2rem)] max-w-none self-stretch sm:-mx-4">
-      <div className="flex w-full flex-col gap-0 md:min-h-[calc(100dvh-4.5rem)] md:flex-row md:items-stretch">
-        <MailboxSidebar
-          active={mailbox}
-          counts={folderCounts}
-          onSelect={(m) => {
-            setMailbox(m)
-            setPage(1)
-            setLoadedForOrgId(null)
-            setEmails([])
-          }}
-        />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-8 px-4 py-6 sm:px-6 sm:py-7 lg:gap-10 lg:px-10 lg:py-8">
-          <motion.div
+    <AppPageContainer
+      fullWidth
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 space-y-0 px-4 py-4 sm:px-5 sm:py-5 md:px-6 md:py-6"
+    >
+      <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
@@ -679,42 +665,21 @@ export default function EmailsPage() {
                     Mark all read
                   </Button>
                 ) : null}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="rounded-xl border-border/60 shadow-sm shrink-0"
-                  onClick={() => setMailSettingsOpen(true)}
-                >
-                  <Settings2 className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Mail settings</span>
+                <Button type="button" variant="outline" size="sm" className="rounded-xl border-border/60 shadow-sm shrink-0" asChild>
+                  <Link href={settingsHref}>
+                    <span className="hidden sm:inline">Mail settings</span>
+                    <span className="sm:hidden">Settings</span>
+                  </Link>
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="shrink-0 rounded-xl bg-primary shadow-md shadow-primary/15 transition-transform hover:bg-primary/90 active:scale-[0.98]"
-                  onClick={() => setComposeOpen(true)}
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  Compose
+                <Button type="button" size="sm" className="shrink-0 rounded-xl bg-primary shadow-md shadow-primary/15" asChild>
+                  <Link href={composeHref} className="flex items-center">
+                    <Send className="mr-2 h-4 w-4" />
+                    Compose
+                  </Link>
                 </Button>
               </div>
             </div>
           </motion.div>
-
-          <MailComposeFullscreen
-            open={composeOpen}
-            onOpenChange={setComposeOpen}
-            organizationId={organization.id}
-            domain={setupStatus?.domain}
-            onRefresh={handleMailRefresh}
-          />
-          <MailEmailSettingsSheet
-            open={mailSettingsOpen}
-            onOpenChange={setMailSettingsOpen}
-            organizationId={organization.id}
-            domain={setupStatus?.domain}
-          />
 
       {/* Toolbar */}
       <div className="space-y-5">
@@ -827,7 +792,7 @@ export default function EmailsPage() {
       </div>
 
       {/* Email list: show cached list instantly when returning from detail */}
-      <div className="app-card overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+      <div className="app-card flex min-h-[min(280px,50vh)] flex-1 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm md:min-h-0">
         {!hasCachedList(organization?.id ?? "") && (orgLoading || loading) ? (
           <div className="divide-y">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -855,7 +820,7 @@ export default function EmailsPage() {
           </div>
         ) : (
           <div ref={listContainerRef} className="h-full">
-          <ScrollArea className="h-[min(560px,calc(100vh-19rem))] md:h-[min(640px,calc(100vh-17rem))]">
+          <ScrollArea className="min-h-[240px] flex-1 md:min-h-[320px]">
             <div className="divide-y divide-border/60">
               <AnimatePresence initial={false}>
                 {emails.map((email) => (
@@ -1004,8 +969,6 @@ export default function EmailsPage() {
           </ScrollArea>
           </div>
         )}
-      </div>
-        </div>
       </div>
     </AppPageContainer>
   )

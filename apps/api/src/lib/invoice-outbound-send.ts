@@ -1,5 +1,5 @@
 import { prisma } from "./prisma.js";
-import { getOrgReplyAddress, sendOutboundViaResend } from "./email-send.js";
+import { extractMailboxLocalPart, getOrgReplyAddress, sendOutboundViaResend } from "./email-send.js";
 import { mergeOutboundWithSignature } from "./email-outbound-body.js";
 import { broadcastOrgEmailOutboundSent } from "./org-ws-broadcast.js";
 import { sendDocumentMessage } from "../whatsapp/manager.js";
@@ -19,8 +19,9 @@ export async function sendInvoiceEmailSystem(opts: {
   to: string;
   message?: string;
   fromLocalPart?: string;
+  actorUserId?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { organizationId, invoice, to, message, fromLocalPart } = opts;
+  const { organizationId, invoice, to, message, fromLocalPart, actorUserId } = opts;
   try {
     let from: string;
     let replyTo: string;
@@ -46,7 +47,10 @@ export async function sendInvoiceEmailSystem(opts: {
     const merged = await mergeOutboundWithSignature(
       organizationId,
       { text, html: invoiceBodyHtml },
-      { actorUserId: null }
+      {
+        actorUserId: actorUserId ?? null,
+        fromLocalPart: from ? extractMailboxLocalPart(from) : fromLocalPart ?? null,
+      }
     );
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);

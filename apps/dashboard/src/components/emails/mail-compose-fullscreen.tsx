@@ -20,6 +20,7 @@ import {
   Paperclip,
   Type,
   Sparkles,
+  ArrowLeft,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { MailboxId } from "@/components/emails/mailbox-sidebar"
@@ -89,8 +90,10 @@ export function MailComposeFullscreen(props: {
   domain?: string
   /** Refetch list; pass mailbox to switch folder (e.g. after schedule or explicit draft save). */
   onRefresh: (opts?: { mailbox?: MailboxId }) => Promise<void>
+  /** Full-page compose (no modal / portal). */
+  layoutMode?: "modal" | "page"
 }) {
-  const { open, onOpenChange, organizationId, domain, onRefresh } = props
+  const { open, onOpenChange, organizationId, domain, onRefresh, layoutMode = "modal" } = props
   const [mounted, setMounted] = useState(false)
   const [editorSession, setEditorSession] = useState(0)
   const [richMode, setRichMode] = useState(true)
@@ -127,7 +130,7 @@ export function MailComposeFullscreen(props: {
   }, [])
 
   useEffect(() => {
-    if (!open) return
+    if (!open && layoutMode !== "page") return
     closingRef.current = false
     resetForm()
     setEditorSession((s) => s + 1)
@@ -166,7 +169,7 @@ export function MailComposeFullscreen(props: {
         setComposeFromLocal("noreply")
       }
     })()
-  }, [open, organizationId, resetForm])
+  }, [open, layoutMode, organizationId, resetForm])
 
   const hasBody = useMemo(() => {
     if (richMode) {
@@ -255,25 +258,25 @@ export function MailComposeFullscreen(props: {
   }, [saveDraftQuietly, resetForm, onOpenChange])
 
   useEffect(() => {
-    if (!open) return
+    if (!open && layoutMode !== "page") return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && layoutMode === "modal") {
         e.preventDefault()
         void requestClose()
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [open, requestClose])
+  }, [open, layoutMode, requestClose])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || layoutMode === "page") return
     const prev = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => {
       document.body.style.overflow = prev
     }
-  }, [open])
+  }, [open, layoutMode])
 
   const minDateStr = useMemo(() => localDateString(new Date()), [])
   const minTimeForDate = useMemo(() => {
@@ -418,57 +421,62 @@ export function MailComposeFullscreen(props: {
 
   if (!mounted) return null
 
-  return createPortal(
-    <AnimatePresence>
-      {open ? (
-        <motion.div
-          key="mail-compose"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="mail-compose-title"
-          className="fixed inset-0 z-[200] flex min-h-0 items-end justify-center sm:items-center sm:p-4"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          <motion.button
+  const composeHeader =
+    layoutMode === "page" ? (
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.06] via-transparent to-transparent px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Button
             type="button"
-            aria-label="Close and save draft"
-            className="absolute inset-0 bg-background/80 backdrop-blur-md"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            variant="ghost"
+            size="sm"
+            className="h-9 shrink-0 rounded-lg gap-1.5"
             onClick={() => void requestClose()}
-          />
-          <motion.div
-            className="relative z-10 flex max-h-[min(92dvh,620px)] w-full max-w-[min(56rem,calc(100vw-1.25rem))] flex-col overflow-hidden rounded-t-2xl border border-border/60 bg-background shadow-2xl sm:rounded-2xl sm:max-h-[min(88dvh,600px)]"
-            initial={{ y: 24, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 16, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 380, damping: 32 }}
+            disabled={savingDraft}
           >
-            <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.06] via-transparent to-transparent px-4 py-3 sm:px-5">
-              <div className="min-w-0 space-y-0.5">
-                <h2 id="mail-compose-title" className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
-                  New message
-                </h2>
-                <p className="text-xs text-muted-foreground sm:text-sm">
-                  Esc or backdrop closes · unsaved content becomes a draft
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 shrink-0 rounded-xl"
-                onClick={() => void requestClose()}
-                disabled={savingDraft}
-              >
-                {savingDraft ? <Loader2 className="h-5 w-5 animate-spin" /> : <X className="h-5 w-5" />}
-                <span className="sr-only">Close</span>
-              </Button>
-            </header>
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Back</span>
+          </Button>
+          <div className="min-w-0">
+            <h2 id="mail-compose-title" className="text-lg font-semibold tracking-tight text-foreground sm:text-xl truncate">
+              New message
+            </h2>
+            <p className="text-xs text-muted-foreground">Unsaved content can be saved as a draft from the Draft tab.</p>
+          </div>
+        </div>
+      </header>
+    ) : (
+      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.06] via-transparent to-transparent px-4 py-3 sm:px-5">
+        <div className="min-w-0 space-y-0.5">
+          <h2 id="mail-compose-title" className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+            New message
+          </h2>
+          <p className="text-xs text-muted-foreground sm:text-sm">
+            Esc or backdrop closes · unsaved content becomes a draft
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 shrink-0 rounded-xl"
+          onClick={() => void requestClose()}
+          disabled={savingDraft}
+        >
+          {savingDraft ? <Loader2 className="h-5 w-5 animate-spin" /> : <X className="h-5 w-5" />}
+          <span className="sr-only">Close</span>
+        </Button>
+      </header>
+    )
+
+  const composeShell = (
+    <div
+      className={
+        layoutMode === "page"
+          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm"
+          : "relative z-10 flex max-h-[min(92dvh,620px)] w-full max-w-[min(56rem,calc(100vw-1.25rem))] flex-col overflow-hidden rounded-t-2xl border border-border/60 bg-background shadow-2xl sm:rounded-2xl sm:max-h-[min(88dvh,600px)]"
+      }
+    >
+      {composeHeader}
 
             <Tabs defaultValue="send" className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="shrink-0 border-b border-border/60 px-4 pt-3 sm:px-5">
@@ -747,6 +755,48 @@ export function MailComposeFullscreen(props: {
                 </div>
               </div>
             </Tabs>
+    </div>
+  )
+
+  if (layoutMode === "page") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-background/30 px-3 py-3 sm:px-5 sm:py-4">
+        {composeShell}
+      </div>
+    )
+  }
+
+  return createPortal(
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          key="mail-compose"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mail-compose-title"
+          className="fixed inset-0 z-[200] flex min-h-0 items-end justify-center sm:items-center sm:p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.button
+            type="button"
+            aria-label="Close and save draft"
+            className="absolute inset-0 bg-background/80 backdrop-blur-md"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => void requestClose()}
+          />
+          <motion.div
+            className="relative z-10 w-full max-w-[min(56rem,calc(100vw-1.25rem))] flex justify-center"
+            initial={{ y: 24, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 16, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 32 }}
+          >
+            {composeShell}
           </motion.div>
         </motion.div>
       ) : null}

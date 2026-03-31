@@ -78,7 +78,10 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
           text: row.text || "",
           html: row.html,
         },
-        { actorUserId: row.outbound_scheduled_by_user_id ?? null }
+        {
+          actorUserId: row.outbound_scheduled_by_user_id ?? null,
+          fromLocalPart: row.from ? extractMailboxLocalPart(row.from) : null,
+        }
       );
       const pending = parsePendingAttachmentsFromDb(row.outbound_pending_attachments);
 

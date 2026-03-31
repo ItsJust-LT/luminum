@@ -7,7 +7,7 @@ import { checkDomainDmarc, checkDomainSpf, getExpectedDmarcRecord } from "../lib
 import { config } from "../config.js";
 import * as s3 from "../lib/storage/s3.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
-import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
+import { extractMailboxLocalPart, getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
 import { logger } from "../lib/logger.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
 import { decryptEmailSecret, getEmailSecretsKeyIssue, isEmailSecretsKeyConfigured } from "../lib/email-secrets.js";
@@ -465,7 +465,7 @@ router.post("/send", async (req: Request, res: Response) => {
         text: text?.trim() || "",
         html: html?.trim() || null,
       },
-      { actorUserId: req.user.id }
+      { actorUserId: req.user.id, fromLocalPart: extractMailboxLocalPart(from) }
     );
     const sendResult = await sendOutboundViaResend(organizationId, {
       from, replyTo, to: toList, subject,
@@ -1008,7 +1008,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
         text: bodyText,
         html: bodyHtmlRaw,
       },
-      { actorUserId: req.user.id }
+      { actorUserId: req.user.id, fromLocalPart: extractMailboxLocalPart(from) }
     );
     const attachments = normalizeAttachmentsFromRequest(attachmentsInput);
     const sendResult = await sendOutboundViaResend(original.organization_id, {

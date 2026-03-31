@@ -13,7 +13,7 @@ import {
   invoiceToTemplateData,
   type InvoiceWithItems,
 } from "../lib/invoice-pdf-helpers.js";
-import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
+import { extractMailboxLocalPart, getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
 import { mergeOutboundWithSignature } from "../lib/email-outbound-body.js";
 import { broadcastOrgEmailOutboundSent } from "../lib/org-ws-broadcast.js";
 import { sendDocumentMessage } from "../whatsapp/manager.js";
@@ -554,7 +554,7 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
     const merged = await mergeOutboundWithSignature(
       invoice.organization_id,
       { text, html: invoiceBodyHtml },
-      { actorUserId: req.user?.id ?? null }
+      { actorUserId: req.user?.id ?? null, fromLocalPart: extractMailboxLocalPart(from) }
     );
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);

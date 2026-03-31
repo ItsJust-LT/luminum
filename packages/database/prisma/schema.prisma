@@ -272,6 +272,10 @@ model organization {
   email_signature_enabled                                           Boolean                   @default(true)
   /// Default mailbox local part when compose omits From (e.g. sales); must pass RFC local-part rules.
   email_default_from_local                                          String?                   @db.VarChar(64)
+  /// Per-mailbox signature overrides: [{ id, localPart, signatureHtml?, signatureText? }] — applied after personal, before org default.
+  email_mailbox_signatures                                          Json?
+  /// Inbound forwarding rules (max 5): [{ id, enabled, forwardTo, matchKind, pattern? }].
+  email_forward_rules                                               Json?
   whatsapp_enabled                                                  Boolean                   @default(false)
   whatsapp_always_on                                                Boolean                   @default(false)
   analytics_enabled                                                 Boolean                   @default(false)

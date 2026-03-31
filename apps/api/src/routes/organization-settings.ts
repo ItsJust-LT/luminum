@@ -12,6 +12,11 @@ import { config } from "../config.js";
 import { invalidateDomainLookupCacheForOrganization } from "../lib/invalidate-domain-lookup-cache.js";
 import { sanitizeSignatureHtml } from "../lib/email-outbound-body.js";
 import { isValidEmailLocalPart, normalizeEmailLocalPart } from "../lib/email-send.js";
+import {
+  parseForwardRulesJson,
+  parseMailboxSignaturesJson,
+} from "../lib/mail-organization-json.js";
+import type { Prisma } from "@luminum/database";
 
 const router = Router();
 router.use(requireAuth);
@@ -139,6 +144,9 @@ router.get("/email-composer", async (req: Request, res: Response) => {
         email_signature_text: true,
         email_signature_enabled: true,
         email_default_from_local: true,
+        email_mailbox_signatures: true,
+        email_forward_rules: true,
+        email_domain: { select: { domain: true } },
       },
     });
     if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
@@ -154,6 +162,7 @@ router.get("/email-composer", async (req: Request, res: Response) => {
       data: {
         emailsEnabled: org.emails_enabled ?? false,
         canEditOrganizationDefaults,
+        mailDomain: org.email_domain?.domain ?? "",
         organizationDefault: {
           signatureHtml: org.email_signature_html ?? "",
           signatureText: org.email_signature_text ?? "",
@@ -164,6 +173,8 @@ router.get("/email-composer", async (req: Request, res: Response) => {
           signatureHtml: memberRow?.personalEmailSignatureHtml ?? "",
           signatureText: memberRow?.personalEmailSignatureText ?? "",
         },
+        mailboxSignatures: parseMailboxSignaturesJson(org.email_mailbox_signatures),
+        forwardingRules: parseForwardRulesJson(org.email_forward_rules),
       },
     });
   } catch (error: any) {
@@ -196,6 +207,8 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
         defaultFromLocal?: string | null;
       };
       personal?: { signatureHtml?: string; signatureText?: string };
+      mailboxSignatures?: unknown;
+      forwardingRules?: unknown;
       signatureHtml?: string;
       signatureText?: string;
       signatureEnabled?: boolean;
@@ -218,6 +231,8 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
     const orgPatch = body.organizationDefault ?? legacyOrg;
     let updatedOrg = false;
     let updatedPersonal = false;
+    let updatedMailbox = false;
+    let updatedForward = false;
 
     if (orgPatch) {
       const hasOrgField =
@@ -289,7 +304,39 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
       updatedPersonal = true;
     }
 
-    if (!updatedOrg && !updatedPersonal) {
+    if (body.mailboxSignatures !== undefined) {
+      if (member.role !== "owner" && member.role !== "admin") {
+        return res.status(403).json({ success: false, error: "Only owners and admins can edit mailbox signatures" });
+      }
+      const parsed = parseMailboxSignaturesJson(body.mailboxSignatures);
+      const sanitized = parsed.map((r) => ({
+        id: r.id,
+        localPart: r.localPart,
+        signatureHtml: r.signatureHtml?.trim() ? sanitizeSignatureHtml(String(r.signatureHtml)) : null,
+        signatureText: r.signatureText?.trim() ? r.signatureText.trim().slice(0, 16_000) : null,
+      }));
+      await prisma.organization.update({
+        where: { id: organizationId },
+        data: { email_mailbox_signatures: sanitized as unknown as Prisma.InputJsonValue },
+      });
+      await invalidateDomainLookupCacheForOrganization(organizationId);
+      updatedMailbox = true;
+    }
+
+    if (body.forwardingRules !== undefined) {
+      if (member.role !== "owner" && member.role !== "admin") {
+        return res.status(403).json({ success: false, error: "Only owners and admins can edit forwarding rules" });
+      }
+      const parsed = parseForwardRulesJson(body.forwardingRules);
+      await prisma.organization.update({
+        where: { id: organizationId },
+        data: { email_forward_rules: parsed as unknown as Prisma.InputJsonValue },
+      });
+      await invalidateDomainLookupCacheForOrganization(organizationId);
+      updatedForward = true;
+    }
+
+    if (!updatedOrg && !updatedPersonal && !updatedMailbox && !updatedForward) {
       return res.status(400).json({ success: false, error: "No valid fields to update" });
     }
 

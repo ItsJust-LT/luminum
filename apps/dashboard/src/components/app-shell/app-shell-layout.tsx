@@ -74,6 +74,8 @@ export function AppShellLayout({
   )
   const whatsappPath = orgNavPath(slug, flatRoutes, 'whatsapp')
   const isWhatsappRoute = pathname === whatsappPath || pathname.startsWith(`${whatsappPath}/`)
+  const emailsPath = orgNavPath(slug, flatRoutes, 'emails')
+  const isMailRoute = pathname === emailsPath || pathname.startsWith(`${emailsPath}/`)
 
   const roleColor = getRoleColor(userRole)
   const accountSettingsHref = '/account/settings'
@@ -147,7 +149,7 @@ export function AppShellLayout({
         className={cn(
           'min-h-0 flex-1 overflow-auto pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
           chrome.mainSurface,
-          isWhatsappRoute ? 'p-0 overflow-hidden' : 'p-4',
+          isWhatsappRoute || isMailRoute ? 'p-0 overflow-hidden min-h-0 flex flex-col' : 'p-4',
         )}
       >
         {children}
