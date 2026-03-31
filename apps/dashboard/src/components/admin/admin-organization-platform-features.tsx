@@ -100,7 +100,13 @@ export function AdminOrganizationPlatformFeatures(props: {
         whatsapp: "WhatsApp",
         invoices: "Invoices",
       }
-      toast.success(`${labels[feature]} ${enable ? "enabled" : "disabled"}`)
+      toast.success(
+        feature === "analytics" && enable
+          ? "Analytics enabled for this workspace and all its websites"
+          : feature === "analytics" && !enable
+            ? "Analytics disabled for this workspace and all its websites"
+            : `${labels[feature]} ${enable ? "enabled" : "disabled"}`
+      )
     })
   }
 
