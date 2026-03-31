@@ -12,6 +12,7 @@ import { generateInvoicePdf } from "../lib/invoice/pdf-generator.js";
 import type { InvoiceTemplateData } from "../lib/invoice/html-template.js";
 import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
 import { broadcastOrgEmailOutboundSent } from "../lib/org-ws-broadcast.js";
+import { sendDocumentMessage } from "../whatsapp/manager.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -26,6 +27,13 @@ async function ensureInvoicesEnabled(organizationId: string): Promise<boolean> {
     select: { invoices_enabled: true },
   });
   return org?.invoices_enabled === true;
+}
+
+/** WhatsApp JID from stored phone (digits only, with country code, no +). */
+function phoneToWhatsappJid(raw: string): string | null {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 15) return null;
+  return `${digits}@c.us`;
 }
 
 type InvoiceWithItems = Prisma.invoiceGetPayload<{ include: { items: true } }>;
@@ -565,8 +573,14 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
 
     const org = await prisma.organization.findUnique({
       where: { id: invoice.organization_id },
-      select: { emails_enabled: true },
+      select: { emails_enabled: true, whatsapp_enabled: true },
     });
+    if (!org?.whatsapp_enabled) {
+      return res.status(400).json({
+        error:
+          "Sending invoices by email is available when both Invoices and WhatsApp are enabled for this organization.",
+      });
+    }
     if (!org?.emails_enabled) {
       return res.status(400).json({
         error:
@@ -651,6 +665,77 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
     }
 
     res.json({ success: true, invoice: updatedInvoice, providerMessageId: sendResult.providerMessageId });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/invoices/:id/send-whatsapp — PDF document to client WhatsApp (requires invoices + WhatsApp enabled)
+router.post("/:id/send-whatsapp", async (req: Request, res: Response) => {
+  try {
+    const id = paramId(req);
+    const { phone, message, markSent } = req.body as {
+      phone?: string;
+      message?: string;
+      markSent?: boolean;
+    };
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { items: { orderBy: { sort_order: "asc" } } },
+    });
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await ensureInvoicesEnabled(invoice.organization_id))) return res.status(403).json({ error: "Invoices not enabled" });
+
+    const org = await prisma.organization.findUnique({
+      where: { id: invoice.organization_id },
+      select: { whatsapp_enabled: true },
+    });
+    if (!org?.whatsapp_enabled) {
+      return res.status(400).json({
+        error: "WhatsApp is not enabled for this organization.",
+      });
+    }
+
+    const rawPhone = (phone && String(phone).trim()) || invoice.client_phone?.trim() || "";
+    const jid = phoneToWhatsappJid(rawPhone);
+    if (!jid) {
+      return res.status(400).json({
+        error: 'A valid client phone number with country code is required. Add a phone on the invoice or pass "phone".',
+      });
+    }
+
+    const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
+    const dataUrl = `data:application/pdf;base64,${pdfBuffer.toString("base64")}`;
+    const isQuote = invoice.document_type === "quote";
+    const docWord = isQuote ? "Quote" : "Invoice";
+    const prefix = isQuote ? "quote" : "invoice";
+    const filename = `${prefix}-${invoice.invoice_number.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
+    const caption =
+      (message && String(message).trim()) ||
+      `Here is your ${docWord.toLowerCase()} ${invoice.invoice_number} from ${invoice.company_name}.`;
+
+    const clientMessageId = `inv-wa-${invoice.id}-${Date.now()}`;
+    await sendDocumentMessage({
+      organizationId: invoice.organization_id,
+      chatId: jid,
+      dataUrl,
+      filename,
+      caption,
+      clientMessageId,
+    });
+
+    let updatedInvoice: InvoiceWithItems = invoice;
+    if (markSent !== false && invoice.status === "draft") {
+      updatedInvoice = await prisma.invoice.update({
+        where: { id },
+        data: { status: "sent" },
+        include: { items: { orderBy: { sort_order: "asc" } } },
+      });
+    }
+
+    res.json({ success: true, invoice: updatedInvoice });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

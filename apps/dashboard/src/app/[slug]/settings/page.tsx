@@ -51,7 +51,9 @@ import {
   Users,
   HardDrive,
   AlertTriangle,
-  FileText
+  FileText,
+  Copy,
+  Globe,
 } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
@@ -79,7 +81,19 @@ export default function OrganizationSettingsPage() {
       attachments: { support: number; emails: number; forms: number };
     };
   } | null>(null)
+  const [workspaceWebsites, setWorkspaceWebsites] = useState<
+    { id: string; domain: string; website_id?: string | null }[]
+  >([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const copyIdentifier = async (label: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(`${label} copied`)
+    } catch {
+      toast.error("Could not copy to clipboard")
+    }
+  }
 
   useEffect(() => {
     if (organization?.id) {
@@ -108,6 +122,12 @@ export default function OrganizationSettingsPage() {
           api.organizationSettings.getStorage(organization.id)
             .then((res: any) => { if (res?.success && res?.data?.breakdown) setStorageBreakdown(res.data.breakdown) })
             .catch(() => {})
+        }
+        try {
+          const wsRes = await api.websites.list(organization.id) as { data?: { id: string; domain: string; website_id?: string | null }[] }
+          setWorkspaceWebsites(Array.isArray(wsRes?.data) ? wsRes.data : [])
+        } catch {
+          setWorkspaceWebsites([])
         }
       } else {
         toast.error(result.error || "Failed to load settings")
@@ -561,6 +581,92 @@ export default function OrganizationSettingsPage() {
                     <div className="text-xs text-muted-foreground">Members</div>
                     <div className="font-medium">{Array.isArray(organization.members) ? organization.members.length : "-"}</div>
                   </div>
+                </div>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <h4 className="text-sm font-medium text-foreground">Workspace identifiers</h4>
+                <p className="text-xs text-muted-foreground">
+                  Use the organization ID for API and support. Website IDs identify each site (e.g. analytics embed).
+                </p>
+                <div className="rounded-xl border bg-muted/20 p-3 sm:p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-muted-foreground mb-0.5">Organization ID</div>
+                      <code className="text-xs sm:text-sm break-all font-mono bg-muted/50 px-2 py-1 rounded block">
+                        {organization.id}
+                      </code>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => void copyIdentifier("Organization ID", organization.id)}
+                    >
+                      <Copy className="h-3.5 w-3.5 mr-1.5" />
+                      Copy
+                    </Button>
+                  </div>
+                  {workspaceWebsites.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No websites linked to this organization yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {workspaceWebsites.map((w) => (
+                        <div
+                          key={w.id}
+                          className="flex flex-col gap-2 rounded-lg border border-border/60 bg-background/50 p-3"
+                        >
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="truncate">{w.domain}</span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2 text-xs">
+                            <div>
+                              <div className="text-muted-foreground mb-0.5">Website ID (database)</div>
+                              <div className="flex items-start gap-1.5">
+                                <code className="font-mono break-all flex-1 bg-muted/40 px-1.5 py-0.5 rounded">{w.id}</code>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0"
+                                  onClick={() => void copyIdentifier("Website ID", w.id)}
+                                  aria-label="Copy website ID"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                            {w.website_id ? (
+                              <div>
+                                <div className="text-muted-foreground mb-0.5">Embed / analytics ID</div>
+                                <div className="flex items-start gap-1.5">
+                                  <code className="font-mono break-all flex-1 bg-muted/40 px-1.5 py-0.5 rounded">
+                                    {w.website_id}
+                                  </code>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0"
+                                    onClick={() => void copyIdentifier("Embed ID", w.website_id!)}
+                                    aria-label="Copy embed ID"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-muted-foreground sm:col-span-1 self-center">
+                                Embed ID matches Website ID when not set separately.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>

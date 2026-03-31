@@ -348,7 +348,7 @@ export async function sendMessage(opts: {
 
 function parseDataUrl(dataUrl: string): { mime: string; base64: string } {
   const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || "");
-  if (!match) throw new Error("Invalid image data format");
+  if (!match) throw new Error("Invalid data URL (expected data:mime;base64,...)");
   return { mime: match[1], base64: match[2] };
 }
 
@@ -372,6 +372,58 @@ export async function sendMediaMessage(opts: {
   const { mime, base64 } = parseDataUrl(dataUrl);
   const media = new MessageMedia(mime, base64, "image");
   const sentMsg: WAWebJS.Message = await managed.client.sendMessage(contactId, media, { caption: caption || undefined } as any);
+  const mapped = mapWaMessageToRedis(sentMsg, contactId);
+  const approxBytes = Math.floor((base64.length * 3) / 4);
+
+  const message = await upsertMessage(organizationId, contactId, {
+    ...mapped,
+    body: caption || mapped.body,
+    media_url: dataUrl,
+    mime_type: mime,
+    media_size: approxBytes,
+    client_message_id: clientMessageId || null,
+    sent_at: new Date().toISOString(),
+  });
+
+  await upsertChat(organizationId, {
+    contact_id: contactId,
+    name: null,
+    is_group: false,
+    account_id: managed.accountId,
+    last_message_at: new Date(),
+  });
+
+  recordAnalytics(organizationId, "sent", true);
+  return message;
+}
+
+/** Send a document (e.g. PDF) via WhatsApp; uses sendMediaAsDocument so it is not treated as an image. */
+export async function sendDocumentMessage(opts: {
+  organizationId: string;
+  chatId: string;
+  dataUrl: string;
+  filename: string;
+  caption?: string;
+  clientMessageId?: string;
+}) {
+  const { organizationId, chatId: contactId, dataUrl, filename, caption, clientMessageId } = opts;
+  if (!dataUrl) throw new Error("Document data is required");
+
+  if (clientMessageId) {
+    const dup = await findMessageByClientId(organizationId, contactId, clientMessageId);
+    if (dup) return dup;
+  }
+
+  const managed = await getReadyClient(organizationId, "sendDocumentMessage");
+
+  const { mime, base64 } = parseDataUrl(dataUrl);
+  const safeName = (filename || "document.pdf").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200) || "document.pdf";
+  const media = new MessageMedia(mime, base64, safeName);
+  const sendOpts: Record<string, unknown> = {
+    caption: caption || undefined,
+    sendMediaAsDocument: true,
+  };
+  const sentMsg: WAWebJS.Message = await managed.client.sendMessage(contactId, media, sendOpts as any);
   const mapped = mapWaMessageToRedis(sentMsg, contactId);
   const approxBytes = Math.floor((base64.length * 3) / 4);
 

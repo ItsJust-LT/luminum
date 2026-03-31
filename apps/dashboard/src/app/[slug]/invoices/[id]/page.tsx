@@ -24,7 +24,7 @@ import {
   ArrowLeft, FileDown, Pencil, Trash2, Loader2, Send,
   CheckCircle, MoreHorizontal, RefreshCw, FileText, Clock,
   AlertCircle, Building2, User, Calendar, Receipt, ExternalLink,
-  ArrowRightLeft, FileCheck, Mail,
+  ArrowRightLeft, FileCheck, Mail, MessageCircle,
 } from "lucide-react";
 import { InvoicePdfPreview } from "./invoice-pdf-preview";
 import {
@@ -71,6 +71,11 @@ export default function InvoiceViewPage() {
   const [sendFromLocal, setSendFromLocal] = useState("noreply");
   const [markSentAfterEmail, setMarkSentAfterEmail] = useState(true);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [sendWaOpen, setSendWaOpen] = useState(false);
+  const [sendWaPhone, setSendWaPhone] = useState("");
+  const [sendWaMessage, setSendWaMessage] = useState("");
+  const [markSentAfterWa, setMarkSentAfterWa] = useState(true);
+  const [sendingWa, setSendingWa] = useState(false);
 
   useEffect(() => {
     if (!invoiceId) return;
@@ -91,6 +96,12 @@ export default function InvoiceViewPage() {
       setSendTo(String(invoice.client_email).trim());
     }
   }, [sendEmailOpen, invoice?.client_email]);
+
+  useEffect(() => {
+    if (sendWaOpen && invoice?.client_phone) {
+      setSendWaPhone(String(invoice.client_phone).trim());
+    }
+  }, [sendWaOpen, invoice?.client_phone]);
 
   const isQuote = invoice?.document_type === "quote";
   const docLabel = isQuote ? "Quote" : "Invoice";
@@ -129,6 +140,31 @@ export default function InvoiceViewPage() {
       toast.error("Failed to convert quote to invoice");
     } finally {
       setConverting(false);
+    }
+  }
+
+  async function handleSendByWhatsApp() {
+    const phone = sendWaPhone.trim();
+    if (!phone.replace(/\D/g, "").length) {
+      toast.error("Enter a phone number with country code.");
+      return;
+    }
+    setSendingWa(true);
+    try {
+      const res = (await api.invoices.sendWhatsApp(invoiceId, {
+        phone,
+        message: sendWaMessage.trim() || undefined,
+        markSent: markSentAfterWa,
+      })) as { success?: boolean; invoice?: any; error?: string };
+      if (!res?.success) throw new Error(res?.error || "Send failed");
+      if (res.invoice) setInvoice(res.invoice);
+      toast.success(`${docLabel} sent on WhatsApp`);
+      setSendWaOpen(false);
+      setSendWaMessage("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send on WhatsApp");
+    } finally {
+      setSendingWa(false);
     }
   }
 
@@ -189,7 +225,11 @@ export default function InvoiceViewPage() {
     catch { return `${cur} ${Number(v).toFixed(2)}`; }
   };
   const hasPdf = !!invoice.pdf_storage_key;
-  const canSendOrgEmail = !!organization?.emails_enabled;
+  const invoicesFeatureOn = organization?.invoices_enabled === true;
+  const whatsappFeatureOn = organization?.whatsapp_enabled === true;
+  const invoiceChannelsUnlocked = invoicesFeatureOn && whatsappFeatureOn;
+  const canSendOrgEmail = invoiceChannelsUnlocked && !!organization?.emails_enabled;
+  const canSendWhatsapp = invoiceChannelsUnlocked;
 
   return (
     <div className="min-h-screen pb-8">
@@ -233,13 +273,30 @@ export default function InvoiceViewPage() {
             )}
             <Button
               size="sm"
+              variant="outline"
+              className="hidden sm:inline-flex gap-2"
+              disabled={!canSendWhatsapp}
+              onClick={() => setSendWaOpen(true)}
+              title={
+                !invoiceChannelsUnlocked
+                  ? "Enable Invoices and WhatsApp for this workspace to send on WhatsApp."
+                  : "Send the PDF to the client on WhatsApp (connected number in workspace)."
+              }
+            >
+              <MessageCircle className="h-4 w-4" />
+              Send on WhatsApp
+            </Button>
+            <Button
+              size="sm"
               className="hidden sm:inline-flex gap-2"
               disabled={!canSendOrgEmail}
               onClick={() => setSendEmailOpen(true)}
               title={
-                !canSendOrgEmail
-                  ? "Enable organization email and complete domain setup to send from the dashboard."
-                  : `Email this ${docLabel.toLowerCase()} with PDF attached`
+                !invoiceChannelsUnlocked
+                  ? "Enable Invoices and WhatsApp for this workspace to send by email."
+                  : !organization?.emails_enabled
+                    ? "Enable organization email and complete domain setup to send from the dashboard."
+                    : `Email this ${docLabel.toLowerCase()} with PDF attached`
               }
             >
               <Mail className="h-4 w-4" />
@@ -263,6 +320,13 @@ export default function InvoiceViewPage() {
                     <FileDown className="h-4 w-4 mr-2" /> Download PDF
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem
+                  disabled={!canSendWhatsapp}
+                  onClick={() => setSendWaOpen(true)}
+                  className="sm:hidden"
+                >
+                  <MessageCircle className="h-4 w-4 mr-2" /> Send on WhatsApp
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={!canSendOrgEmail}
                   onClick={() => setSendEmailOpen(true)}
@@ -361,6 +425,33 @@ export default function InvoiceViewPage() {
 
           {/* Sidebar details */}
           <div className="lg:col-span-4 space-y-4">
+            <Card className={canSendWhatsapp ? "border-emerald-500/25 bg-emerald-500/[0.04]" : "border-muted"}>
+              <CardContent className="pt-4 pb-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+                    <MessageCircle className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-medium leading-tight">WhatsApp</p>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      {canSendWhatsapp
+                        ? "Sends the PDF as a document from your connected WhatsApp Business number. A PDF is created automatically if needed. Use the client phone on this document or enter one below."
+                        : "Enable Invoices and WhatsApp for this workspace (platform admin), then connect WhatsApp in the workspace."}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  className="w-full"
+                  size="sm"
+                  disabled={!canSendWhatsapp}
+                  onClick={() => setSendWaOpen(true)}
+                >
+                  <MessageCircle className="h-3.5 w-3.5 mr-2" />
+                  Send on WhatsApp
+                </Button>
+              </CardContent>
+            </Card>
+
             <Card className={canSendOrgEmail ? "border-primary/25 bg-primary/[0.03]" : "border-muted"}>
               <CardContent className="pt-4 pb-4 space-y-3">
                 <div className="flex items-start gap-2">
@@ -368,11 +459,13 @@ export default function InvoiceViewPage() {
                     <Mail className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-medium leading-tight">Send to client</p>
+                    <p className="text-sm font-medium leading-tight">Email</p>
                     <p className="text-xs text-muted-foreground leading-snug">
-                      {canSendOrgEmail
-                        ? "Delivers the PDF by email from your verified domain. A PDF is created automatically if needed."
-                        : "Turn on mail for this organization and finish domain verification in Settings."}
+                      {!invoiceChannelsUnlocked
+                        ? "Invoices by email are available when both Invoices and WhatsApp are enabled for this workspace."
+                        : canSendOrgEmail
+                          ? "Delivers the PDF by email from your verified domain. A PDF is created automatically if needed."
+                          : "Turn on mail for this organization and finish domain verification in Settings."}
                     </p>
                   </div>
                 </div>
@@ -567,6 +660,61 @@ export default function InvoiceViewPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={sendWaOpen} onOpenChange={setSendWaOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send {docLabel} on WhatsApp</DialogTitle>
+            <DialogDescription>
+              Delivers the PDF as a WhatsApp document to the number you enter. Requires a connected WhatsApp client for this workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-wa-phone">Phone (with country code)</Label>
+              <Input
+                id="inv-wa-phone"
+                type="tel"
+                placeholder="+27 82 123 4567"
+                value={sendWaPhone}
+                onChange={(e) => setSendWaPhone(e.target.value)}
+                autoComplete="tel"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-wa-msg">Caption (optional)</Label>
+              <Textarea
+                id="inv-wa-msg"
+                placeholder="Short message shown with the document…"
+                value={sendWaMessage}
+                onChange={(e) => setSendWaMessage(e.target.value)}
+                className="min-h-[72px] resize-y text-sm"
+              />
+            </div>
+            <label className="flex items-start gap-2 text-sm leading-snug cursor-pointer">
+              <Checkbox
+                checked={markSentAfterWa}
+                onCheckedChange={(v) => setMarkSentAfterWa(v === true)}
+                className="mt-0.5"
+              />
+              <span>Mark as sent after the message is sent (when status is draft)</span>
+            </label>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setSendWaOpen(false)} disabled={sendingWa}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSendByWhatsApp()}
+              disabled={sendingWa || !sendWaPhone.replace(/\D/g, "").length}
+            >
+              {sendingWa ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <MessageCircle className="h-4 w-4 mr-2" />}
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={sendEmailOpen} onOpenChange={setSendEmailOpen}>
         <DialogContent className="sm:max-w-md">

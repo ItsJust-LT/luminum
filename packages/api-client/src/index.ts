@@ -819,6 +819,10 @@ function createApiClient(baseUrl: string = "") {
       id: string,
       body?: { to?: string; message?: string; fromLocalPart?: string; markSent?: boolean }
     ) => post(`/api/invoices/${id}/send-email`, body ?? {}),
+    sendWhatsApp: (
+      id: string,
+      body?: { phone?: string; message?: string; markSent?: boolean }
+    ) => post(`/api/invoices/${id}/send-whatsapp`, body ?? {}),
   };
 
   // ─── Website Audits ──────────────────────────────────────

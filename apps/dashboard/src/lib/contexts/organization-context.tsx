@@ -19,6 +19,7 @@ interface Organization {
   whatsapp_enabled?: boolean
   analytics_enabled?: boolean
   blogs_enabled?: boolean
+  invoices_enabled?: boolean
 }
 
 interface SubscriptionInfo extends SubscriptionData {
