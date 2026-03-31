@@ -17,6 +17,7 @@ import {
   broadcastOrgEmailOutboundSent,
   broadcastOrgEmailUpdated,
 } from "../lib/org-ws-broadcast.js";
+import { loadEmailThread } from "../lib/email-thread.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -42,9 +43,93 @@ function extractEmailAddress(emailString: string): string {
   return match ? match[1] : emailString.trim();
 }
 
+/** Who should receive a reply when threading ends on this row. */
+function replyToAddressForEmail(row: {
+  from: string | null;
+  to: string | null;
+  direction: string;
+}): string | null {
+  if (row.direction === "outbound") {
+    if (!row.to?.trim()) return null;
+    try {
+      const p = JSON.parse(row.to);
+      const list = Array.isArray(p) ? p : [p];
+      const first = list[0];
+      if (first != null && String(first).trim()) {
+        return extractEmailAddress(String(first));
+      }
+    } catch {
+      return extractEmailAddress(row.to);
+    }
+    return null;
+  }
+  return row.from ? extractEmailAddress(row.from) : null;
+}
+
 function extractDomainFromEmail(addr: string): string | null {
   const parts = addr.split("@");
   return parts.length === 2 ? parts[1].toLowerCase().trim() : null;
+}
+
+function senderDisplayName(req: Request): string | undefined {
+  const u = (req as Request & { user?: { name?: string | null } }).user;
+  const n = u?.name?.trim();
+  return n || undefined;
+}
+
+function outboundHtmlFromPlainText(text: string): string {
+  const esc = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  const body = esc.replace(/\r\n/g, "\n").split("\n").join("<br />\n");
+  return `<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.55;color:#111827;">${body}</div>`;
+}
+
+function mapEmailToClientDto(e: any) {
+  let toArray: string[] = [];
+  if (e.to) {
+    try {
+      const p = JSON.parse(e.to);
+      toArray = Array.isArray(p) ? p : [p];
+    } catch {
+      toArray = [e.to];
+    }
+  }
+  const dateRaw = e.sent_at || e.receivedAt || e.scheduled_send_at || e.createdAt;
+  return {
+    id: e.id,
+    from: e.from || "",
+    to: toArray,
+    cc: [],
+    bcc: [],
+    subject: e.subject || "",
+    date: dateRaw,
+    textBody: e.text || null,
+    htmlBody: e.html || null,
+    read: e.read,
+    createdAt: e.createdAt,
+    updatedAt: e.updatedAt,
+    direction: e.direction ?? "inbound",
+    outbound_provider: e.outbound_provider ?? null,
+    fallback_used: !!e.fallback_used,
+    provider_message_id: e.provider_message_id ?? null,
+    in_reply_to: e.in_reply_to ?? undefined,
+    references: e.references ?? undefined,
+    messageId: e.messageId ?? undefined,
+    starred: !!e.starred,
+    is_draft: !!e.is_draft,
+    scheduled_send_at: e.scheduled_send_at ?? null,
+    sent_at: e.sent_at ?? null,
+    sender_avatar_url: e.sender_avatar_url ?? null,
+    attachments: (e.attachments || []).map((a: any) => {
+      const base = config.apiUrl.replace(/\/$/, "");
+      const url = a.r2Key ? `${base}/api/files/${encodeURIComponent(a.r2Key)}` : a.url;
+      return { filename: a.filename, file_size: a.size || 0, mime_type: a.contentType, r2_key: a.r2Key, r2_url: url, storage_key: a.r2Key };
+    }),
+    inlineImages: [],
+  };
 }
 
 // GET /api/emails/enabled?organizationId=...
@@ -367,7 +452,9 @@ router.post("/send", async (req: Request, res: Response) => {
     let from: string;
     let replyTo: string;
     try {
-      ({ from, replyTo } = await getOrgReplyAddress(organizationId, fromLocalPart));
+      ({ from, replyTo } = await getOrgReplyAddress(organizationId, fromLocalPart, {
+        displayName: senderDisplayName(req),
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("Invalid From")) {
@@ -493,7 +580,9 @@ router.post("/draft", async (req: Request, res: Response) => {
     let fromAddr: string;
     let replyTo: string;
     try {
-      ({ from: fromAddr, replyTo } = await getOrgReplyAddress(organizationId, fromLocalPart));
+      ({ from: fromAddr, replyTo } = await getOrgReplyAddress(organizationId, fromLocalPart, {
+        displayName: senderDisplayName(req),
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return res.status(400).json({ success: false, error: msg });
@@ -573,7 +662,9 @@ router.post("/schedule", async (req: Request, res: Response) => {
 
     let from: string;
     try {
-      ({ from } = await getOrgReplyAddress(organizationId, fromLocalPart));
+      ({ from } = await getOrgReplyAddress(organizationId, fromLocalPart, {
+        displayName: senderDisplayName(req),
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return res.status(400).json({ success: false, error: msg });
@@ -698,48 +789,7 @@ router.get("/", async (req: Request, res: Response) => {
       include: { attachments: true },
     });
 
-    const transformed = emails.map((e: any) => {
-      let toArray: string[] = [];
-      if (e.to) {
-        try {
-          const p = JSON.parse(e.to);
-          toArray = Array.isArray(p) ? p : [p];
-        } catch {
-          toArray = [e.to];
-        }
-      }
-      const dateRaw = e.sent_at || e.receivedAt || e.scheduled_send_at || e.createdAt;
-      return {
-        id: e.id,
-        from: e.from || "",
-        to: toArray,
-        cc: [],
-        bcc: [],
-        subject: e.subject || "",
-        date: dateRaw,
-        textBody: e.text || null,
-        htmlBody: e.html || null,
-        read: e.read,
-        createdAt: e.createdAt,
-        updatedAt: e.updatedAt,
-        direction: e.direction ?? "inbound",
-        outbound_provider: e.outbound_provider ?? null,
-        fallback_used: !!e.fallback_used,
-        provider_message_id: e.provider_message_id ?? null,
-        in_reply_to: e.in_reply_to ?? undefined,
-        starred: !!e.starred,
-        is_draft: !!e.is_draft,
-        scheduled_send_at: e.scheduled_send_at ?? null,
-        sent_at: e.sent_at ?? null,
-        sender_avatar_url: e.sender_avatar_url ?? null,
-        attachments: e.attachments.map((a: any) => {
-          const base = config.apiUrl.replace(/\/$/, "");
-          const url = a.r2Key ? `${base}/api/files/${encodeURIComponent(a.r2Key)}` : a.url;
-          return { filename: a.filename, file_size: a.size || 0, mime_type: a.contentType, r2_key: a.r2Key, r2_url: url, storage_key: a.r2Key };
-        }),
-        inlineImages: [],
-      };
-    });
+    const transformed = emails.map((e: any) => mapEmailToClientDto(e));
 
     res.json({
       success: true,
@@ -757,6 +807,39 @@ router.get("/", async (req: Request, res: Response) => {
         },
       },
     });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/emails/:id/thread — conversation (must be before /:id)
+router.get("/:id/thread", async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
+    const id = pathParam(req, "id");
+    if (!id) return res.status(400).json({ success: false, error: "Missing id" });
+    const seed = await prisma.email.findUnique({
+      where: { id },
+      select: { organization_id: true },
+    });
+    if (!seed?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
+    if (!(await canAccessOrganization(seed.organization_id, req.user))) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+
+    const chain = await loadEmailThread(seed.organization_id, id);
+    const ids = chain.map((c) => c.id);
+    if (ids.length === 0) {
+      return res.json({ success: true, data: { emails: [] } });
+    }
+    const full = await prisma.email.findMany({
+      where: { id: { in: ids } },
+      include: { attachments: true },
+    });
+    const rank = new Map(ids.map((eid, idx) => [eid, idx]));
+    full.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+
+    res.json({ success: true, data: { emails: full.map((e) => mapEmailToClientDto(e)) } });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
@@ -873,32 +956,48 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
-    const { text, html } = req.body as { text?: string; html?: string };
+    const { text, html, fromLocalPart } = req.body as { text?: string; html?: string; fromLocalPart?: string };
     if (!text && !html) return res.status(400).json({ success: false, error: "text or html required" });
     const original = await prisma.email.findUnique({
       where: { id },
-      select: { id: true, organization_id: true, from: true, subject: true, messageId: true, references: true },
+      select: {
+        id: true,
+        organization_id: true,
+        from: true,
+        to: true,
+        direction: true,
+        subject: true,
+        messageId: true,
+        references: true,
+      },
     });
     if (!original?.organization_id) return res.status(404).json({ success: false, error: "Email not found" });
     if (!(await canAccessOrganization(original.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
-    const { from, replyTo } = await getOrgReplyAddress(original.organization_id);
-    const toAddr = original.from || "";
+    const { from, replyTo } = await getOrgReplyAddress(original.organization_id, fromLocalPart, {
+      displayName: senderDisplayName(req),
+    });
+    const toAddr = replyToAddressForEmail(original);
+    if (!toAddr || !toAddr.includes("@")) {
+      return res.status(400).json({ success: false, error: "Could not determine recipient address for this message" });
+    }
     const reSubject = (original.subject || "").toLowerCase().startsWith("re:") ? (original.subject || "") : `Re: ${original.subject || ""}`;
-    const refs = [original.references, original.messageId].filter(Boolean).join(" ");
+    const refs = [original.references, original.messageId].filter(Boolean).join(" ").trim();
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
+    const bodyText = text || "";
+    const bodyHtml = html?.trim() ? html : bodyText ? outboundHtmlFromPlainText(bodyText) : undefined;
     const sendResult = await sendOutboundViaResend(original.organization_id, {
       from, replyTo, to: [toAddr], subject: reSubject,
-      text: text || "", html: html || undefined,
+      text: bodyText, html: bodyHtml,
       inReplyTo: original.messageId || undefined, references: refs || undefined, messageId,
     });
     const emailRecord = await prisma.email.create({
       data: {
         organization_id: original.organization_id,
         from,
-        to: JSON.stringify([toAddr]),
+        to: JSON.stringify([toAddr.trim()]),
         subject: reSubject,
-        text: text || null,
-        html: html || null,
+        text: bodyText || null,
+        html: bodyHtml || null,
         direction: "outbound",
         messageId: sendResult.messageId,
         in_reply_to: original.messageId || undefined,

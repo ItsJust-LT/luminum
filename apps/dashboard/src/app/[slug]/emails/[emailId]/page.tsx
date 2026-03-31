@@ -105,6 +105,9 @@ export default function EmailDetailPage() {
           scheduled_send_at: emailData.scheduled_send_at ?? null,
           sent_at: emailData.sent_at ?? null,
           sender_avatar_url: emailData.sender_avatar_url ?? null,
+          messageId: emailData.messageId ?? undefined,
+          references: emailData.references ?? undefined,
+          in_reply_to: emailData.in_reply_to ?? undefined,
           attachments: (emailData.attachments || []).map((att: any) => ({
             filename: att.filename,
             size: att.size,

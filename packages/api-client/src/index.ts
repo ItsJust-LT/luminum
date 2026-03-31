@@ -125,6 +125,7 @@ function createApiClient(baseUrl: string = "") {
     patchMeta: (id: string, body: { starred?: boolean; read?: boolean }) =>
       patch(`/api/emails/${id}`, body),
     getById: (id: string) => get(`/api/emails/${id}`),
+    getThread: (id: string) => get(`/api/emails/${id}/thread`),
     markAsRead: (id: string) => post(`/api/emails/${id}/read`),
     markAsUnread: (id: string) => post(`/api/emails/${id}/unread`),
     markAllAsRead: (organizationId: string) => post("/api/emails/mark-all-read", { organizationId }),

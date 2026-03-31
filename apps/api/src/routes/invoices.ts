@@ -598,7 +598,9 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
     let from: string;
     let replyTo: string;
     try {
-      ({ from, replyTo } = await getOrgReplyAddress(invoice.organization_id, fromLocalPart));
+      ({ from, replyTo } = await getOrgReplyAddress(invoice.organization_id, fromLocalPart, {
+        displayName: (req as Request & { user?: { name?: string | null } }).user?.name?.trim() || undefined,
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return res.status(400).json({ error: msg });

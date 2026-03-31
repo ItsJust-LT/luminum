@@ -30,17 +30,46 @@ export function normalizeEmailLocalPart(raw: string): string {
   return raw.trim().toLowerCase();
 }
 
+/** Local part from a From header that may be `"Name" <user@domain.com>`. */
+export function extractMailboxLocalPart(fromHeader: string): string {
+  const m = fromHeader.match(/<([^>]+)>/);
+  const email = (m ? m[1] : fromHeader).trim().toLowerCase();
+  const at = email.indexOf("@");
+  if (at <= 0) return "noreply";
+  const local = email.slice(0, at);
+  return local || "noreply";
+}
+
+/** RFC 5322 display-name + addr-spec for Resend / SMTP From header. */
+export function formatFromWithDisplayName(displayName: string | null | undefined, mailboxEmail: string): string {
+  const email = mailboxEmail.trim();
+  const raw = (displayName ?? "").trim().replace(/\s+/g, " ");
+  if (!raw) return email;
+  const escaped = raw.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}" <${email}>`;
+}
+
+export interface GetOrgReplyOptions {
+  /** Shown as From display name in mail clients (e.g. member name), not the local part. */
+  displayName?: string | null;
+}
+
 /**
- * Outbound From is always an address on the org’s email domain (e.g. noreply@customer.com).
- * Optional `fromLocalPart` sets the mailbox name (default `noreply` when omitted or empty).
+ * Outbound mailbox is always local@orgdomain.
+ * Reply-To is the same mailbox (not a separate replies@ address) so conversations stay coherent.
+ * When `displayName` is set, From is `"Name" <local@domain>` so clients show the person, not "noreply".
  */
-export async function getOrgReplyAddress(organizationId: string, fromLocalPart?: string | null): Promise<OrgReplyAddress> {
+export async function getOrgReplyAddress(
+  organizationId: string,
+  fromLocalPart?: string | null,
+  options?: GetOrgReplyOptions
+): Promise<OrgReplyAddress> {
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: {
       emails_enabled: true,
       email_domain_id: true,
-      email_from_address: true,
+      name: true,
       email_domain: { select: { domain: true } },
     },
   });
@@ -48,7 +77,6 @@ export async function getOrgReplyAddress(organizationId: string, fromLocalPart?:
     throw new Error("Email not enabled or no email domain configured for this organization");
   }
   const domain = org.email_domain.domain.toLowerCase().replace(/\.$/, "");
-  const replyTo = org.email_from_address || `replies@${domain}`;
   let local = normalizeEmailLocalPart(fromLocalPart ?? "");
   if (!local) {
     local = "noreply";
@@ -56,7 +84,12 @@ export async function getOrgReplyAddress(organizationId: string, fromLocalPart?:
   if (!isValidEmailLocalPart(local)) {
     throw new Error("Invalid From address: use letters, numbers, and . _ - only (1–64 characters before @)");
   }
-  const from = `${local}@${domain}`;
+  const mailboxEmail = `${local}@${domain}`;
+  const display =
+    (options?.displayName != null && String(options.displayName).trim()) ||
+    (org.name?.trim() ? org.name.trim() : null);
+  const from = formatFromWithDisplayName(display, mailboxEmail);
+  const replyTo = mailboxEmail;
   return { from, replyTo };
 }
 

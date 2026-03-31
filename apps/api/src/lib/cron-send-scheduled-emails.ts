@@ -1,6 +1,6 @@
 import { prisma } from "./prisma.js";
 import { logger } from "./logger.js";
-import { getOrgReplyAddress, sendOutboundViaResend } from "./email-send.js";
+import { extractMailboxLocalPart, getOrgReplyAddress, sendOutboundViaResend } from "./email-send.js";
 import { broadcastOrgEmailOutboundSent } from "./org-ws-broadcast.js";
 
 /**
@@ -46,7 +46,7 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
     let fromAddr = row.from;
     let replyToAddr = row.from;
     try {
-      const localPart = row.from?.includes("@") ? row.from.split("@")[0]! : "noreply";
+      const localPart = row.from ? extractMailboxLocalPart(row.from) : "noreply";
       const resolved = await getOrgReplyAddress(organizationId, localPart);
       fromAddr = resolved.from;
       replyToAddr = resolved.replyTo;
