@@ -16,6 +16,25 @@ import {
 } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
 import {
@@ -23,7 +42,12 @@ import {
   UserPlus,
   ImageIcon,
   ExternalLink,
+  ChevronsUpDown,
+  Trash2,
+  Check,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { TransferOwnershipDialog } from "@/components/dashboard/transfer-ownership-dialog"
 
 export type AdminOrgListItem = { id: string; name: string; slug: string }
 
@@ -37,6 +61,7 @@ type InvitationRow = {
   id: string
   email: string
   role?: string | null
+  ownership_transfer?: boolean
 }
 
 type WorkspaceOrg = {
@@ -61,6 +86,8 @@ export type AdminOrganizationSettingsPanelProps = {
   organizations?: AdminOrgListItem[]
   /** Prefix for form element ids when multiple panels could exist (a11y). */
   idPrefix?: string
+  /** After a successful org delete, refresh parent lists or session (e.g. refetch org picker). */
+  onOrganizationDeleted?: () => void | Promise<void>
 }
 
 export function AdminOrganizationSettingsPanel({
@@ -69,6 +96,7 @@ export function AdminOrganizationSettingsPanel({
   showOrganizationPicker,
   organizations = [],
   idPrefix = "",
+  onOrganizationDeleted,
 }: AdminOrganizationSettingsPanelProps) {
   const pid = idPrefix ? `${idPrefix}-` : ""
   const [loading, setLoading] = useState(false)
@@ -87,9 +115,24 @@ export function AdminOrganizationSettingsPanel({
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState("member")
   const [inviting, setInviting] = useState(false)
-  const [addEmail, setAddEmail] = useState("")
   const [addRole, setAddRole] = useState("member")
   const [addingMember, setAddingMember] = useState(false)
+  const [userPickerOpen, setUserPickerOpen] = useState(false)
+  const [userSearchQuery, setUserSearchQuery] = useState("")
+  const [userSearchHits, setUserSearchHits] = useState<
+    { id: string; name: string | null; email: string; image: string | null }[]
+  >([])
+  const [userSearchLoading, setUserSearchLoading] = useState(false)
+  const [selectedAddUser, setSelectedAddUser] = useState<{
+    id: string
+    name: string | null
+    email: string
+  } | null>(null)
+  const [memberToRemove, setMemberToRemove] = useState<OrgMember | null>(null)
+  const [removingMember, setRemovingMember] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteSlugInput, setDeleteSlugInput] = useState("")
+  const [deletingOrg, setDeletingOrg] = useState(false)
 
   const loadOrg = useCallback(async (slug: string) => {
     setLoading(true)
@@ -129,6 +172,32 @@ export function AdminOrganizationSettingsPanel({
       setLoading(false)
     }
   }, [activeSlug, loadOrg])
+
+  useEffect(() => {
+    const q = userSearchQuery.trim()
+    if (q.length < 2) {
+      setUserSearchHits([])
+      setUserSearchLoading(false)
+      return
+    }
+    setUserSearchLoading(true)
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = (await api.admin.searchUsers(q)) as {
+            success?: boolean
+            users?: { id: string; name: string | null; email: string; image: string | null }[]
+          }
+          setUserSearchHits(res.users ?? [])
+        } catch {
+          setUserSearchHits([])
+        } finally {
+          setUserSearchLoading(false)
+        }
+      })()
+    }, 300)
+    return () => clearTimeout(t)
+  }, [userSearchQuery])
 
   const refresh = () => {
     if (activeSlug) loadOrg(activeSlug)
@@ -228,20 +297,54 @@ export function AdminOrganizationSettingsPanel({
   }
 
   const handleAddMember = async () => {
-    if (!org?.id || !addEmail.trim()) return
+    if (!org?.id || !selectedAddUser) return
     setAddingMember(true)
     try {
       await api.admin.addOrganizationMember(org.id, {
-        email: addEmail.trim(),
+        userId: selectedAddUser.id,
         role: addRole,
       })
       toast.success("Member added")
-      setAddEmail("")
+      setSelectedAddUser(null)
+      setUserSearchQuery("")
+      setUserPickerOpen(false)
       refresh()
     } catch (e: any) {
       toast.error(e?.message || "Could not add member")
     } finally {
       setAddingMember(false)
+    }
+  }
+
+  const confirmRemoveMember = async () => {
+    if (!org?.id || !memberToRemove) return
+    setRemovingMember(true)
+    try {
+      await api.admin.removeOrganizationMember(org.id, memberToRemove.id)
+      toast.success("Member removed")
+      setMemberToRemove(null)
+      refresh()
+    } catch (e: any) {
+      toast.error(e?.message || "Could not remove member")
+    } finally {
+      setRemovingMember(false)
+    }
+  }
+
+  const confirmDeleteOrganization = async () => {
+    if (!org?.id || !org.slug || deleteSlugInput.trim() !== org.slug) return
+    setDeletingOrg(true)
+    try {
+      await api.admin.deleteOrganization(org.id, org.slug)
+      toast.success("Organization deleted")
+      setDeleteDialogOpen(false)
+      setDeleteSlugInput("")
+      setOrg(null)
+      await onOrganizationDeleted?.()
+    } catch (e: any) {
+      toast.error(e?.message || "Could not delete organization")
+    } finally {
+      setDeletingOrg(false)
     }
   }
 
@@ -466,7 +569,6 @@ export function AdminOrganizationSettingsPanel({
                 <SelectContent>
                   <SelectItem value="member">Member</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="owner">Owner</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -475,15 +577,97 @@ export function AdminOrganizationSettingsPanel({
             </Button>
           </div>
 
+          {org?.id ? (
+            <div className="space-y-2 max-w-md pt-4 border-t">
+              <p className="text-sm font-medium">Transfer ownership</p>
+              <p className="text-xs text-muted-foreground">
+                Send a link to the next owner by email (registered or not). When they accept, they become owner and current owners become admins.
+              </p>
+              <TransferOwnershipDialog organizationId={org.id} organizationName={org.name || org.slug} onSent={refresh} />
+            </div>
+          ) : null}
+
           <div className="space-y-3 max-w-md">
             <p className="text-sm font-medium">Add existing user</p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Input
-                placeholder="Registered email"
-                value={addEmail}
-                onChange={(e) => setAddEmail(e.target.value)}
-                type="email"
-              />
+            <p className="text-xs text-muted-foreground">
+              Search by name or email, then pick the account to attach immediately.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <Popover
+                open={userPickerOpen}
+                onOpenChange={(o) => {
+                  setUserPickerOpen(o)
+                  if (!o) setUserSearchQuery("")
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={userPickerOpen}
+                    className="w-full justify-between font-normal sm:min-w-[240px]"
+                  >
+                    {selectedAddUser ? (
+                      <span className="truncate text-left">
+                        {selectedAddUser.name || selectedAddUser.email}
+                        <span className="text-muted-foreground ml-1 text-xs">
+                          ({selectedAddUser.email})
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Search users…</span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0 sm:w-[400px]" align="start">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Type name or email…"
+                      value={userSearchQuery}
+                      onValueChange={setUserSearchQuery}
+                    />
+                    <CommandList>
+                      <CommandEmpty className="py-3 text-xs text-muted-foreground px-2">
+                        {userSearchQuery.trim().length < 2
+                          ? "Enter at least 2 characters."
+                          : userSearchLoading
+                            ? "Searching…"
+                            : "No users found."}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {userSearchHits.map((u) => (
+                          <CommandItem
+                            key={u.id}
+                            value={u.id}
+                            onSelect={() => {
+                              setSelectedAddUser({
+                                id: u.id,
+                                name: u.name,
+                                email: u.email,
+                              })
+                              setUserPickerOpen(false)
+                              setUserSearchQuery("")
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                selectedAddUser?.id === u.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{u.name || u.email}</p>
+                              <p className="truncate text-xs text-muted-foreground">{u.email}</p>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               <Select value={addRole} onValueChange={setAddRole}>
                 <SelectTrigger className="w-full sm:w-[140px]">
                   <SelectValue />
@@ -491,14 +675,13 @@ export function AdminOrganizationSettingsPanel({
                 <SelectContent>
                   <SelectItem value="member">Member</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="owner">Owner</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <Button
               variant="secondary"
               onClick={handleAddMember}
-              disabled={addingMember || !addEmail.trim()}
+              disabled={addingMember || !selectedAddUser}
             >
               {addingMember ? "Adding…" : "Add to organization"}
             </Button>
@@ -526,6 +709,16 @@ export function AdminOrganizationSettingsPanel({
                     <p className="text-xs text-muted-foreground truncate">{m.user?.email}</p>
                   </div>
                   <Badge variant="outline">{m.role}</Badge>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    aria-label={`Remove ${m.user?.name || m.user?.email || "member"}`}
+                    onClick={() => setMemberToRemove(m)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </li>
               ))
             )}
@@ -545,15 +738,108 @@ export function AdminOrganizationSettingsPanel({
               invitations.map((inv) => (
                 <li key={inv.id} className="flex items-center justify-between gap-2 p-3 text-sm">
                   <span className="truncate">{inv.email}</span>
-                  <Badge variant="secondary">{inv.role || "member"}</Badge>
+                  <Badge variant="secondary">
+                    {inv.ownership_transfer ? "Ownership transfer" : inv.role || "member"}
+                  </Badge>
                 </li>
               ))
             )}
           </ul>
         </CardContent>
       </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-destructive">Danger zone</CardTitle>
+          <CardDescription>
+            Permanently delete this organization, all of its data, and object storage for this tenant. This cannot be undone.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 max-w-md">
+          <Button type="button" variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+            Delete organization…
+          </Button>
+        </CardContent>
+      </Card>
         </>
       )}
+
+      <AlertDialog
+        open={!!memberToRemove}
+        onOpenChange={(open) => {
+          if (!open) setMemberToRemove(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {memberToRemove
+                ? `${memberToRemove.user?.name || memberToRemove.user?.email || "This user"} will lose access to ${org?.name || "this organization"}.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removingMember}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={removingMember}
+              onClick={(e) => {
+                e.preventDefault()
+                void confirmRemoveMember()
+              }}
+            >
+              {removingMember ? "Removing…" : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (deletingOrg && !open) return
+          setDeleteDialogOpen(open)
+          if (!open) setDeleteSlugInput("")
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete organization permanently?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  All members, websites, email, billing links, files in storage, and database records for{" "}
+                  <strong className="text-foreground">{org?.name}</strong> will be removed.
+                </p>
+                <p>
+                  Type the organization slug <span className="font-mono text-foreground">{org?.slug}</span> to confirm.
+                </p>
+                <Input
+                  value={deleteSlugInput}
+                  onChange={(e) => setDeleteSlugInput(e.target.value)}
+                  placeholder="slug"
+                  className="font-mono"
+                  autoComplete="off"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingOrg}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deletingOrg || deleteSlugInput.trim() !== (org?.slug ?? "")}
+              onClick={(e) => {
+                e.preventDefault()
+                void confirmDeleteOrganization()
+              }}
+            >
+              {deletingOrg ? "Deleting…" : "Delete forever"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

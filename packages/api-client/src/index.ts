@@ -194,16 +194,24 @@ function createApiClient(baseUrl: string = "") {
       post("/api/organization-actions/check-user", { email }),
     sendInvitation: (data: {
       email: string;
-      role: "admin" | "member" | "owner";
+      role: "admin" | "member";
       organizationId: string;
       organizationName: string;
     }) => post("/api/organization-actions/send-invitation", data),
+    requestOwnershipTransfer: (data: { organizationId: string; email: string }) =>
+      post("/api/organization-actions/request-ownership-transfer", data),
     acceptInvitation: (data: {
       invitationId: string;
       name: string;
       email: string;
       password: string;
     }) => post("/api/organization-actions/accept-invitation", data),
+    acceptOwnershipTransfer: (data: {
+      invitationId: string;
+      name?: string;
+      email?: string;
+      password?: string;
+    }) => post("/api/organization-actions/accept-ownership-transfer", data),
     removeMember: (data: {
       memberId: string;
       memberEmail: string;
@@ -262,8 +270,17 @@ function createApiClient(baseUrl: string = "") {
     ) => patch(`/api/admin/organizations/${encodeURIComponent(id)}`, data),
     inviteOrganizationMember: (organizationId: string, data: { email: string; role?: string }) =>
       post(`/api/admin/organizations/${encodeURIComponent(organizationId)}/invite`, data),
-    addOrganizationMember: (organizationId: string, data: { email: string; role?: string }) =>
-      post(`/api/admin/organizations/${encodeURIComponent(organizationId)}/members`, data),
+    addOrganizationMember: (
+      organizationId: string,
+      data: { email?: string; userId?: string; role?: string }
+    ) => post(`/api/admin/organizations/${encodeURIComponent(organizationId)}/members`, data),
+    removeOrganizationMember: (organizationId: string, memberId: string) =>
+      del(`/api/admin/organizations/${encodeURIComponent(organizationId)}/members/${encodeURIComponent(memberId)}`),
+    deleteOrganization: (organizationId: string, confirmSlug: string) =>
+      del(
+        `/api/admin/organizations/${encodeURIComponent(organizationId)}?confirmSlug=${encodeURIComponent(confirmSlug)}`
+      ),
+    searchUsers: (q: string) => get("/api/admin/users/search", { q }),
     createOrganization: (data: any) =>
       post("/api/admin/create-organization", data),
     getUsers: () => get("/api/admin/users"),

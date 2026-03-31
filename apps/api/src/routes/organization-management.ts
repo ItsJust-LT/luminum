@@ -3,6 +3,7 @@ import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonStringifySafe } from "../lib/json-safe.js";
 import { notifyAdminsOrganizationDeleted } from "../lib/notifications/helpers.js";
+import { permanentlyDeleteOrganization } from "../lib/delete-organization.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -39,9 +40,10 @@ router.delete("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (req.user.role !== "admin") return res.status(403).json({ success: false, error: "Admin only" });
-    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
-    await prisma.organization.delete({ where: { id: organizationId } });
-    if (org) await notifyAdminsOrganizationDeleted(org.name, organizationId);
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true, name: true } });
+    if (!org) return res.status(404).json({ success: false, error: "Not found" });
+    const { name } = await permanentlyDeleteOrganization(organizationId);
+    await notifyAdminsOrganizationDeleted(name, organizationId);
     res.json({ success: true });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });

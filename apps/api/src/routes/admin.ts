@@ -7,8 +7,14 @@ import { auth } from "../auth/config.js";
 import { jsonStringifySafe } from "../lib/json-safe.js";
 import { notifyAdminsOrganizationCreated } from "../lib/notifications/helpers.js";
 import { computeAuditAdminStats } from "../site-audit/admin-stats.js";
-import { sendOwnerInvitationEmail, sendInvitationEmail, sendOrganizationInvitationEmail } from "../lib/email.js";
-import { notifyMemberInvited, notifyMemberJoined } from "../lib/notifications/helpers.js";
+import { sendOwnerInvitationEmail, sendInvitationEmail, sendOrganizationInvitationEmail, sendMemberRemovalEmail } from "../lib/email.js";
+import {
+  notifyMemberInvited,
+  notifyMemberJoined,
+  notifyMemberLeft,
+  notifyAdminsOrganizationDeleted,
+} from "../lib/notifications/helpers.js";
+import { permanentlyDeleteOrganization } from "../lib/delete-organization.js";
 import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 import { getAdminSystemEnvironmentSnapshot } from "../lib/system-environment.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
@@ -202,6 +208,21 @@ router.post("/organizations/:id/invite", adminOnly, async (req: Request, res: Re
       return res.status(400).json({ success: false, error: "Invalid role" });
     }
 
+    if (r === "owner") {
+      const { createOwnershipTransferInvitation } = await import("../lib/ownership-transfer-invite.js");
+      const created = await createOwnershipTransferInvitation({
+        organizationId,
+        emailRaw: normalized,
+        inviterId: req.user.id,
+        inviterName: req.user.name || "Platform admin",
+      });
+      if (!created.ok) {
+        return res.status(created.status).json({ success: false, error: created.error });
+      }
+      await notifyMemberInvited(organizationId, normalized, "owner (transfer)", req.user.name || "Platform admin");
+      return jsonSafe(res, { success: true, invitation: { id: created.invitationId }, ownershipTransfer: true });
+    }
+
     const userCheck = await prisma.user.findUnique({ where: { email: normalized }, select: { id: true } });
     if (userCheck) {
       const already = await prisma.member.findFirst({ where: { userId: userCheck.id, organizationId } });
@@ -223,6 +244,7 @@ router.post("/organizations/:id/invite", adminOnly, async (req: Request, res: Re
         status: "pending",
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         createdAt: new Date(),
+        ownership_transfer: false,
       },
     });
 
@@ -230,7 +252,7 @@ router.post("/organizations/:id/invite", adminOnly, async (req: Request, res: Re
     const inviteLink = `${APP_URL}/accept-org-invitation/${invitation.id}`;
     await sendOrganizationInvitationEmail({
       email: normalized,
-      role: r as "admin" | "member" | "owner",
+      role: r as "admin" | "member",
       organizationName: org.name,
       inviteLink,
       invitedByUsername: req.user.name || "Platform admin",
@@ -245,14 +267,12 @@ router.post("/organizations/:id/invite", adminOnly, async (req: Request, res: Re
   }
 });
 
-// POST /api/admin/organizations/:id/members — add an existing user by email (platform admin)
+// POST /api/admin/organizations/:id/members — add an existing user by userId and/or email (platform admin)
 router.post("/organizations/:id/members", adminOnly, async (req: Request, res: Response) => {
   try {
     const organizationId = pathParam(req, "id");
     if (!organizationId) return res.status(400).json({ success: false, error: "Missing organization id" });
-    const { email, role } = req.body as { email?: string; role?: string };
-    if (!email || typeof email !== "string") return res.status(400).json({ success: false, error: "Email required" });
-    const normalized = email.trim().toLowerCase();
+    const { email, userId, role } = req.body as { email?: string; userId?: string; role?: string };
 
     const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true, name: true } });
     if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
@@ -261,9 +281,30 @@ router.post("/organizations/:id/members", adminOnly, async (req: Request, res: R
     if (!["member", "admin", "owner"].includes(r)) {
       return res.status(400).json({ success: false, error: "Invalid role" });
     }
+    if (r === "owner") {
+      return res.status(400).json({
+        success: false,
+        error: "Use Invite with role Owner to send an ownership transfer link, or use the organization owner transfer action.",
+      });
+    }
 
-    const user = await prisma.user.findUnique({ where: { email: normalized }, select: { id: true, name: true } });
-    if (!user) return res.status(404).json({ success: false, error: "No user with that email — use Invite instead" });
+    let user: { id: string; name: string | null; email: string } | null = null;
+    if (typeof userId === "string" && userId.trim()) {
+      user = await prisma.user.findUnique({
+        where: { id: userId.trim() },
+        select: { id: true, name: true, email: true },
+      });
+      if (!user) return res.status(404).json({ success: false, error: "User not found" });
+    } else if (typeof email === "string" && email.trim()) {
+      const normalized = email.trim().toLowerCase();
+      user = await prisma.user.findUnique({
+        where: { email: normalized },
+        select: { id: true, name: true, email: true },
+      });
+      if (!user) return res.status(404).json({ success: false, error: "No user with that email — use Invite instead" });
+    } else {
+      return res.status(400).json({ success: false, error: "Provide userId or email" });
+    }
 
     const existingMember = await prisma.member.findFirst({ where: { userId: user.id, organizationId } });
     if (existingMember) return res.status(400).json({ success: false, error: "User is already a member" });
@@ -271,11 +312,82 @@ router.post("/organizations/:id/members", adminOnly, async (req: Request, res: R
     await prisma.member.create({
       data: { id: crypto.randomUUID(), userId: user.id, organizationId, role: r, createdAt: new Date() },
     });
-    await notifyMemberJoined(organizationId, user.name || normalized, normalized, r);
+    await notifyMemberJoined(organizationId, user.name || user.email, user.email, r);
 
     jsonSafe(res, { success: true });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/admin/organizations/:orgId/members/:memberId — remove a member by member row id (platform admin)
+router.delete("/organizations/:id/members/:memberId", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const organizationId = pathParam(req, "id");
+    const memberRowId = pathParam(req, "memberId");
+    if (!organizationId || !memberRowId) {
+      return res.status(400).json({ success: false, error: "Missing organization or member id" });
+    }
+
+    const row = await prisma.member.findFirst({
+      where: { id: memberRowId, organizationId },
+      include: {
+        user: { select: { email: true, name: true } },
+        organization: { select: { name: true } },
+      },
+    });
+    if (!row) return res.status(404).json({ success: false, error: "Member not found" });
+
+    if (row.role === "owner") {
+      const ownerCount = await prisma.member.count({ where: { organizationId, role: "owner" } });
+      if (ownerCount <= 1) {
+        return res.status(400).json({
+          success: false,
+          error: "Cannot remove the only owner. Transfer ownership first or delete the organization.",
+        });
+      }
+    }
+
+    await prisma.member.delete({ where: { id: memberRowId } });
+
+    const memberEmail = row.user.email;
+    const memberName = row.user.name || memberEmail;
+    try {
+      await sendMemberRemovalEmail({
+        memberName,
+        memberEmail,
+        organizationName: row.organization.name,
+        removedBy: "Platform admin",
+      });
+    } catch {}
+    await notifyMemberLeft(organizationId, memberName, memberEmail);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/admin/organizations/:id?confirmSlug=... — permanently delete org, storage, and related data
+router.delete("/organizations/:id", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const id = pathParam(req, "id");
+    if (!id) return res.status(400).json({ success: false, error: "Missing organization id" });
+    const confirmSlug = String((req.query as { confirmSlug?: string }).confirmSlug ?? "").trim();
+    const existing = await prisma.organization.findUnique({ where: { id }, select: { slug: true } });
+    if (!existing) return res.status(404).json({ success: false, error: "Organization not found" });
+    if (!confirmSlug || confirmSlug !== existing.slug) {
+      return res.status(400).json({
+        success: false,
+        error: "confirmSlug query parameter must exactly match the organization slug",
+      });
+    }
+
+    const { name } = await permanentlyDeleteOrganization(id);
+    await notifyAdminsOrganizationDeleted(name, id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -316,7 +428,17 @@ router.post("/create-organization", adminOnly, async (req: Request, res: Respons
     } else if (ownerAssignment.type === "invitation" && ownerAssignment.email) {
       const invitationId = crypto.randomUUID();
       await prisma.invitation.create({
-        data: { id: invitationId, email: ownerAssignment.email, role: "owner", organizationId: org.id, inviterId: req.user.id, status: "pending", expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), createdAt: new Date() },
+        data: {
+          id: invitationId,
+          email: ownerAssignment.email,
+          role: "owner",
+          organizationId: org.id,
+          inviterId: req.user.id,
+          status: "pending",
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          createdAt: new Date(),
+          ownership_transfer: false,
+        },
       });
       try {
         await sendOwnerInvitationEmail({ email: ownerAssignment.email, name: ownerAssignment.name || "User", organizationName: org.name, invitationLink: `${APP_URL}/accept-owner-invitation/${invitationId}`, invitedBy: req.user.name || "Admin" });
@@ -326,6 +448,30 @@ router.post("/create-organization", adminOnly, async (req: Request, res: Respons
     await notifyAdminsOrganizationCreated(org.name, org.id);
     jsonSafe(res, { success: true, organization: org });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
+});
+
+// GET /api/admin/users/search?q=... — typeahead for adding members (platform admin)
+router.get("/users/search", adminOnly, async (req: Request, res: Response) => {
+  try {
+    const q = String((req.query as { q?: string }).q ?? "").trim();
+    if (q.length < 2) {
+      return res.json({ success: true, users: [] as { id: string; name: string | null; email: string; image: string | null }[] });
+    }
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { email: { contains: q, mode: "insensitive" } },
+          { name: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      take: 25,
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, email: true, image: true },
+    });
+    res.json({ success: true, users });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
 });
 
 // GET /api/admin/users

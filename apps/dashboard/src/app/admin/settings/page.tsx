@@ -288,6 +288,17 @@ export default function AdminSettingsPage() {
                   onActiveSlugChange={setWorkspaceSlug}
                   showOrganizationPicker={false}
                   idPrefix="plat-ws"
+                  onOrganizationDeleted={async () => {
+                    await fetchSystemInfo()
+                    try {
+                      const result = await authClient.organization.list()
+                      const data = (result as { data?: Array<{ slug?: string }> })?.data
+                      if (data?.length && data[0]?.slug) setWorkspaceSlug(data[0].slug)
+                      else setWorkspaceSlug(null)
+                    } catch {
+                      setWorkspaceSlug(null)
+                    }
+                  }}
                 />
               </>
             )}

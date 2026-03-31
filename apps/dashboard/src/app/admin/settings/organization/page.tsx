@@ -121,6 +121,7 @@ function AdminOrganizationSettingsContent() {
             showOrganizationPicker
             organizations={organizations}
             idPrefix="admin-org"
+            onOrganizationDeleted={fetchList}
           />
         )}
       </div>
