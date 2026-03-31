@@ -121,7 +121,26 @@ function createApiClient(baseUrl: string = "") {
       html?: string;
       fromLocalPart?: string;
       scheduledSendAt: string;
+      attachments?: { filename: string; contentType: string; contentBase64: string }[];
     }) => post("/api/emails/schedule", body),
+    send: (body: {
+      organizationId: string;
+      to: string | string[];
+      subject: string;
+      text?: string;
+      html?: string;
+      fromLocalPart?: string;
+      attachments?: { filename: string; contentType: string; contentBase64: string }[];
+    }) => post("/api/emails/send", body),
+    reply: (
+      emailId: string,
+      body: {
+        text?: string;
+        html?: string;
+        fromLocalPart?: string;
+        attachments?: { filename: string; contentType: string; contentBase64: string }[];
+      }
+    ) => post(`/api/emails/${encodeURIComponent(emailId)}/reply`, body),
     patchMeta: (id: string, body: { starred?: boolean; read?: boolean }) =>
       patch(`/api/emails/${id}`, body),
     getById: (id: string) => get(`/api/emails/${id}`),
@@ -177,6 +196,21 @@ function createApiClient(baseUrl: string = "") {
       del(`/api/organization-settings/logo?organizationId=${organizationId}`),
     getStorage: (organizationId: string) =>
       get("/api/organization-settings/storage", { organizationId }),
+    getEmailComposer: (organizationId: string) =>
+      get("/api/organization-settings/email-composer", { organizationId }),
+    patchEmailComposer: (
+      organizationId: string,
+      body: {
+        signatureHtml?: string;
+        signatureText?: string;
+        signatureEnabled?: boolean;
+        defaultFromLocal?: string | null;
+      }
+    ) =>
+      patch(
+        `/api/organization-settings/email-composer?organizationId=${encodeURIComponent(organizationId)}`,
+        body
+      ),
     getBrandedDashboardEnabled: (organizationId: string) =>
       get("/api/organization-settings/branded-dashboard-enabled", { organizationId }),
     getResendEmail: (organizationId: string) =>
@@ -319,6 +353,8 @@ function createApiClient(baseUrl: string = "") {
     getAdminWebsiteStats: () => get("/api/admin/websites/stats"),
     runWebsiteAudit: (websiteId: string) =>
       post(`/api/admin/websites/${encodeURIComponent(websiteId)}/run-audit`, {}),
+    setAdminWebsiteAnalytics: (websiteId: string, enabled: boolean) =>
+      patch(`/api/admin/websites/${encodeURIComponent(websiteId)}/analytics`, { enabled }),
     getAdminFormSubmissions: (params?: Record<string, any>) =>
       get("/api/admin/forms/submissions", params),
     getAdminFormStats: () => get("/api/admin/forms/stats"),

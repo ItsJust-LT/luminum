@@ -13,6 +13,36 @@ function adminOnly(req: any, res: any, next: any) {
 }
 router.use(adminOnly);
 
+// PATCH /api/admin/websites/:websiteId/analytics — toggle per-site tracking embed flag
+router.patch("/:websiteId/analytics", async (req: Request, res: Response) => {
+  try {
+    const websiteId = pathParam(req, "websiteId")!;
+    const enabled = (req.body as { enabled?: boolean }).enabled === true;
+
+    const website = await prisma.websites.findUnique({
+      where: { id: websiteId },
+      select: { id: true, organization_id: true, organization: { select: { analytics_enabled: true } } },
+    });
+    if (!website) return res.status(404).json({ success: false, error: "Website not found" });
+    if (!website.organization?.analytics_enabled) {
+      return res.status(400).json({
+        success: false,
+        error: "Enable organization analytics first; then you can control tracking per website.",
+      });
+    }
+
+    const updated = await prisma.websites.update({
+      where: { id: websiteId },
+      data: { analytics: enabled, updated_at: new Date() },
+      include: { organization: { select: { id: true, name: true, slug: true, analytics_enabled: true } } },
+    });
+
+    res.json({ success: true, website: updated });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message ?? "Failed to update website analytics" });
+  }
+});
+
 // POST /api/admin/websites/:websiteId/run-audit — platform admin manual Lighthouse run
 router.post("/:websiteId/run-audit", async (req: Request, res: Response) => {
   try {
@@ -59,7 +89,7 @@ router.get("/", async (req: Request, res: Response) => {
     const [websites, total] = await Promise.all([
       prisma.websites.findMany({
         where,
-        include: { organization: { select: { id: true, name: true, slug: true } } },
+        include: { organization: { select: { id: true, name: true, slug: true, analytics_enabled: true } } },
         orderBy: { created_at: "desc" },
         take: Math.min(parseInt(limit), 100),
         skip: parseInt(offset),

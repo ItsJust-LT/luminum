@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
@@ -41,7 +42,39 @@ export default function AdminWebsitesPage() {
   const [search, setSearch] = useState("")
   const [offset, setOffset] = useState(0)
   const [auditRunningId, setAuditRunningId] = useState<string | null>(null)
+  const [analyticsBusyId, setAnalyticsBusyId] = useState<string | null>(null)
   const limit = 25
+
+  const setWebsiteAnalytics = async (websiteId: string, enabled: boolean) => {
+    setAnalyticsBusyId(websiteId)
+    setError(null)
+    try {
+      const res = (await api.admin.setAdminWebsiteAnalytics(websiteId, enabled)) as {
+        success?: boolean
+        error?: string
+        website?: { analytics?: boolean }
+      }
+      if (!res?.success) {
+        setError(res?.error || "Failed to update website analytics")
+        return
+      }
+      setWebsites((prev) =>
+        prev.map((w) =>
+          w.id === websiteId ? { ...w, analytics: res.website?.analytics ?? enabled } : w
+        )
+      )
+      try {
+        const statsRes = (await api.admin.getAdminWebsiteStats()) as { success?: boolean; stats?: Record<string, number> }
+        if (statsRes.success && statsRes.stats) setStats(statsRes.stats)
+      } catch {
+        /* ignore */
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to update website analytics")
+    } finally {
+      setAnalyticsBusyId(null)
+    }
+  }
 
   const runAdminAudit = async (websiteId: string) => {
     setAuditRunningId(websiteId)
@@ -187,7 +220,7 @@ export default function AdminWebsitesPage() {
                     <TableHead>Website</TableHead>
                     <TableHead>Domain</TableHead>
                     <TableHead>Organization</TableHead>
-                    <TableHead>Analytics</TableHead>
+                    <TableHead className="min-w-[140px]">Site tracking</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead className="text-right w-[100px]">Actions</TableHead>
                   </TableRow>
@@ -214,13 +247,42 @@ export default function AdminWebsitesPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        {website.analytics ? (
-                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-xs">
-                            <BarChart3 className="h-3 w-3 mr-1" /> Enabled
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs">Disabled</Badge>
-                        )}
+                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={!!website.analytics}
+                                  disabled={
+                                    analyticsBusyId === website.id ||
+                                    !website.organization?.analytics_enabled
+                                  }
+                                  onCheckedChange={(v) => void setWebsiteAnalytics(website.id, v)}
+                                  aria-label={`Analytics tracking for ${website.domain}`}
+                                />
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {website.analytics ? "On" : "Off"}
+                                </span>
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              {!website.organization?.analytics_enabled
+                                ? "Turn on workspace analytics in Admin → Organizations first. Enabling org analytics also turns on tracking for all sites in that org."
+                                : website.analytics
+                                  ? "Visitor tracking script is allowed for this domain. Events go to your analytics pipeline."
+                                  : "Tracking script off for this site. Toggle on to collect page views (org analytics must stay on)."}
+                            </TooltipContent>
+                          </Tooltip>
+                          {website.analytics ? (
+                            <Badge className="w-fit bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 text-xs hidden sm:inline-flex">
+                              <BarChart3 className="h-3 w-3 mr-1" /> Active
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="w-fit text-xs hidden sm:inline-flex">
+                              Inactive
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {website.created_at ? formatDate(website.created_at, { relative: true }) : "-"}

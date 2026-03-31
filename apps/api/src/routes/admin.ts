@@ -763,11 +763,17 @@ router.post("/enable-organization-analytics", adminOnly, async (req: Request, re
   try {
     const { organizationId } = req.body as { organizationId: string };
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: { analytics_enabled: true },
-    });
-    res.json({ success: true, message: "Analytics enabled" });
+    await prisma.$transaction([
+      prisma.organization.update({
+        where: { id: organizationId },
+        data: { analytics_enabled: true },
+      }),
+      prisma.websites.updateMany({
+        where: { organization_id: organizationId },
+        data: { analytics: true, updated_at: new Date() },
+      }),
+    ]);
+    res.json({ success: true, message: "Analytics enabled for organization and all its websites" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
@@ -778,11 +784,17 @@ router.post("/disable-organization-analytics", adminOnly, async (req: Request, r
   try {
     const { organizationId } = req.body as { organizationId: string };
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: { analytics_enabled: false },
-    });
-    res.json({ success: true, message: "Analytics disabled" });
+    await prisma.$transaction([
+      prisma.organization.update({
+        where: { id: organizationId },
+        data: { analytics_enabled: false },
+      }),
+      prisma.websites.updateMany({
+        where: { organization_id: organizationId },
+        data: { analytics: false, updated_at: new Date() },
+      }),
+    ]);
+    res.json({ success: true, message: "Analytics disabled for organization and all its websites" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
