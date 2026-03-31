@@ -1,7 +1,8 @@
 'use client'
 
 import type React from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useMemo } from 'react'
 import Image from 'next/image'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -14,10 +15,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { Settings, LogOut } from 'lucide-react'
+import { Settings, LogOut, User } from 'lucide-react'
 import { orgNavPath } from '@/lib/org-nav-path'
 import NotificationBell from '@/components/NotificationBell'
 import { AppTabBar } from './app-tab-bar'
+import { getMobileSectionChrome } from '@/lib/pwa/mobile-section-theme'
+import { cn } from '@/lib/utils'
 
 function getRoleColor(role: string) {
   switch (role) {
@@ -38,6 +41,10 @@ export interface AppShellLayoutProps {
   organizationName: string
   organizationLogo?: string | null
   emailsEnabled: boolean
+  analyticsEnabled?: boolean
+  blogsEnabled?: boolean
+  whatsappEnabled?: boolean
+  invoicesEnabled?: boolean
   userRole: string
   sessionUser: { name?: string | null; image?: string | null; email?: string | null }
   onSignOut: () => void | Promise<void>
@@ -50,20 +57,36 @@ export function AppShellLayout({
   organizationName,
   organizationLogo,
   emailsEnabled,
+  analyticsEnabled = false,
+  blogsEnabled = false,
+  whatsappEnabled = false,
+  invoicesEnabled = false,
   userRole,
   sessionUser,
   onSignOut,
   children,
 }: AppShellLayoutProps) {
   const router = useRouter()
+  const pathname = usePathname() ?? ''
+  const chrome = useMemo(
+    () => getMobileSectionChrome(pathname, slug, flatRoutes),
+    [pathname, slug, flatRoutes],
+  )
+  const whatsappPath = orgNavPath(slug, flatRoutes, 'whatsapp')
+  const isWhatsappRoute = pathname === whatsappPath || pathname.startsWith(`${whatsappPath}/`)
+
   const roleColor = getRoleColor(userRole)
-  const settingsHref = orgNavPath(slug, flatRoutes, 'settings')
+  const accountSettingsHref = '/account/settings'
+  const orgSettingsHref = orgNavPath(slug, flatRoutes, 'settings')
   const brandSrc = organizationLogo?.trim() || '/images/logo.png'
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-background">
+    <div className="mobile-app-root flex min-h-[100dvh] flex-col bg-background touch-manipulation">
       <header
-        className="sticky top-0 z-50 flex shrink-0 items-center gap-2.5 border-b border-border/40 bg-background/95 backdrop-blur-md px-4 pt-[env(safe-area-inset-top)]"
+        className={cn(
+          'sticky top-0 z-50 flex shrink-0 items-center gap-2.5 backdrop-blur-md px-4 pt-[env(safe-area-inset-top)]',
+          chrome.headerSurface,
+        )}
         style={{ height: 'calc(3.25rem + env(safe-area-inset-top, 0px))' }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -102,9 +125,13 @@ export function AppShellLayout({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={() => router.push(settingsHref)} className="py-2.5">
+              <DropdownMenuItem onClick={() => router.push(orgSettingsHref)} className="py-2.5">
                 <Settings className="mr-2 h-4 w-4" />
-                Account Settings
+                Workspace settings
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push(accountSettingsHref)} className="py-2.5">
+                <User className="mr-2 h-4 w-4" />
+                Account settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onSignOut} className="text-destructive focus:text-destructive py-2.5">
@@ -116,11 +143,27 @@ export function AppShellLayout({
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-auto p-4 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] bg-background/50">
+      <main
+        className={cn(
+          'min-h-0 flex-1 overflow-auto pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
+          chrome.mainSurface,
+          isWhatsappRoute ? 'p-0 overflow-hidden' : 'p-4',
+        )}
+      >
         {children}
       </main>
 
-      <AppTabBar slug={slug} flatRoutes={flatRoutes} emailsEnabled={emailsEnabled} />
+      <AppTabBar
+        slug={slug}
+        flatRoutes={flatRoutes}
+        emailsEnabled={emailsEnabled}
+        analyticsEnabled={analyticsEnabled}
+        blogsEnabled={blogsEnabled}
+        whatsappEnabled={whatsappEnabled}
+        invoicesEnabled={invoicesEnabled}
+        organizationName={organizationName}
+        organizationLogo={organizationLogo}
+      />
     </div>
   )
 }

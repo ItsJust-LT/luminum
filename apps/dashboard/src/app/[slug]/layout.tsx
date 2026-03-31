@@ -20,25 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
-import {
-  Building2,
-  LayoutDashboard,
-  Users,
-  Globe,
-  BookOpen,
-  Settings,
-  FileText,
-  CreditCard,
-  HelpCircle,
-  LogOut,
-  ChevronDown,
-  AlertTriangle,
-  Menu,
-  Mail,
-  MessageCircle,
-  Gauge,
-  Receipt,
-} from "lucide-react"
+import { Building2, Settings, LogOut, ChevronDown, AlertTriangle, Menu } from "lucide-react"
 import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
 import { OrganizationProvider } from "@/lib/contexts/organization-context"
@@ -47,7 +29,8 @@ import { OrganizationSidebarWrapper } from "@/components/organization/organizati
 import NotificationBell from "@/components/NotificationBell"
 import { api } from "@/lib/api"
 import { UserNotificationProvider } from "@/components/realtime/user-notification-provider"
-import { useDisplayMode } from "@/lib/hooks/use-display-mode"
+import { usePreferAppShell } from "@/lib/hooks/use-prefer-app-shell"
+import { mobileManagementNavItems, mobilePrimaryNavItems } from "@/lib/org-mobile-nav"
 import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
 import { cn } from "@/lib/utils"
 import { CustomDomainCtx, type CustomDomainContext } from "@/lib/hooks/use-custom-domain"
@@ -104,7 +87,7 @@ export default function SlugLayout({
     sidebarData: null,
   })
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const { isStandalone, isReady } = useDisplayMode()
+  const { preferAppShell, isReady } = usePreferAppShell()
 
   const slug = params.slug as string
 
@@ -369,8 +352,19 @@ export default function SlugLayout({
     }
   }
 
-  // Mobile Menu Component
-  const MobileMenu = () => (
+  // Mobile Menu Component (tablet / desktop header hamburger)
+  const MobileMenu = () => {
+    const org = state.organization
+    if (!org) return null
+    const sheetPrimary = mobilePrimaryNavItems(slug, flatRoutes, {
+      analytics_enabled: org.analytics_enabled,
+      blogs_enabled: org.blogs_enabled,
+      emails_enabled: org.emails_enabled,
+      whatsapp_enabled: org.whatsapp_enabled,
+      invoices_enabled: org.invoices_enabled,
+    })
+    const sheetManagement = mobileManagementNavItems(slug, flatRoutes)
+    return (
     <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
       <SheetTrigger asChild>
         <Button
@@ -412,32 +406,7 @@ export default function SlugLayout({
                   Navigation
                 </h4>
                 <div className="space-y-1">
-                  {[
-                    {
-                      title: "Dashboard",
-                      icon: LayoutDashboard,
-                      href: orgNavPath(slug, flatRoutes, "dashboard"),
-                    },
-                    ...((state.organization as any)?.analytics_enabled
-                      ? [{ title: "Analytics", icon: Globe, href: orgNavPath(slug, flatRoutes, "analytics") }]
-                      : []),
-                    { title: "Site Audits", icon: Gauge, href: orgNavPath(slug, flatRoutes, "audits") },
-                    { title: "Forms", icon: FileText, href: orgNavPath(slug, flatRoutes, "forms") },
-                    ...((state.organization as any)?.blogs_enabled
-                      ? [{ title: "Blog", icon: BookOpen, href: orgNavPath(slug, flatRoutes, "blogs") }]
-                      : []),
-                    ...((state.organization as any)?.emails_enabled
-                      ? [{ title: "Emails", icon: Mail, href: orgNavPath(slug, flatRoutes, "emails") }]
-                      : []),
-                    ...((state.organization as any)?.whatsapp_enabled
-                      ? [{ title: "WhatsApp", icon: MessageCircle, href: orgNavPath(slug, flatRoutes, "whatsapp") }]
-                      : []),
-                    ...((state.organization as any)?.invoices_enabled
-                      ? [{ title: "Invoices", icon: Receipt, href: orgNavPath(slug, flatRoutes, "invoices") }]
-                      : []),
-                    { title: "Team", icon: Users, href: orgNavPath(slug, flatRoutes, "team") },
-                    { title: "Settings", icon: Settings, href: orgNavPath(slug, flatRoutes, "settings") },
-                  ].map((item) => (
+                  {sheetPrimary.map((item) => (
                     <Button
                       key={item.href}
                       variant="ghost"
@@ -459,15 +428,7 @@ export default function SlugLayout({
                   Management
                 </h4>
                 <div className="space-y-1">
-                  {[
-                    {
-                      title: "Billing",
-                      icon: CreditCard,
-                      href: orgNavPath(slug, flatRoutes, "billing"),
-                    },
-                    { title: "Reports", icon: FileText, href: orgNavPath(slug, flatRoutes, "reports") },
-                    { title: "Support", icon: HelpCircle, href: orgNavPath(slug, flatRoutes, "support") },
-                  ].map((item) => (
+                  {sheetManagement.map((item) => (
                     <Button
                       key={item.href}
                       variant="ghost"
@@ -503,7 +464,8 @@ export default function SlugLayout({
         </div>
       </SheetContent>
     </Sheet>
-  )
+    )
+  }
 
   // Loading state
   if (isPending || state.loading) {
@@ -534,7 +496,7 @@ export default function SlugLayout({
   }
 
   // PWA standalone: app shell with bottom tab bar (no sidebar)
-  if (isReady && isStandalone) {
+  if (isReady && preferAppShell) {
     return (
       <CustomDomainCtx.Provider value={customDomainCtx}>
       <OrganizationProvider
@@ -555,6 +517,10 @@ export default function SlugLayout({
                 orgLogoOrBrandProxy(state.organization.logo, state.organization.name)
               }
               emailsEnabled={state.organization.emails_enabled ?? false}
+              analyticsEnabled={state.organization.analytics_enabled ?? false}
+              blogsEnabled={state.organization.blogs_enabled ?? false}
+              whatsappEnabled={state.organization.whatsapp_enabled ?? false}
+              invoicesEnabled={state.organization.invoices_enabled ?? false}
               userRole={state.userRole ?? "member"}
               sessionUser={{
                 name: session?.user?.name,

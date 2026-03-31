@@ -3,20 +3,28 @@ import { headers } from "next/headers"
 import { absoluteBrandingIconUrls } from "@/lib/branding-icon-url"
 
 const DEFAULT_MANIFEST = {
+  id: "/",
   name: "Luminum Agency",
-  short_name: "Luminum Agency",
-  description: "A Progressive Web App built with Next.js",
+  short_name: "Luminum",
+  description: "Agency dashboard — forms, email, billing, and more.",
   start_url: "/",
   display: "standalone",
+  display_override: ["standalone", "browser"],
   background_color: "#ffffff",
   theme_color: "#000000",
-  orientation: "portrait",
+  orientation: "portrait-primary",
   scope: "/",
+  prefer_related_applications: false,
   icons: [
-    { src: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png" },
-    { src: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png" },
+    { src: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+    { src: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+    { src: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+    { src: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
   ],
   categories: ["productivity", "utilities"],
+  shortcuts: [
+    { name: "Organizations", short_name: "Orgs", description: "Pick a workspace", url: "/dashboard", icons: [{ src: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png" }] },
+  ],
 }
 
 export async function GET() {
@@ -38,11 +46,21 @@ export async function GET() {
 
     const manifest = {
       ...DEFAULT_MANIFEST,
+      id: "/",
       name: orgName,
       short_name: orgName,
-      description: `${orgName} Dashboard`,
+      description: `${orgName} — workspace dashboard`,
       start_url: "/dashboard",
       icons,
+      shortcuts: [
+        {
+          name: "Home",
+          short_name: "Home",
+          description: "Workspace home",
+          url: "/dashboard",
+          icons: [{ src: u.icon192, sizes: "192x192", type: u.type }],
+        },
+      ],
     }
 
     return NextResponse.json(manifest, {
