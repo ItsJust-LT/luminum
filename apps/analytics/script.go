@@ -25,9 +25,10 @@ function getOrCreateSid(){var s=getCookie("%s");if(s&&/^[a-zA-Z0-9_-]{8,64}$/.te
 `
 
 func serveTrackingScript(w http.ResponseWriter, r *http.Request) {
-	websiteId := r.URL.Query().Get("websiteId")
-	if websiteId == "" {
-		http.Error(w, "Missing websiteId", http.StatusBadRequest)
+	raw := r.URL.Query().Get("websiteId")
+	websiteId, ok := normalizeWebsiteID(raw)
+	if !ok {
+		http.Error(w, "Missing or invalid websiteId (UUID from Luminum dashboard)", http.StatusBadRequest)
 		return
 	}
 

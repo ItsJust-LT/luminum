@@ -22,7 +22,8 @@
     "./analytics": "./src/analytics/index.ts",
     "./forms": "./src/forms/index.ts",
     "./blog": "./src/blog/index.ts",
-    "./metadata": "./src/metadata/index.ts"
+    "./metadata": "./src/metadata/index.ts",
+    "./env": "./src/env/assert-website-id.ts"
   },
   "peerDependencies": {
     "next": "^14 || ^15 || ^16",
@@ -32,6 +33,7 @@
     "@itsjust-lt/blog-renderer": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^22",
     "@types/react": "^19",
     "next": "^15",
     "react": "^19.1.0",

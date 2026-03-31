@@ -573,6 +573,9 @@ importers:
         specifier: workspace:*
         version: link:../blog-renderer
     devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.15.3
       '@types/react':
         specifier: ^19
         version: 19.2.2

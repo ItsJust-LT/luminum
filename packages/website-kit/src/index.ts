@@ -1,6 +1,13 @@
 export { initLuminum, getConfig } from "./config.js";
 export type { LuminumConfig, BlogPostSummary, BlogPostDetail, BlogPostListResponse, BlogSeoPayload } from "./types.js";
 
+export {
+  assertLuminumWebsiteIdsAtBuild,
+  assertWebsiteId,
+  normalizeWebsiteId,
+  isValidWebsiteId,
+} from "./env/assert-website-id.js";
+
 // Analytics
 export { AnalyticsScript, type AnalyticsScriptProps } from "./analytics/index.js";
 export { getSessionId } from "./analytics/index.js";

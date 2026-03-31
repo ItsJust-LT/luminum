@@ -139,9 +139,9 @@ func broadcastFormSubmission(websiteId string, data map[string]interface{}) {
 }
 
 func handleLiveDashboardWS(w http.ResponseWriter, r *http.Request) {
-	websiteId := r.URL.Query().Get("websiteId")
-	if websiteId == "" {
-		http.Error(w, "Missing websiteId", http.StatusBadRequest)
+	websiteId, ok := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
+	if !ok {
+		http.Error(w, "Missing or invalid websiteId", http.StatusBadRequest)
 		return
 	}
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -176,11 +176,11 @@ func handleLiveDashboardWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	websiteId := r.URL.Query().Get("websiteId")
+	websiteId, widOK := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
 	eventId := r.URL.Query().Get("eventId")
 
-	if websiteId == "" || eventId == "" {
-		http.Error(w, "Missing websiteId or eventId", http.StatusBadRequest)
+	if !widOK || eventId == "" {
+		http.Error(w, "Missing or invalid websiteId or eventId", http.StatusBadRequest)
 		return
 	}
 
@@ -305,9 +305,9 @@ func GetLivePageCounts(websiteId string) map[string]int {
 }
 
 func LiveViewerCountHandler(w http.ResponseWriter, r *http.Request) {
-	websiteId := r.URL.Query().Get("websiteId")
-	if websiteId == "" {
-		http.Error(w, "Missing websiteId", http.StatusBadRequest)
+	websiteId, ok := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
+	if !ok {
+		http.Error(w, "Missing or invalid websiteId", http.StatusBadRequest)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

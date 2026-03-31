@@ -1,4 +1,5 @@
 import type { BlogPostListResponse, BlogPostDetail } from "../types.js";
+import { assertWebsiteId, normalizeWebsiteId } from "../env/assert-website-id.js";
 
 export interface BlogFetchOptions {
   websiteId: string;
@@ -16,6 +17,14 @@ export interface BlogFetchOptions {
 
 function baseUrl(opts: BlogFetchOptions): string {
   return (opts.apiBaseUrl ?? "https://api.luminum.app").replace(/\/$/, "");
+}
+
+function resolvedWebsiteId(
+  raw: string | undefined | null,
+  label: string,
+): string {
+  assertWebsiteId(raw, label);
+  return normalizeWebsiteId(raw);
 }
 
 function buildRequestInit(
@@ -48,8 +57,9 @@ function buildRequestInit(
 export async function getPublishedPosts(
   opts: BlogFetchOptions & { page?: number; limit?: number }
 ): Promise<BlogPostListResponse> {
+  const websiteId = resolvedWebsiteId(opts.websiteId, "getPublishedPosts");
   const url = new URL(`${baseUrl(opts)}/api/blog/posts`);
-  url.searchParams.set("websiteId", opts.websiteId);
+  url.searchParams.set("websiteId", websiteId);
   if (opts.page) url.searchParams.set("page", String(opts.page));
   if (opts.limit) url.searchParams.set("limit", String(opts.limit));
 
@@ -58,7 +68,7 @@ export async function getPublishedPosts(
   });
   if (!res.ok) {
     throw new Error(
-      `Failed to fetch blog posts (${res.status}) for websiteId "${opts.websiteId}".`
+      `Failed to fetch blog posts (${res.status}) for websiteId "${websiteId}".`
     );
   }
   return res.json();
@@ -90,10 +100,11 @@ export async function getAllPublishedPosts(
 export async function getPublishedPostBySlug(
   opts: BlogFetchOptions & { slug: string }
 ): Promise<BlogPostDetail | null> {
+  const websiteId = resolvedWebsiteId(opts.websiteId, "getPublishedPostBySlug");
   const url = new URL(
     `${baseUrl(opts)}/api/blog/posts/${encodeURIComponent(opts.slug)}`
   );
-  url.searchParams.set("websiteId", opts.websiteId);
+  url.searchParams.set("websiteId", websiteId);
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
 
   const res = await fetch(url.toString(), {
@@ -102,7 +113,7 @@ export async function getPublishedPostBySlug(
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(
-      `Failed to fetch blog post "${opts.slug}" (${res.status}) for websiteId "${opts.websiteId}".`
+      `Failed to fetch blog post "${opts.slug}" (${res.status}) for websiteId "${websiteId}".`
     );
   }
   return res.json();
@@ -114,8 +125,9 @@ export async function getPublishedPostBySlug(
 export async function searchPosts(
   opts: BlogFetchOptions & { q?: string; category?: string; page?: number; limit?: number }
 ): Promise<BlogPostListResponse> {
+  const websiteId = resolvedWebsiteId(opts.websiteId, "searchPosts");
   const url = new URL(`${baseUrl(opts)}/api/blog/posts/search`);
-  url.searchParams.set("websiteId", opts.websiteId);
+  url.searchParams.set("websiteId", websiteId);
   if (opts.q) url.searchParams.set("q", opts.q);
   if (opts.category) url.searchParams.set("category", opts.category);
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
@@ -127,7 +139,7 @@ export async function searchPosts(
   });
   if (!res.ok) {
     throw new Error(
-      `Failed to search blog posts (${res.status}) for websiteId "${opts.websiteId}".`
+      `Failed to search blog posts (${res.status}) for websiteId "${websiteId}".`
     );
   }
   return res.json();
@@ -144,8 +156,9 @@ export interface BlogCategory {
 export async function getCategories(
   opts: BlogFetchOptions
 ): Promise<{ categories: BlogCategory[] }> {
+  const websiteId = resolvedWebsiteId(opts.websiteId, "getCategories");
   const url = new URL(`${baseUrl(opts)}/api/blog/categories`);
-  url.searchParams.set("websiteId", opts.websiteId);
+  url.searchParams.set("websiteId", websiteId);
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
 
   const res = await fetch(url.toString(), {
@@ -153,7 +166,7 @@ export async function getCategories(
   });
   if (!res.ok) {
     throw new Error(
-      `Failed to fetch categories (${res.status}) for websiteId "${opts.websiteId}".`
+      `Failed to fetch categories (${res.status}) for websiteId "${websiteId}".`
     );
   }
   return res.json();
@@ -165,8 +178,9 @@ export async function getCategories(
 export async function getPostsByCategory(
   opts: BlogFetchOptions & { categorySlug: string; page?: number; limit?: number }
 ): Promise<BlogPostListResponse> {
+  const websiteId = resolvedWebsiteId(opts.websiteId, "getPostsByCategory");
   const url = new URL(`${baseUrl(opts)}/api/blog/posts/by-category`);
-  url.searchParams.set("websiteId", opts.websiteId);
+  url.searchParams.set("websiteId", websiteId);
   url.searchParams.set("categorySlug", opts.categorySlug);
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
   if (opts.page) url.searchParams.set("page", String(opts.page));
@@ -177,7 +191,7 @@ export async function getPostsByCategory(
   });
   if (!res.ok) {
     throw new Error(
-      `Failed to fetch posts by category "${opts.categorySlug}" (${res.status}) for websiteId "${opts.websiteId}".`
+      `Failed to fetch posts by category "${opts.categorySlug}" (${res.status}) for websiteId "${websiteId}".`
     );
   }
   return res.json();

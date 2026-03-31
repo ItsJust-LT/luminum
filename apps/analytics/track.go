@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/mssola/user_agent"
 )
 
@@ -151,6 +154,15 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	canonWid, ok := normalizeWebsiteID(event.WebsiteID)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing websiteId"})
+		return
+	}
+	event.WebsiteID = canonWid
+
 	// Site audits (Lighthouse/Puppeteer) and similar automated browsers: do not record events.
 	if shouldIgnoreAutomatedClient(r) {
 		w.Header().Set("Content-Type", "application/json")
@@ -245,8 +257,16 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 	).Scan(&eventID)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unknown websiteId"})
+			log.Printf("[%s] track INSERT FK rejected website_id=%s: %v", serviceName, event.WebsiteID, err)
+			return
+		}
+		log.Printf("[%s] track INSERT error website_id=%s: %v", serviceName, event.WebsiteID, err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
-		fmt.Println("DB Error:", err)
 		return
 	}
 

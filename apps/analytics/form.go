@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func formSubmissionHandler(w http.ResponseWriter, r *http.Request) {
@@ -37,9 +40,16 @@ func formSubmissionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	websiteId, ok := payload["websiteId"].(string)
-	if !ok || websiteId == "" {
+	rawWid, ok := payload["websiteId"].(string)
+	if !ok {
 		http.Error(w, "Missing websiteId", http.StatusBadRequest)
+		return
+	}
+	websiteId, widOK := normalizeWebsiteID(rawWid)
+	if !widOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing websiteId"})
 		return
 	}
 
@@ -78,8 +88,16 @@ func formSubmissionHandler(w http.ResponseWriter, r *http.Request) {
 		websiteId, sessionIdPtr, time.Now().UTC(), formData,
 	).Scan(&submissionId)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unknown websiteId"})
+			log.Printf("[%s] form INSERT FK rejected website_id=%s: %v", serviceName, websiteId, err)
+			return
+		}
+		log.Printf("[%s] form INSERT error website_id=%s: %v", serviceName, websiteId, err)
 		http.Error(w, "DB error", http.StatusInternalServerError)
-		fmt.Println("Form DB Error:", err)
 		return
 	}
 

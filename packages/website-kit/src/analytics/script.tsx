@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { assertWebsiteId, normalizeWebsiteId } from "../env/assert-website-id.js";
 
 export interface AnalyticsScriptProps {
   websiteId: string;
@@ -16,14 +17,16 @@ export function AnalyticsScript({
   websiteId,
   analyticsBaseUrl = "https://analytics.luminum.app",
 }: AnalyticsScriptProps) {
+  assertWebsiteId(websiteId, "AnalyticsScript");
+  const id = normalizeWebsiteId(websiteId);
   const base = analyticsBaseUrl.replace(/\/$/, "");
-  const src = `${base}/script.js?websiteId=${encodeURIComponent(websiteId)}`;
+  const src = `${base}/script.js?websiteId=${encodeURIComponent(id)}`;
 
   return (
     <script
       src={src}
       defer
-      data-website-id={websiteId}
+      data-website-id={id}
     />
   );
 }

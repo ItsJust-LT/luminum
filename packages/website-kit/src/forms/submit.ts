@@ -1,4 +1,5 @@
 import { getSessionId } from "../analytics/session.js";
+import { assertWebsiteId, normalizeWebsiteId } from "../env/assert-website-id.js";
 
 export interface SubmitFormOptions {
   websiteId: string;
@@ -31,11 +32,13 @@ export async function submitForm({
   fields,
   fetchOptions,
 }: SubmitFormOptions): Promise<SubmitFormResult> {
+  assertWebsiteId(websiteId, "submitForm");
+  const wid = normalizeWebsiteId(websiteId);
   const base = analyticsBaseUrl.replace(/\/$/, "");
   const sessionId = getSessionId();
 
   const payload: Record<string, unknown> = {
-    websiteId,
+    websiteId: wid,
     sessionId: sessionId ?? undefined,
     formName: formName || "Form",
     ...fields,

@@ -1,4 +1,5 @@
 import type { LuminumConfig } from "./types.js";
+import { assertWebsiteId, normalizeWebsiteId } from "./env/assert-website-id.js";
 
 const DEFAULT_API_BASE_URL = "https://api.luminum.app";
 const DEFAULT_ANALYTICS_BASE_URL = "https://analytics.luminum.app";
@@ -6,11 +7,10 @@ const DEFAULT_ANALYTICS_BASE_URL = "https://analytics.luminum.app";
 let globalConfig: LuminumConfig | null = null;
 
 export function initLuminum(config: LuminumConfig): void {
-  if (!config.websiteId) {
-    throw new Error("[@itsjust-lt/website-kit] websiteId is required");
-  }
+  assertWebsiteId(config.websiteId, "initLuminum");
+  const websiteId = normalizeWebsiteId(config.websiteId);
   globalConfig = {
-    websiteId: config.websiteId,
+    websiteId,
     apiBaseUrl: (config.apiBaseUrl ?? DEFAULT_API_BASE_URL).replace(/\/$/, ""),
     analyticsBaseUrl: (config.analyticsBaseUrl ?? DEFAULT_ANALYTICS_BASE_URL).replace(/\/$/, ""),
   };

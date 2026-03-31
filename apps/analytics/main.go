@@ -24,6 +24,21 @@ const (
 
 var dbPool *pgxpool.Pool
 
+// requestLogger omits access lines for successful POST /track and /form (high volume); always logs errors and other routes.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		start := time.Now()
+		next.ServeHTTP(ww, r)
+		path := r.URL.Path
+		status := ww.Status()
+		if (path == "/track" || path == "/form") && status < 400 {
+			return
+		}
+		log.Printf("[%s] %s %s %d %s", serviceName, r.Method, path, status, time.Since(start).Truncate(time.Millisecond))
+	})
+}
+
 func main() {
 	_ = godotenv.Load()
 
@@ -71,7 +86,7 @@ func main() {
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 
 	// Skip tracking for known bots and crawlers
