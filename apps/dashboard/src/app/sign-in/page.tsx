@@ -1,5 +1,9 @@
+import type { Metadata } from "next"
 import { headers } from "next/headers"
+import { dashboardTitle } from "@/lib/dashboard-metadata"
 import { SignInView, type SignInOrgBranding } from "./sign-in-view"
+
+export const metadata: Metadata = dashboardTitle("Sign in")
 
 export default async function SignInPage() {
   const h = await headers()

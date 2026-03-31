@@ -1,8 +1,9 @@
-"use client"
+import type { Metadata } from "next"
+import { dashboardTitle } from "@/lib/dashboard-metadata"
+import WhatsAppShell from "./whatsapp-shell"
 
-import { WhatsAppProvider } from "@/lib/contexts/whatsapp-context"
+export const metadata: Metadata = dashboardTitle("WhatsApp")
 
 export default function WhatsAppLayout({ children }: { children: React.ReactNode }) {
-  return <WhatsAppProvider>{children}</WhatsAppProvider>
+  return <WhatsAppShell>{children}</WhatsAppShell>
 }
-

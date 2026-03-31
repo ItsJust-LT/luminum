@@ -1,9 +1,8 @@
 import type { Metadata } from "next"
 import { dashboardTitle } from "@/lib/dashboard-metadata"
-import { FormsPage } from "@/components/forms/forms-page"
 
 export const metadata: Metadata = dashboardTitle("Forms")
 
-export default function Forms() {
-  return <FormsPage />
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return children
 }
