@@ -424,6 +424,39 @@ export default function EmailsPage() {
     return () => observer.disconnect()
   }, [hasMore, loading, loadingMore, loadMore])
 
+  const displayTotal = totalCount ?? emails.length
+  const displayUnread =
+    mailbox === "inbox"
+      ? (unreadCountFromApi ?? folderCounts.inboxUnread)
+      : emails.filter((e) => !e.read).length
+
+  const handleMailRefresh = useCallback(
+    async (opts?: { mailbox?: MailboxId }) => {
+      if (!organization?.id) return
+      const targetMb = opts?.mailbox ?? mailbox
+      if (opts?.mailbox) {
+        setMailbox(opts.mailbox)
+        setEmails([])
+        setPage(1)
+        setLoadedForOrgId(null)
+      } else {
+        setPage(1)
+      }
+      await fetchEmails(1, true, { mailbox: targetMb })
+      await refreshFolderCounts()
+    },
+    [
+      organization?.id,
+      mailbox,
+      fetchEmails,
+      refreshFolderCounts,
+      setEmails,
+      setPage,
+      setLoadedForOrgId,
+      setMailbox,
+    ],
+  )
+
   if (!organization) return null
 
   // Wait for setup status before showing inbox or setup-required (avoid flash of wrong view)
@@ -508,39 +541,6 @@ export default function EmailsPage() {
       </AppPageContainer>
     )
   }
-
-  const displayTotal = totalCount ?? emails.length
-  const displayUnread =
-    mailbox === "inbox"
-      ? (unreadCountFromApi ?? folderCounts.inboxUnread)
-      : emails.filter((e) => !e.read).length
-
-  const handleMailRefresh = useCallback(
-    async (opts?: { mailbox?: MailboxId }) => {
-      if (!organization?.id) return
-      const targetMb = opts?.mailbox ?? mailbox
-      if (opts?.mailbox) {
-        setMailbox(opts.mailbox)
-        setEmails([])
-        setPage(1)
-        setLoadedForOrgId(null)
-      } else {
-        setPage(1)
-      }
-      await fetchEmails(1, true, { mailbox: targetMb })
-      await refreshFolderCounts()
-    },
-    [
-      organization?.id,
-      mailbox,
-      fetchEmails,
-      refreshFolderCounts,
-      setEmails,
-      setPage,
-      setLoadedForOrgId,
-      setMailbox,
-    ],
-  )
 
   if (showSetupRequired) {
     return <MailProvisioningView workspaceName={organization?.name} />
