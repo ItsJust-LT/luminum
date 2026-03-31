@@ -104,7 +104,9 @@ export async function assertOrgCanSendWithResend(organizationId: string): Promis
     throw new Error("No email domain configured for this organization");
   }
   if (!org.resend_api_key_ciphertext) {
-    throw new Error("Resend API key is not configured. Add it in organization email settings.");
+    throw new Error(
+      "Mail is not fully configured for this organization. A platform administrator must complete setup in Admin → Organization settings."
+    );
   }
   if (!org.email_dns_verified_at) {
     throw new Error("Email setup is not complete. Save your Resend credentials and run Verify setup.");

@@ -167,7 +167,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
             name: "@",
             value: "v=spf1 include:amazonses.com ~all",
             valueNote:
-              "Use the SPF value shown in your Resend domain settings if it differs. Resend may provide a different include when sending is enabled.",
+              "Use the SPF value your mail provider shows for this domain if it differs from the example below.",
           },
           dmarc: {
             type: "TXT" as const,
@@ -179,18 +179,18 @@ router.get("/setup-status", async (req: Request, res: Response) => {
 
     const setupNotes = domain
       ? [
-          "Each organization uses its own Resend project. Add your domain in Resend, enable sending and receiving, and publish the DNS records Resend shows (MX for inbound, SPF/DKIM as provided).",
-          `Webhook URL (paste in Resend → Webhooks, event email.received): ${config.apiUrl}/api/webhook/resend-inbound`,
-          "Owners/admins must save the Resend API key and webhook signing secret under organization email settings.",
+          "Add this domain to your mail provider, enable send and receive, and publish the DNS records they provide (including MX for inbound).",
+          `Inbound webhook URL (for operator setup): ${config.apiUrl}/api/webhook/resend-inbound`,
+          "A platform administrator completes mail credentials in Admin → Organization settings.",
           ...(!secretsKeyConfigured
             ? [
                 secretsKeyIssue === "invalid_format"
-                  ? "LUMINUM_EMAIL_SECRETS_KEY is set but invalid: use exactly 64 hexadecimal characters (32 bytes), e.g. openssl rand -hex 32. Until fixed, Resend credentials are stored in a prefixed encoding without AES."
-                  : "Optional: set LUMINUM_EMAIL_SECRETS_KEY (64 hex chars) on the API so Resend keys are AES-encrypted at rest. You can still save credentials without it.",
+                  ? "LUMINUM_EMAIL_SECRETS_KEY is set but invalid: use exactly 64 hexadecimal characters (32 bytes), e.g. openssl rand -hex 32."
+                  : "Optional: set LUMINUM_EMAIL_SECRETS_KEY (64 hex chars) on the API for AES encryption of stored mail credentials.",
               ]
             : []),
           ...(!hasApiKey || !hasWebhookSecret
-            ? ["Email is being set up until both the Resend API key and webhook signing secret are saved."]
+            ? ["Mail is not live until a platform administrator finishes setup in the admin console."]
             : []),
         ]
       : undefined;
@@ -213,7 +213,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
         const v = await validateOrgResendDomain(k, domain);
         resendLive = { ok: v.ok, error: v.error ?? null, health: v.health };
       } catch (e) {
-        resendLive = { ok: false, error: e instanceof Error ? e.message : "Could not verify domain with Resend" };
+        resendLive = { ok: false, error: e instanceof Error ? e.message : "Could not verify domain with mail provider" };
       }
     }
 
@@ -272,7 +272,8 @@ router.post("/setup-domain", async (req: Request, res: Response) => {
     });
     res.json({
       success: true,
-      message: "Domain set. Configure the domain in your Resend project, then save API key and webhook secret in organization settings.",
+      message:
+        "Domain set. Configure the domain with your mail provider; a platform administrator must complete credentials under Admin → Organization settings.",
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -297,7 +298,10 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
     if (!org?.email_domain_id || !org.email_domain) return res.status(400).json({ success: false, error: "No email domain set. Select a domain first." });
     const domain = org.email_domain.domain;
     if (!org.resend_api_key_ciphertext) {
-      return res.status(400).json({ success: false, error: "Save your Resend API key in organization settings first." });
+      return res.status(400).json({
+        success: false,
+        error: "Mail is still being configured. A platform administrator must finish setup in Admin → Organization settings.",
+      });
     }
     let apiKey: string;
     try {
@@ -321,7 +325,7 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
       });
       return res.json({
         success: true,
-        message: "Resend domain is verified with sending and receiving enabled. Ensure the inbound webhook is configured.",
+        message: "Domain is verified for send and receive. Ensure the inbound webhook is configured with your provider.",
         checks: { spf, dmarc, resend: { ok: true, health: check.health } },
       });
     }
@@ -329,14 +333,14 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
       where: { id: organizationId },
       data: {
         email_dns_last_check_at: now,
-        email_dns_last_error: check.error ?? "Resend validation failed",
+        email_dns_last_error: check.error ?? "Mail domain validation failed",
         resend_last_validated_at: now,
         resend_last_error: check.error ?? null,
       },
     });
     return res.json({
       success: false,
-      error: check.error || "Resend validation failed",
+      error: check.error || "Mail domain validation failed",
       checks: { spf, dmarc, resend: { ok: false, health: check.health } },
     });
   } catch (error: unknown) {

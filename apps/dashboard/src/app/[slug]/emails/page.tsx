@@ -29,9 +29,7 @@ import {
   Paperclip,
   RefreshCw,
   InboxIcon,
-  CheckCircle2,
   Loader2,
-  XCircle,
   Star,
   Clock,
   FileEdit,
@@ -54,6 +52,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { MailboxSidebar, type MailboxId, type FolderCounts } from "@/components/emails/mailbox-sidebar"
+import { MailProvisioningView } from "@/components/emails/mail-provisioning-view"
 
 function smartDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : new Date(date)
@@ -76,7 +75,7 @@ function smartDate(date: Date | string): string {
 }
 
 export default function EmailsPage() {
-  const { organization, userRole } = useOrganization()
+  const { organization } = useOrganization()
   const ctx = useEmailsContext()
   const {
     emails,
@@ -112,23 +111,6 @@ export default function EmailsPage() {
   const [orgLoading, setOrgLoading] = useState(false)
   const [emailSelectorOpen, setEmailSelectorOpen] = useState(false)
   const [setupStatus, setSetupStatus] = useState<EmailSetupStatus | null>(null)
-  const [websites, setWebsites] = useState<{ id: string; domain: string; name?: string }[]>([])
-  const [settingDomain, setSettingDomain] = useState(false)
-  const [verifyingDns, setVerifyingDns] = useState(false)
-  const [lastVerifyResult, setLastVerifyResult] = useState<{
-    success: boolean
-    error?: string
-    message?: string
-    checks?: {
-      spf: { ok: boolean; record?: string; error?: string }
-      dmarc: { ok: boolean; record?: string; error?: string }
-      resend?: { ok: boolean }
-    }
-  } | null>(null)
-  const [resendApiKeyInput, setResendApiKeyInput] = useState("")
-  const [resendWebhookSecretInput, setResendWebhookSecretInput] = useState("")
-  const [savingResendCreds, setSavingResendCreds] = useState(false)
-  const [maskedResendKey, setMaskedResendKey] = useState<string | null>(null)
   const [mailbox, setMailbox] = useState<MailboxId>("inbox")
   const [folderCounts, setFolderCounts] = useState<FolderCounts>({
     inboxUnread: 0,
@@ -160,18 +142,15 @@ export default function EmailsPage() {
     api.emails.getSetupStatus(organization.id).then((s) => setSetupStatus(s as EmailSetupStatus))
   }, [organization?.id])
 
+  /** While mail is enabled but not ready, poll so the inbox appears when setup completes. */
   useEffect(() => {
-    if (!organization?.id || !setupStatus?.domain) {
-      setMaskedResendKey(null)
-      return
-    }
-    api.organizationSettings
-      .getResendEmail(organization.id)
-      .then((r: { success?: boolean; maskedApiKey?: string | null }) => {
-        setMaskedResendKey(r?.maskedApiKey ?? null)
-      })
-      .catch(() => setMaskedResendKey(null))
-  }, [organization?.id, setupStatus?.domain, setupStatus?.resend?.configured])
+    if (!organization?.id || !setupStatus) return
+    if (setupStatus.access !== true || setupStatus.setupComplete) return
+    const id = window.setInterval(() => {
+      void api.emails.getSetupStatus(organization.id).then((s) => setSetupStatus(s as EmailSetupStatus))
+    }, 20000)
+    return () => window.clearInterval(id)
+  }, [organization?.id, setupStatus?.access, setupStatus?.setupComplete])
 
   const refreshFolderCounts = useCallback(async () => {
     if (!organization?.id) return
@@ -190,16 +169,6 @@ export default function EmailsPage() {
     if (!organization?.id || !setupStatus?.setupComplete) return
     void refreshFolderCounts()
   }, [organization?.id, setupStatus?.setupComplete, refreshFolderCounts])
-
-  // When setup required and no domain, fetch websites so owner/admin can select one
-  useEffect(() => {
-    if (!organization?.id || !setupStatus || setupStatus.setupComplete || setupStatus.domain) return
-    const canSetDomain = userRole === "owner" || userRole === "admin"
-    if (!canSetDomain) return
-    api.websites.list(organization.id).then((res: any) => {
-      if (res?.data?.length) setWebsites(res.data)
-    })
-  }, [organization?.id, setupStatus, userRole])
 
   const router = useRouter()
   const showSetupRequired = !!(setupStatus && !setupStatus.setupComplete)
@@ -481,11 +450,36 @@ export default function EmailsPage() {
   if (setupStatus == null) {
     return (
       <AppPageContainer fullWidth>
-        <div className="flex items-center justify-center py-24">
-          <div className="flex flex-col items-center gap-3">
-            <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Checking email setup…</p>
-          </div>
+        <div className="flex min-h-[50vh] items-center justify-center px-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center gap-5 text-center"
+          >
+            <motion.div
+              className="rounded-2xl border border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur-sm"
+              animate={{ y: [0, -5, 0] }}
+              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <Mail className="h-12 w-12 text-primary" strokeWidth={1.25} />
+            </motion.div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Opening mail…</p>
+              <p className="text-xs text-muted-foreground">Just a moment</p>
+            </div>
+            <motion.div
+              className="h-1 w-32 overflow-hidden rounded-full bg-muted"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
+              <motion.div
+                className="h-full w-1/2 rounded-full bg-primary/60"
+                animate={{ x: ["-100%", "200%"] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </motion.div>
+          </motion.div>
         </div>
       </AppPageContainer>
     )
@@ -644,323 +638,9 @@ export default function EmailsPage() {
     }
   }
 
-  const handleSaveResendCredentials = async () => {
-    if (!organization?.id) return
-    const key = resendApiKeyInput.trim()
-    const wh = resendWebhookSecretInput.trim()
-    if (!key || !wh) {
-      toast.error("Resend API key and webhook signing secret are required.")
-      return
-    }
-    setSavingResendCreds(true)
-    try {
-      const res = (await api.organizationSettings.setResendEmail(organization.id, key, wh)) as {
-        success?: boolean
-        error?: string
-        message?: string
-      }
-      if (!res?.success) throw new Error(res?.error || "Failed to save credentials")
-      toast.success(res?.message || "Resend credentials saved.")
-      setResendApiKeyInput("")
-      setResendWebhookSecretInput("")
-      const next = await api.emails.getSetupStatus(organization.id)
-      setSetupStatus(next as EmailSetupStatus)
-      const rs = (await api.organizationSettings.getResendEmail(organization.id)) as { maskedApiKey?: string | null }
-      setMaskedResendKey(rs?.maskedApiKey ?? null)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save credentials")
-    } finally {
-      setSavingResendCreds(false)
-    }
-  }
-
   if (showSetupRequired) {
-    const hasDomain = !!setupStatus?.domain
-    const canSetDomain = userRole === "owner" || userRole === "admin"
-
-    const handleSelectDomain = async (websiteId: string) => {
-      if (!organization?.id) return
-      setSettingDomain(true)
-      try {
-        const res = await api.emails.setupDomain(organization.id, websiteId)
-        if (res?.success) {
-          toast.success("Domain set. Configure the domain in Resend, then add API key and webhook secret.")
-          const next = await api.emails.getSetupStatus(organization.id)
-          setSetupStatus(next)
-        } else {
-          toast.error((res as { error?: string })?.error || "Failed to set domain")
-        }
-      } catch {
-        toast.error("Failed to set domain")
-      } finally {
-        setSettingDomain(false)
-      }
-    }
-
-    const handleVerifyDns = async () => {
-      if (!organization?.id) return
-      setVerifyingDns(true)
-      setLastVerifyResult(null)
-      try {
-        const res = await api.emails.verifyDns(organization.id) as {
-          success?: boolean
-          error?: string
-          message?: string
-          checks?: {
-            spf: { ok: boolean; record?: string; error?: string }
-            dmarc: { ok: boolean; record?: string; error?: string }
-            resend?: { ok: boolean }
-          }
-        }
-        setLastVerifyResult({
-          success: !!res?.success,
-          error: res?.error,
-          message: res?.message,
-          checks: res?.checks,
-        })
-        if (res?.success) {
-          toast.success(res?.message || "DNS verified. You can send and receive email.")
-          const next = await api.emails.getSetupStatus(organization.id)
-          setSetupStatus(next)
-        } else {
-          toast.error(res?.error || "DNS check failed. See results below.")
-          const next = await api.emails.getSetupStatus(organization.id)
-          setSetupStatus(next)
-        }
-      } catch {
-        toast.error("Verification failed")
-        setLastVerifyResult({ success: false, error: "Verification failed" })
-        const next = await api.emails.getSetupStatus(organization.id)
-        setSetupStatus(next)
-      } finally {
-        setVerifyingDns(false)
-      }
-    }
-
-    return (
-      <AppPageContainer fullWidth>
-        <div className="relative overflow-hidden app-hero bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/10 p-4 sm:p-6 md:p-8">
-          <div className="relative space-y-4 max-w-2xl">
-            <h1 className="text-2xl font-bold text-foreground">Email setup required</h1>
-            {!hasDomain ? (
-              <>
-                <p className="text-muted-foreground">
-                  Complete setup so this organization can receive and send email. Select the domain you’ll use for email, then add the MX record and verify.
-                </p>
-                {canSetDomain ? (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">Select email domain</label>
-                    <div className="flex flex-wrap gap-2">
-                      {websites.length === 0 && !settingDomain && (
-                        <p className="text-sm text-muted-foreground">Loading websites…</p>
-                      )}
-                      {websites.length === 0 && settingDomain && (
-                        <p className="text-sm text-muted-foreground">Setting domain…</p>
-                      )}
-                      {websites.map((w) => (
-                        <Button
-                          key={w.id}
-                          variant="outline"
-                          size="sm"
-                          disabled={settingDomain}
-                          onClick={() => handleSelectDomain(w.id)}
-                          className="rounded-lg"
-                        >
-                          {settingDomain ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                          {w.domain}
-                        </Button>
-                      ))}
-                    </div>
-                    {websites.length === 0 && !settingDomain && (
-                      <p className="text-sm text-muted-foreground">Add a website in Analytics first to use its domain for email.</p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Ask an owner or admin to select the email domain for this organization so you can complete setup.</p>
-                )}
-              </>
-            ) : (
-              <>
-                <p className="text-muted-foreground">
-                  Your domain <strong>{setupStatus.domain}</strong> is set. Add the DNS records below at your DNS provider, then click Verify DNS.
-                </p>
-                {setupStatus?.setupNotes && setupStatus.setupNotes.length > 0 && (
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                    {setupStatus.setupNotes.map((note, i) => (
-                      <li key={i}>{note}</li>
-                    ))}
-                  </ul>
-                )}
-                {setupStatus?.lastError && (
-                  <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
-                    {setupStatus.lastError}
-                  </div>
-                )}
-                {setupStatus?.inboundPipeline &&
-                  !setupStatus.inboundPipeline.resendInboundReady &&
-                  setupStatus.resend &&
-                  (!setupStatus.resend.hasWebhookSecret || !setupStatus.resend.configured) && (
-                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
-                      <p className="font-medium">Email is still being set up</p>
-                      <p className="mt-1 text-muted-foreground dark:text-amber-200/90">
-                        Save your Resend API key and webhook signing secret below, add the inbound webhook URL in Resend (event{" "}
-                        <code className="text-xs">email.received</code>), and publish the MX/DNS records Resend shows for this domain.
-                      </p>
-                    </div>
-                  )}
-                {setupStatus?.resend?.inboundWebhookUrl && (
-                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inbound webhook URL</p>
-                    <p className="text-xs text-muted-foreground">
-                      In Resend → Webhooks, create an endpoint with this URL and subscribe to <strong>email.received</strong>.
-                    </p>
-                    <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.resend.inboundWebhookUrl}</code>
-                  </div>
-                )}
-                {canSetDomain && (
-                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3 mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resend credentials</p>
-                    <p className="text-xs text-muted-foreground">
-                      Use an API key from the same Resend project where this domain is added. The signing secret comes from the webhook
-                      configuration in Resend (Svix).
-                    </p>
-                    {maskedResendKey && (
-                      <p className="text-xs text-muted-foreground">
-                        Saved API key: <span className="font-mono">{maskedResendKey}</span>
-                        {setupStatus.resend?.hasWebhookSecret ? " · Webhook secret on file" : ""}
-                      </p>
-                    )}
-                    {!setupStatus.resend?.secretsKeyConfigured && (
-                      <p className="text-xs text-amber-800 dark:text-amber-200/90 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                        {setupStatus.resend?.secretsKeyIssue === "invalid_format" ? (
-                          <>
-                            <code className="text-xs">LUMINUM_EMAIL_SECRETS_KEY</code> is set but invalid (need 64 hex chars, e.g.{" "}
-                            <code className="text-xs">openssl rand -hex 32</code>). You can still save credentials below; fix the key to
-                            enable AES encryption at rest.
-                          </>
-                        ) : (
-                          <>
-                            <strong>Optional:</strong> set <code className="text-xs">LUMINUM_EMAIL_SECRETS_KEY</code> (64 hex chars) on the
-                            API for encrypted storage. You can save Resend credentials without it — they are stored in a prefixed encoding
-                            instead.
-                          </>
-                        )}
-                      </p>
-                    )}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="resend-api-key">Resend API key</Label>
-                      <Input
-                        id="resend-api-key"
-                        type="password"
-                        autoComplete="off"
-                        placeholder="re_…"
-                        value={resendApiKeyInput}
-                        onChange={(e) => setResendApiKeyInput(e.target.value)}
-                        className="font-mono text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="resend-webhook-secret">Webhook signing secret</Label>
-                      <Input
-                        id="resend-webhook-secret"
-                        type="password"
-                        autoComplete="off"
-                        placeholder="From Resend → Webhooks"
-                        value={resendWebhookSecretInput}
-                        onChange={(e) => setResendWebhookSecretInput(e.target.value)}
-                        className="font-mono text-sm"
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="rounded-lg"
-                      disabled={savingResendCreds}
-                      onClick={handleSaveResendCredentials}
-                    >
-                      {savingResendCreds ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                      Save Resend credentials
-                    </Button>
-                  </div>
-                )}
-                {!canSetDomain && (
-                  <p className="text-sm text-muted-foreground mt-4">
-                    Ask an owner or admin to add Resend credentials and complete the webhook in Resend.
-                  </p>
-                )}
-                {setupStatus?.dnsRecords && (
-                  <div className="space-y-4 mt-4">
-                    <p className="text-sm font-medium text-foreground">Suggested DNS records for {setupStatus.domain}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Prefer the exact records shown in your Resend dashboard for this domain (especially MX for inbound). The rows below
-                      are hints for SPF and DMARC only.
-                    </p>
-                    <div className="grid gap-4 sm:grid-cols-1">
-                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SPF (TXT)</p>
-                        <p className="text-xs text-muted-foreground">Type: TXT · Name: @ (or {setupStatus.dnsRecords.spf.name})</p>
-                        {setupStatus.dnsRecords.spf.value ? (
-                          <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.spf.value}</code>
-                        ) : null}
-                        {setupStatus.dnsRecords.spf.valueNote && (
-                          <p className="text-xs text-muted-foreground">{setupStatus.dnsRecords.spf.valueNote}</p>
-                        )}
-                      </div>
-                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DMARC (TXT)</p>
-                        <p className="text-xs text-muted-foreground">Type: TXT · Name: {setupStatus.dnsRecords.dmarc.name}</p>
-                        <code className="block text-sm bg-background px-3 py-2 rounded border break-all">{setupStatus.dnsRecords.dmarc.value}</code>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <Button
-                  onClick={handleVerifyDns}
-                  disabled={verifyingDns}
-                  className="rounded-xl mt-4"
-                >
-                  {verifyingDns ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                  {verifyingDns ? "Checking DNS…" : "Verify DNS"}
-                </Button>
-                {lastVerifyResult?.checks && (
-                  <div className="mt-4 rounded-lg border border-border bg-muted/20 p-4 space-y-3">
-                    <p className="text-sm font-medium text-foreground">Check results</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {lastVerifyResult.checks.spf && (
-                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.spf.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
-                          {lastVerifyResult.checks.spf.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                          <span className="text-sm">SPF — {lastVerifyResult.checks.spf.ok ? "OK" : lastVerifyResult.checks.spf.error || "Failed"}</span>
-                        </div>
-                      )}
-                      {lastVerifyResult.checks.dmarc && (
-                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2", lastVerifyResult.checks.dmarc.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-destructive/10 text-destructive")}>
-                          {lastVerifyResult.checks.dmarc.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                          <span className="text-sm">DMARC — {lastVerifyResult.checks.dmarc.ok ? "OK" : lastVerifyResult.checks.dmarc.error || "Failed"}</span>
-                        </div>
-                      )}
-                      {lastVerifyResult.checks.resend && (
-                        <div className={cn("flex items-start gap-2 rounded-md px-3 py-2 sm:col-span-2", lastVerifyResult.checks.resend.ok ? "bg-green-500/10 text-green-700 dark:text-green-400" : "bg-amber-500/10 text-amber-900 dark:text-amber-200")}>
-                          {lastVerifyResult.checks.resend.ok ? <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" /> : <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />}
-                          <span className="text-sm">
-                            Resend domain — {lastVerifyResult.checks.resend.ok ? "validated" : "not validated — check API key and domain in Resend"}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                <p className="text-sm text-muted-foreground mt-2">
-                  <strong>Verify DNS</strong> re-checks your domain against Resend (with your saved API key) and runs advisory SPF/DMARC
-                  lookups. When Resend validates and credentials + webhook are in place, the inbox unlocks.
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-      </AppPageContainer>
-    )
+    return <MailProvisioningView workspaceName={organization?.name} />
   }
-
   return (
     <AppPageContainer fullWidth>
       <div className="flex flex-col md:flex-row min-h-[min(100dvh,920px)] gap-0">
