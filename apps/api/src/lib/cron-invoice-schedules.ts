@@ -3,18 +3,26 @@ import { DateTime } from "luxon";
 import { prisma } from "./prisma.js";
 import * as s3 from "./storage/s3.js";
 import { logger } from "./logger.js";
-import { calculateTotals, type InvoiceItem, type CustomAdjustment } from "./invoice/calculations.js";
+import type { CustomAdjustment, InvoiceItem, InvoiceTotals } from "./invoice/calculations.js";
 import { getNextInvoiceNumber } from "./invoice-next-number.js";
 import {
   computeNextRunUtcAfterIssue,
   isScheduleFrequency,
   parseTimeLocal,
 } from "./invoice-schedule-time.js";
+import {
+  buildTotalsFromInvoiceRow,
+  buildTotalsFromPayload,
+  parseScheduleTemplatePayload,
+  templatePayloadToInvoiceItems,
+} from "./invoice-schedule-template.js";
 import { sendInvoiceEmailSystem, sendInvoiceWhatsAppSystem } from "./invoice-outbound-send.js";
 import { ensureInvoicePdfBuffer } from "./invoice-pdf-helpers.js";
 
-type ScheduleWithTemplate = Prisma.invoice_scheduleGetPayload<{
-  include: { template_invoice: { include: { items: true } } };
+type ScheduleWithRelations = Prisma.invoice_scheduleGetPayload<{
+  include: {
+    template_invoice: { include: { items: true } };
+  };
 }>;
 
 async function deleteInvoiceCleanup(invoiceId: string, pdfKey: string | null | undefined) {
@@ -22,14 +30,16 @@ async function deleteInvoiceCleanup(invoiceId: string, pdfKey: string | null | u
   await prisma.invoice.delete({ where: { id: invoiceId } }).catch(() => {});
 }
 
-async function processOneSchedule(schedule: ScheduleWithTemplate) {
+async function processOneSchedule(schedule: ScheduleWithRelations) {
   if (!isScheduleFrequency(schedule.frequency)) {
     throw new Error(`Invalid frequency: ${schedule.frequency}`);
   }
 
-  const tmpl = schedule.template_invoice;
-  if (tmpl.document_type !== "invoice") {
-    throw new Error("Template must be an invoice, not a quote");
+  const hasPayload = schedule.template_payload != null;
+  const hasLinked = !!schedule.template_invoice_id;
+
+  if (hasPayload === hasLinked) {
+    throw new Error("Schedule must have either an inline template or a linked invoice (not both, not neither)");
   }
 
   const orgId = schedule.organization_id;
@@ -51,34 +61,95 @@ async function processOneSchedule(schedule: ScheduleWithTemplate) {
   const zone = schedule.timezone?.trim() || "UTC";
   const issueZ = DateTime.now().setZone(zone).startOf("day");
 
-  const items: InvoiceItem[] = tmpl.items.map((it, i) => ({
-    description: it.description,
-    quantity: it.quantity,
-    unit_price: Number(it.unit_price),
-    tax_percent: it.tax_percent ?? undefined,
-    tax_exempt: it.tax_exempt,
-    special_tax_rate: it.special_tax_rate ?? undefined,
-    sort_order: i,
-  }));
+  let items: InvoiceItem[];
+  let totals: InvoiceTotals;
+  let currency: string;
+  let language: string;
+  let company_name: string;
+  let company_email: string | null;
+  let company_phone: string | null;
+  let company_vat: string | null;
+  let company_logo: string | null;
+  let company_address: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  let client_name: string;
+  let client_email: string | null;
+  let client_phone: string | null;
+  let client_address: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  let tax_inclusive: boolean;
+  let global_tax_percent: number | null;
+  let custom_adjustments_json: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  let notes: string | null;
+  let terms: string | null;
 
-  const customAdj =
-    (tmpl.custom_adjustments as unknown as CustomAdjustment[] | null)?.filter(
-      (a) => a && String(a.label || "").length > 0
-    ) ?? [];
+  if (hasLinked) {
+    const tmpl = schedule.template_invoice;
+    if (!tmpl) throw new Error("Linked template invoice not found");
+    if (tmpl.document_type !== "invoice") throw new Error("Linked template must be an invoice");
 
-  const totals = calculateTotals(items, {
-    globalTaxPercent: tmpl.global_tax_percent ?? undefined,
-    globalDiscountAmount: Number(tmpl.discount_amount),
-    shippingAmount: Number(tmpl.shipping_amount),
-    taxInclusive: tmpl.tax_inclusive,
-    customAdjustments: customAdj.length > 0 ? customAdj : undefined,
-  });
+    const built = buildTotalsFromInvoiceRow(tmpl);
+    items = built.items;
+    totals = built.totals;
+    currency = tmpl.currency;
+    language = tmpl.language;
+    company_name = tmpl.company_name;
+    company_email = tmpl.company_email;
+    company_phone = tmpl.company_phone;
+    company_vat = tmpl.company_vat;
+    company_logo = tmpl.company_logo;
+    company_address = tmpl.company_address ?? Prisma.JsonNull;
+    client_name = tmpl.client_name;
+    client_email = tmpl.client_email;
+    client_phone = tmpl.client_phone;
+    client_address = tmpl.client_address ?? Prisma.JsonNull;
+    tax_inclusive = tmpl.tax_inclusive;
+    global_tax_percent = tmpl.global_tax_percent;
+    const customAdj =
+      (tmpl.custom_adjustments as unknown as CustomAdjustment[] | null)?.filter(
+        (a) => a && String(a.label || "").length > 0
+      ) ?? [];
+    custom_adjustments_json =
+      customAdj.length > 0 ? (customAdj as unknown as Prisma.InputJsonValue) : Prisma.JsonNull;
+    notes = tmpl.notes;
+    terms = tmpl.terms;
+  } else {
+    const parsed = parseScheduleTemplatePayload(schedule.template_payload);
+    if (!parsed) throw new Error("Invalid or missing inline template");
+    items = templatePayloadToInvoiceItems(parsed);
+    totals = buildTotalsFromPayload(parsed);
+    currency = parsed.currency;
+    language = parsed.language;
+    company_name = parsed.companyName;
+    company_email = parsed.companyEmail ?? null;
+    company_phone = parsed.companyPhone ?? null;
+    company_vat = parsed.companyVat ?? null;
+    company_logo = parsed.companyLogo ?? null;
+    company_address = parsed.companyAddress
+      ? (parsed.companyAddress as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
+    client_name = parsed.clientName;
+    client_email = parsed.clientEmail ?? null;
+    client_phone = parsed.clientPhone ?? null;
+    client_address = parsed.clientAddress
+      ? (parsed.clientAddress as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
+    tax_inclusive = parsed.taxInclusive;
+    global_tax_percent = parsed.globalTaxPercent ?? null;
+    const customAdj = parsed.customAdjustments?.filter((a) => a && String(a.label || "").length > 0) ?? [];
+    custom_adjustments_json =
+      customAdj.length > 0 ? (customAdj as unknown as Prisma.InputJsonValue) : Prisma.JsonNull;
+    notes = parsed.notes ?? null;
+    terms = parsed.terms ?? null;
+  }
 
   const invoiceNumber = await getNextInvoiceNumber(orgId, "invoice");
   const issueIso = issueZ.toISODate()!;
   const date = new Date(`${issueIso}T12:00:00.000Z`);
-  const dueIso = issueZ.plus({ days: schedule.due_days_after_issue }).toISODate()!;
-  const dueDate = new Date(`${dueIso}T12:00:00.000Z`);
+  const dueDate =
+    schedule.due_days_after_issue != null && schedule.due_days_after_issue >= 0
+      ? new Date(
+          `${issueZ.plus({ days: schedule.due_days_after_issue }).toISODate()}T12:00:00.000Z`
+        )
+      : null;
 
   const created = await prisma.invoice.create({
     data: {
@@ -88,29 +159,28 @@ async function processOneSchedule(schedule: ScheduleWithTemplate) {
       status: "draft",
       date,
       due_date: dueDate,
-      currency: tmpl.currency,
-      language: tmpl.language,
-      company_name: tmpl.company_name,
-      company_email: tmpl.company_email,
-      company_phone: tmpl.company_phone,
-      company_vat: tmpl.company_vat,
-      company_logo: tmpl.company_logo,
-      company_address: tmpl.company_address ?? Prisma.JsonNull,
-      client_name: tmpl.client_name,
-      client_email: tmpl.client_email,
-      client_phone: tmpl.client_phone,
-      client_address: tmpl.client_address ?? Prisma.JsonNull,
+      currency,
+      language,
+      company_name,
+      company_email,
+      company_phone,
+      company_vat,
+      company_logo,
+      company_address,
+      client_name,
+      client_email,
+      client_phone,
+      client_address,
       subtotal: totals.subtotal,
       total_tax: totals.totalTax,
       discount_amount: totals.discount,
       shipping_amount: totals.shipping,
       grand_total: totals.grandTotal,
-      tax_inclusive: tmpl.tax_inclusive,
-      global_tax_percent: tmpl.global_tax_percent,
-      custom_adjustments:
-        customAdj.length > 0 ? (customAdj as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
-      notes: tmpl.notes,
-      terms: tmpl.terms,
+      tax_inclusive,
+      global_tax_percent,
+      custom_adjustments: custom_adjustments_json,
+      notes,
+      terms,
       items: {
         create: items.map((it, i) => ({
           description: it.description,

@@ -9,6 +9,10 @@ import {
   parseTimeLocal,
   SCHEDULE_FREQUENCIES,
 } from "../lib/invoice-schedule-time.js";
+import {
+  parseScheduleTemplatePayload,
+  schedulePayloadToPrismaJson,
+} from "../lib/invoice-schedule-template.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -66,15 +70,34 @@ router.post("/", async (req: Request, res: Response) => {
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
     if (!(await ensureInvoicesEnabled(organizationId))) return res.status(403).json({ error: "Invoices not enabled" });
 
-    const templateInvoiceId = String(body.templateInvoiceId || "").trim();
-    if (!templateInvoiceId) return res.status(400).json({ error: "templateInvoiceId required" });
+    const templateInvoiceId = String(body.templateInvoiceId ?? "").trim();
+    const templateBody = body.template;
+    const hasLinked = !!templateInvoiceId;
+    const hasInline = templateBody != null && typeof templateBody === "object" && !Array.isArray(templateBody);
 
-    const tmpl = await prisma.invoice.findFirst({
-      where: { id: templateInvoiceId, organization_id: organizationId },
-    });
-    if (!tmpl) return res.status(404).json({ error: "Template invoice not found" });
-    if (tmpl.document_type !== "invoice") {
-      return res.status(400).json({ error: "Template must be an invoice (not a quote)" });
+    if (hasLinked === hasInline) {
+      return res.status(400).json({
+        error: "Provide exactly one of: templateInvoiceId (existing invoice) or template (inline invoice fields)",
+      });
+    }
+
+    let parsedTemplate = null as ReturnType<typeof parseScheduleTemplatePayload>;
+    if (hasLinked) {
+      const tmpl = await prisma.invoice.findFirst({
+        where: { id: templateInvoiceId, organization_id: organizationId },
+      });
+      if (!tmpl) return res.status(404).json({ error: "Template invoice not found" });
+      if (tmpl.document_type !== "invoice") {
+        return res.status(400).json({ error: "Template must be an invoice (not a quote)" });
+      }
+    } else {
+      parsedTemplate = parseScheduleTemplatePayload(templateBody);
+      if (!parsedTemplate) {
+        return res.status(400).json({
+          error:
+            "Invalid template: require companyName, clientName, and at least one line item with descriptions",
+        });
+      }
     }
 
     const frequency = String(body.frequency || "").trim();
@@ -90,7 +113,12 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const timezone = String(body.timezone || "UTC").trim() || "UTC";
-    const dueDaysAfterIssue = Math.max(0, Math.min(365 * 5, parseInt(String(body.dueDaysAfterIssue ?? 14), 10) || 14));
+
+    let dueDaysAfterIssue: number | null = null;
+    if (body.dueDaysAfterIssue !== undefined && body.dueDaysAfterIssue !== null) {
+      const n = parseInt(String(body.dueDaysAfterIssue), 10);
+      if (!Number.isNaN(n)) dueDaysAfterIssue = Math.max(0, Math.min(365 * 5, n));
+    }
     const sendEmail = !!body.sendEmail;
     const sendWhatsapp = !!body.sendWhatsapp;
 
@@ -111,11 +139,12 @@ router.post("/", async (req: Request, res: Response) => {
       data: {
         organization_id: organizationId,
         name: body.name ? String(body.name).slice(0, 200) : null,
-        template_invoice_id: templateInvoiceId,
+        template_invoice_id: hasLinked ? templateInvoiceId : null,
+        template_payload: hasLinked ? Prisma.DbNull : schedulePayloadToPrismaJson(parsedTemplate!),
         frequency,
         time_local: timeLocal,
         timezone,
-        due_days_after_issue: dueDaysAfterIssue,
+        due_days_after_issue: dueDaysAfterIssue ?? undefined,
         send_email: sendEmail,
         send_whatsapp: sendWhatsapp,
         email_to_override: body.emailToOverride ? String(body.emailToOverride).slice(0, 255) : null,
@@ -179,7 +208,14 @@ router.patch("/:id", async (req: Request, res: Response) => {
     }
     if (body.timezone !== undefined) data.timezone = String(body.timezone).trim() || "UTC";
     if (body.dueDaysAfterIssue !== undefined) {
-      data.due_days_after_issue = Math.max(0, Math.min(365 * 5, parseInt(String(body.dueDaysAfterIssue), 10) || 14));
+      if (body.dueDaysAfterIssue === null) {
+        data.due_days_after_issue = { set: null };
+      } else {
+        const n = parseInt(String(body.dueDaysAfterIssue), 10);
+        data.due_days_after_issue = Number.isNaN(n)
+          ? { set: null }
+          : Math.max(0, Math.min(365 * 5, n));
+      }
     }
     if (body.sendEmail !== undefined) data.send_email = !!body.sendEmail;
     if (body.sendWhatsapp !== undefined) data.send_whatsapp = !!body.sendWhatsapp;
@@ -204,13 +240,36 @@ router.patch("/:id", async (req: Request, res: Response) => {
       data.next_run_at = d;
     }
 
-    if (body.templateInvoiceId !== undefined) {
+    const patchTid = body.templateInvoiceId !== undefined;
+    const patchTpl = body.template !== undefined;
+    if (patchTid && patchTpl) {
+      return res.status(400).json({ error: "Cannot set both template and templateInvoiceId" });
+    }
+
+    if (patchTpl) {
+      if (body.template === null || typeof body.template !== "object" || Array.isArray(body.template)) {
+        return res.status(400).json({ error: "template must be an object" });
+      }
+      const parsed = parseScheduleTemplatePayload(body.template);
+      if (!parsed) {
+        return res.status(400).json({
+          error:
+            "Invalid template: require companyName, clientName, and at least one line item with descriptions",
+        });
+      }
+      data.template_payload = schedulePayloadToPrismaJson(parsed);
+      data.template_invoice = { disconnect: true };
+    }
+
+    if (patchTid) {
       const tid = String(body.templateInvoiceId).trim();
+      if (!tid) return res.status(400).json({ error: "templateInvoiceId required when switching to linked template" });
       const inv = await prisma.invoice.findFirst({
         where: { id: tid, organization_id: orgId, document_type: "invoice" },
       });
       if (!inv) return res.status(400).json({ error: "Template invoice not found or not an invoice" });
       data.template_invoice = { connect: { id: tid } };
+      data.template_payload = Prisma.DbNull;
     }
 
     const schedule = await prisma.invoice_schedule.update({

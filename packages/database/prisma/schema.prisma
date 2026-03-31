@@ -790,21 +790,25 @@ model invoice {
   @@index([document_type])
 }
 
-/// Recurring invoice: clones template invoice on each run, generates PDF, sends via email and/or WhatsApp.
+/// Recurring invoice: each run builds a new invoice from template_invoice OR template_payload JSON.
 model invoice_schedule {
   id                       String       @id @default(cuid())
   organization_id          String
   organization             organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   name                     String?      @db.VarChar(200)
-  template_invoice_id      String
-  template_invoice         invoice      @relation("InvoiceScheduleTemplate", fields: [template_invoice_id], references: [id], onDelete: Restrict)
+  /// When set, clone this invoice each run. Omit when using template_payload.
+  template_invoice_id      String?
+  template_invoice         invoice?     @relation("InvoiceScheduleTemplate", fields: [template_invoice_id], references: [id], onDelete: Restrict)
+  /// Inline template (same shape as invoice create body fields). Used when template_invoice_id is null.
+  template_payload         Json?
   /// daily | weekly | biweekly | monthly | quarterly | yearly
   frequency                String       @db.VarChar(16)
   /// Local send time 24h, e.g. 09:00
   time_local               String       @db.VarChar(5)
   /// IANA timezone, e.g. Africa/Johannesburg
   timezone                 String       @default("UTC") @db.VarChar(64)
-  due_days_after_issue     Int          @default(14)
+  /// Days after issue date for due_date; null = no due date on generated invoices.
+  due_days_after_issue     Int?
   send_email               Boolean      @default(false)
   send_whatsapp            Boolean      @default(false)
   email_to_override        String?      @db.VarChar(255)
