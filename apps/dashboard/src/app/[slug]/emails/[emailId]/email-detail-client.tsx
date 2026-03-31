@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { api } from "@/lib/api"
@@ -36,6 +36,20 @@ import {
 import { toast } from "sonner"
 import DOMPurify from "dompurify"
 import { cn } from "@/lib/utils"
+import { OUTBOUND_MAX_ATTACHMENT_BYTES } from "@/lib/email-compose-constants"
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => {
+      const s = String(r.result || "")
+      const i = s.indexOf(",")
+      resolve(i >= 0 ? s.slice(i + 1) : s)
+    }
+    r.onerror = () => reject(new Error("Could not read file"))
+    r.readAsDataURL(file)
+  })
+}
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -282,6 +296,8 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
   const [textPreviewContent, setTextPreviewContent] = useState<string | null>(null)
   const [replyText, setReplyText] = useState("")
   const [replyFromLocal, setReplyFromLocal] = useState("noreply")
+  const [replyAttachments, setReplyAttachments] = useState<{ id: string; file: File }[]>([])
+  const replyFileRef = useRef<HTMLInputElement>(null)
   const [sendingReply, setSendingReply] = useState(false)
   const [starred, setStarred] = useState(!!seedEmail.starred)
   const [starSaving, setStarSaving] = useState(false)
@@ -422,13 +438,26 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
     if (!text || !replyAnchor) return
     setSendingReply(true)
     try {
-      const result = (await api.post(`/api/emails/${replyAnchor.id}/reply`, {
+      const att: { filename: string; contentType: string; contentBase64: string }[] = []
+      for (const a of replyAttachments.slice(0, 10)) {
+        if (a.file.size > OUTBOUND_MAX_ATTACHMENT_BYTES) {
+          throw new Error(`"${a.file.name}" exceeds 8 MB`)
+        }
+        att.push({
+          filename: a.file.name,
+          contentType: a.file.type || "application/octet-stream",
+          contentBase64: await readFileAsBase64(a.file),
+        })
+      }
+      const result = (await api.emails.reply(replyAnchor.id, {
         text,
         fromLocalPart: replyFromLocal.trim() || undefined,
+        attachments: att.length ? att : undefined,
       })) as { success?: boolean; error?: string }
       if (!result?.success) throw new Error(result?.error || "Failed to send reply")
       toast.success("Reply sent")
       setReplyText("")
+      setReplyAttachments([])
       await refreshThread()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send reply")
@@ -754,9 +783,43 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
                   />
                 </div>
                 <div className="space-y-1 min-w-0">
-                  <Label htmlFor="reply-body" className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    Message
-                  </Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="reply-body" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Message
+                    </Label>
+                    <input
+                      ref={replyFileRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = e.target.files
+                        if (!files?.length) return
+                        const next: { id: string; file: File }[] = []
+                        for (let i = 0; i < files.length && replyAttachments.length + next.length < 10; i++) {
+                          const f = files[i]
+                          if (f.size > OUTBOUND_MAX_ATTACHMENT_BYTES) {
+                            toast.error(`"${f.name}" exceeds 8 MB`)
+                            continue
+                          }
+                          next.push({ id: `${Date.now()}-${i}`, file: f })
+                        }
+                        setReplyAttachments((prev) => [...prev, ...next].slice(0, 10))
+                        e.target.value = ""
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground"
+                      onClick={() => replyFileRef.current?.click()}
+                      disabled={replyAttachments.length >= 10}
+                    >
+                      <Paperclip className="h-3.5 w-3.5 mr-1" />
+                      Attach
+                    </Button>
+                  </div>
                   <Textarea
                     id="reply-body"
                     value={replyText}
@@ -765,6 +828,26 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
                     className="min-h-[72px] max-h-[200px] resize-y text-sm sm:min-h-[80px]"
                     rows={3}
                   />
+                  {replyAttachments.length > 0 ? (
+                    <ul className="flex flex-wrap gap-1.5 text-[11px]">
+                      {replyAttachments.map((a) => (
+                        <li
+                          key={a.id}
+                          className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 px-2 py-0.5"
+                        >
+                          <span className="max-w-[140px] truncate">{a.file.name}</span>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label="Remove"
+                            onClick={() => setReplyAttachments((prev) => prev.filter((x) => x.id !== a.id))}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </div>
               </div>
             </div>

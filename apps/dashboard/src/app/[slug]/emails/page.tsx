@@ -30,6 +30,7 @@ import {
   InboxIcon,
   Star,
   Clock,
+  Settings2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -41,6 +42,7 @@ import { cn } from "@/lib/utils"
 import { MailboxSidebar, type MailboxId, type FolderCounts } from "@/components/emails/mailbox-sidebar"
 import { MailProvisioningView } from "@/components/emails/mail-provisioning-view"
 import { MailComposeFullscreen } from "@/components/emails/mail-compose-fullscreen"
+import { MailEmailSettingsSheet } from "@/components/emails/mail-email-settings-sheet"
 
 function smartDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : new Date(date)
@@ -63,7 +65,7 @@ function smartDate(date: Date | string): string {
 }
 
 export default function EmailsPage() {
-  const { organization } = useOrganization()
+  const { organization, userRole } = useOrganization()
   const ctx = useEmailsContext()
   const {
     emails,
@@ -108,6 +110,8 @@ export default function EmailsPage() {
     scheduled: 0,
   })
   const [composeOpen, setComposeOpen] = useState(false)
+  const [mailSettingsOpen, setMailSettingsOpen] = useState(false)
+  const canEditMailSettings = userRole === "owner" || userRole === "admin"
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
@@ -623,6 +627,18 @@ export default function EmailsPage() {
                 ) : null}
                 <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl border-border/60 shadow-sm shrink-0"
+                  onClick={() => setMailSettingsOpen(true)}
+                >
+                  <Settings2 className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">
+                    {canEditMailSettings ? "Email settings" : "Email signature"}
+                  </span>
+                </Button>
+                <Button
+                  type="button"
                   size="sm"
                   className="shrink-0 rounded-xl bg-primary shadow-md shadow-primary/15 transition-transform hover:bg-primary/90 active:scale-[0.98]"
                   onClick={() => setComposeOpen(true)}
@@ -640,6 +656,12 @@ export default function EmailsPage() {
             organizationId={organization.id}
             domain={setupStatus?.domain}
             onRefresh={handleMailRefresh}
+          />
+          <MailEmailSettingsSheet
+            open={mailSettingsOpen}
+            onOpenChange={setMailSettingsOpen}
+            organizationId={organization.id}
+            domain={setupStatus?.domain}
           />
 
       {/* Toolbar */}

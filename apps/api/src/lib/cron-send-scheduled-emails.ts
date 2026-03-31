@@ -1,7 +1,10 @@
+import { Prisma } from "@luminum/database";
 import { prisma } from "./prisma.js";
 import { logger } from "./logger.js";
 import { extractMailboxLocalPart, getOrgReplyAddress, sendOutboundViaResend } from "./email-send.js";
 import { broadcastOrgEmailOutboundSent } from "./org-ws-broadcast.js";
+import { mergeOutboundWithSignature } from "./email-outbound-body.js";
+import { parsePendingAttachmentsFromDb } from "./email-attachments.js";
 
 /**
  * Deliver outbound rows with scheduled_send_at <= now and sent_at null.
@@ -22,6 +25,19 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
     },
     take: 40,
     orderBy: { scheduled_send_at: "asc" },
+    select: {
+      id: true,
+      organization_id: true,
+      from: true,
+      to: true,
+      subject: true,
+      text: true,
+      html: true,
+      messageId: true,
+      in_reply_to: true,
+      references: true,
+      outbound_pending_attachments: true,
+    },
   });
 
   for (const row of due) {
@@ -55,13 +71,20 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
     }
 
     try {
+      const merged = await mergeOutboundWithSignature(organizationId, {
+        text: row.text || "",
+        html: row.html,
+      });
+      const pending = parsePendingAttachmentsFromDb(row.outbound_pending_attachments);
+
       const sendResult = await sendOutboundViaResend(organizationId, {
         from: fromAddr,
         replyTo: replyToAddr,
         to: toList,
         subject: row.subject,
-        text: row.text || "",
-        html: row.html || undefined,
+        text: merged.text,
+        html: merged.html,
+        attachments: pending?.length ? pending : undefined,
         messageId,
         inReplyTo: row.in_reply_to || undefined,
         references: row.references || undefined,
@@ -73,6 +96,9 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
           messageId: sendResult.messageId,
           sent_at: new Date(),
           scheduled_send_at: null,
+          outbound_pending_attachments: Prisma.DbNull,
+          text: merged.text || null,
+          html: merged.html ?? null,
           outbound_provider: sendResult.provider,
           provider_message_id: sendResult.providerMessageId ?? null,
         },

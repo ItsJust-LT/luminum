@@ -70,6 +70,7 @@ export async function getOrgReplyAddress(
       emails_enabled: true,
       email_domain_id: true,
       name: true,
+      email_default_from_local: true,
       email_domain: { select: { domain: true } },
     },
   });
@@ -79,7 +80,12 @@ export async function getOrgReplyAddress(
   const domain = org.email_domain.domain.toLowerCase().replace(/\.$/, "");
   let local = normalizeEmailLocalPart(fromLocalPart ?? "");
   if (!local) {
-    local = "noreply";
+    const def = org.email_default_from_local?.trim();
+    if (def && isValidEmailLocalPart(def)) {
+      local = normalizeEmailLocalPart(def);
+    } else {
+      local = "noreply";
+    }
   }
   if (!isValidEmailLocalPart(local)) {
     throw new Error("Invalid From address: use letters, numbers, and . _ - only (1–64 characters before @)");

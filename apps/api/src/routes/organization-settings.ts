@@ -10,6 +10,8 @@ import { decryptEmailSecret, getEmailSecretsKeyIssue, isEmailSecretsKeyConfigure
 import { getOrgWithResendFields, maskResendApiKey } from "../lib/resend-org.js";
 import { config } from "../config.js";
 import { invalidateDomainLookupCacheForOrganization } from "../lib/invalidate-domain-lookup-cache.js";
+import { sanitizeSignatureHtml } from "../lib/email-outbound-body.js";
+import { isValidEmailLocalPart, normalizeEmailLocalPart } from "../lib/email-send.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -115,6 +117,106 @@ router.get("/storage", async (req: Request, res: Response) => {
           : null,
       },
     });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/organization-settings/email-composer?organizationId=...
+router.get("/email-composer", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+
+    const member = await getMemberOrAdmin(organizationId, req.user);
+    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        emails_enabled: true,
+        email_signature_html: true,
+        email_signature_text: true,
+        email_signature_enabled: true,
+        email_default_from_local: true,
+      },
+    });
+    if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
+
+    const canEdit = member.role === "owner" || member.role === "admin";
+    res.json({
+      success: true,
+      data: {
+        signatureHtml: org.email_signature_html ?? "",
+        signatureText: org.email_signature_text ?? "",
+        signatureEnabled: org.email_signature_enabled ?? true,
+        defaultFromLocal: org.email_default_from_local ?? "",
+        emailsEnabled: org.emails_enabled ?? false,
+        canEdit,
+      },
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// PATCH /api/organization-settings/email-composer?organizationId=...
+router.patch("/email-composer", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+
+    const member = await getMemberOrAdmin(organizationId, req.user);
+    if (!member || (member.role !== "owner" && member.role !== "admin")) {
+      return res.status(403).json({ success: false, error: "Insufficient permissions" });
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { emails_enabled: true },
+    });
+    if (!org?.emails_enabled) {
+      return res.status(400).json({ success: false, error: "Enable organization email before editing composer settings" });
+    }
+
+    const body = req.body as {
+      signatureHtml?: string;
+      signatureText?: string;
+      signatureEnabled?: boolean;
+      defaultFromLocal?: string | null;
+    };
+
+    const data: Record<string, unknown> = {};
+    if (body.signatureHtml !== undefined) {
+      const t = typeof body.signatureHtml === "string" ? body.signatureHtml.trim() : "";
+      data.email_signature_html = t ? sanitizeSignatureHtml(t) : null;
+    }
+    if (body.signatureText !== undefined) {
+      const t = typeof body.signatureText === "string" ? body.signatureText.trim().slice(0, 16_000) : "";
+      data.email_signature_text = t || null;
+    }
+    if (typeof body.signatureEnabled === "boolean") {
+      data.email_signature_enabled = body.signatureEnabled;
+    }
+    if (body.defaultFromLocal !== undefined) {
+      if (body.defaultFromLocal === null || body.defaultFromLocal === "") {
+        data.email_default_from_local = null;
+      } else if (typeof body.defaultFromLocal === "string") {
+        const n = normalizeEmailLocalPart(body.defaultFromLocal);
+        if (!isValidEmailLocalPart(n)) {
+          return res.status(400).json({ success: false, error: "Invalid default From local part" });
+        }
+        data.email_default_from_local = n;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, error: "No valid fields to update" });
+    }
+
+    await prisma.organization.update({ where: { id: organizationId }, data: data as any });
+    await invalidateDomainLookupCacheForOrganization(organizationId);
+    res.json({ success: true });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }

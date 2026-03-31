@@ -18,6 +18,8 @@ import {
   broadcastOrgEmailUpdated,
 } from "../lib/org-ws-broadcast.js";
 import { loadEmailThread } from "../lib/email-thread.js";
+import { mergeOutboundWithSignature, sanitizeComposeHtml } from "../lib/email-outbound-body.js";
+import { normalizeAttachmentsFromRequest } from "../lib/email-attachments.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -75,16 +77,6 @@ function senderDisplayName(req: Request): string | undefined {
   const u = (req as Request & { user?: { name?: string | null } }).user;
   const n = u?.name?.trim();
   return n || undefined;
-}
-
-function outboundHtmlFromPlainText(text: string): string {
-  const esc = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-  const body = esc.replace(/\r\n/g, "\n").split("\n").join("<br />\n");
-  return `<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.55;color:#111827;">${body}</div>`;
 }
 
 function mapEmailToClientDto(e: any) {
@@ -445,7 +437,7 @@ router.post("/send", async (req: Request, res: Response) => {
       /** Mailbox name only (before @); must match org email domain on the server. */
       fromLocalPart?: string;
     };
-    if (!organizationId || !subject || (!text && !html)) {
+    if (!organizationId || !subject || (!text?.trim() && !html?.trim())) {
       return res.status(400).json({ success: false, error: "organizationId, subject, and text or html required" });
     }
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
@@ -465,17 +457,15 @@ router.post("/send", async (req: Request, res: Response) => {
     const toList = Array.isArray(toInput) ? toInput : toInput ? [toInput] : [];
     if (toList.length === 0) return res.status(400).json({ success: false, error: "At least one recipient required" });
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
-    const attachments: { filename: string; contentType: string; contentBase64: string }[] = [];
-    if (attachmentsInput && attachmentsInput.length > 0 && attachmentsInput.length <= 10) {
-      for (const a of attachmentsInput) {
-        if (a.contentBase64 && a.filename && a.contentType) {
-          attachments.push({ filename: a.filename, contentType: a.contentType, contentBase64: a.contentBase64 });
-        }
-      }
-    }
+    const attachments = normalizeAttachmentsFromRequest(attachmentsInput);
+    const merged = await mergeOutboundWithSignature(organizationId, {
+      text: text?.trim() || "",
+      html: html?.trim() || null,
+    });
     const sendResult = await sendOutboundViaResend(organizationId, {
       from, replyTo, to: toList, subject,
-      text: text || "", html: html || undefined,
+      text: merged.text,
+      html: merged.html,
       attachments: attachments.length ? attachments : undefined,
       messageId,
     });
@@ -485,8 +475,8 @@ router.post("/send", async (req: Request, res: Response) => {
         from,
         to: JSON.stringify(toList),
         subject,
-        text: text || null,
-        html: html || null,
+        text: merged.text || null,
+        html: merged.html ?? null,
         direction: "outbound",
         messageId: sendResult.messageId,
         sent_at: new Date(),
@@ -603,7 +593,7 @@ router.post("/draft", async (req: Request, res: Response) => {
           to: toJson,
           subject: subject ?? "",
           text: text ?? null,
-          html: html ?? null,
+          html: html?.trim() ? sanitizeComposeHtml(html) : null,
           read: true,
         },
       });
@@ -618,7 +608,7 @@ router.post("/draft", async (req: Request, res: Response) => {
         to: toJson,
         subject: subject ?? "",
         text: text ?? null,
-        html: html ?? null,
+        html: html?.trim() ? sanitizeComposeHtml(html) : null,
         direction: "outbound",
         is_draft: true,
         read: true,
@@ -638,7 +628,16 @@ router.post("/draft", async (req: Request, res: Response) => {
 router.post("/schedule", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
-    const { organizationId, to: toInput, subject, text, html, fromLocalPart, scheduledSendAt } = req.body as {
+    const {
+      organizationId,
+      to: toInput,
+      subject,
+      text,
+      html,
+      fromLocalPart,
+      scheduledSendAt,
+      attachments: attachmentsInput,
+    } = req.body as {
       organizationId?: string;
       to?: string | string[];
       subject?: string;
@@ -646,8 +645,9 @@ router.post("/schedule", async (req: Request, res: Response) => {
       html?: string;
       fromLocalPart?: string;
       scheduledSendAt?: string;
+      attachments?: unknown;
     };
-    if (!organizationId || !subject || (!text && !html) || !scheduledSendAt) {
+    if (!organizationId || !subject || (!text?.trim() && !html?.trim()) || !scheduledSendAt) {
       return res.status(400).json({ success: false, error: "organizationId, subject, body, scheduledSendAt required" });
     }
     if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
@@ -670,6 +670,7 @@ router.post("/schedule", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: msg });
     }
 
+    const attachments = normalizeAttachmentsFromRequest(attachmentsInput);
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@scheduled>`;
     const row = await prisma.email.create({
       data: {
@@ -677,8 +678,9 @@ router.post("/schedule", async (req: Request, res: Response) => {
         from,
         to: JSON.stringify(toList),
         subject,
-        text: text || null,
-        html: html || null,
+        text: text?.trim() || null,
+        html: html?.trim() ? sanitizeComposeHtml(html) : null,
+        outbound_pending_attachments: attachments.length ? (attachments as object[]) : undefined,
         direction: "outbound",
         messageId,
         scheduled_send_at: when,
@@ -956,8 +958,13 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
-    const { text, html, fromLocalPart } = req.body as { text?: string; html?: string; fromLocalPart?: string };
-    if (!text && !html) return res.status(400).json({ success: false, error: "text or html required" });
+    const { text, html, fromLocalPart, attachments: attachmentsInput } = req.body as {
+      text?: string;
+      html?: string;
+      fromLocalPart?: string;
+      attachments?: unknown;
+    };
+    if (!text?.trim() && !html?.trim()) return res.status(400).json({ success: false, error: "text or html required" });
     const original = await prisma.email.findUnique({
       where: { id },
       select: {
@@ -983,11 +990,18 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
     const reSubject = (original.subject || "").toLowerCase().startsWith("re:") ? (original.subject || "") : `Re: ${original.subject || ""}`;
     const refs = [original.references, original.messageId].filter(Boolean).join(" ").trim();
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
-    const bodyText = text || "";
-    const bodyHtml = html?.trim() ? html : bodyText ? outboundHtmlFromPlainText(bodyText) : undefined;
+    const bodyText = text?.trim() || "";
+    const bodyHtmlRaw = html?.trim() || null;
+    const merged = await mergeOutboundWithSignature(original.organization_id, {
+      text: bodyText,
+      html: bodyHtmlRaw,
+    });
+    const attachments = normalizeAttachmentsFromRequest(attachmentsInput);
     const sendResult = await sendOutboundViaResend(original.organization_id, {
       from, replyTo, to: [toAddr], subject: reSubject,
-      text: bodyText, html: bodyHtml,
+      text: merged.text,
+      html: merged.html,
+      attachments: attachments.length ? attachments : undefined,
       inReplyTo: original.messageId || undefined, references: refs || undefined, messageId,
     });
     const emailRecord = await prisma.email.create({
@@ -996,8 +1010,8 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
         from,
         to: JSON.stringify([toAddr.trim()]),
         subject: reSubject,
-        text: bodyText || null,
-        html: bodyHtml || null,
+        text: merged.text || null,
+        html: merged.html ?? null,
         direction: "outbound",
         messageId: sendResult.messageId,
         in_reply_to: original.messageId || undefined,

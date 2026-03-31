@@ -17,9 +17,14 @@ import {
   Loader2,
   X,
   CalendarDays,
+  Paperclip,
+  Type,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { MailboxId } from "@/components/emails/mailbox-sidebar"
+import { MailRichEditor } from "@/components/emails/mail-rich-editor"
+import { OUTBOUND_MAX_ATTACHMENT_BYTES } from "@/lib/email-compose-constants"
 
 function pad2(n: number) {
   return String(n).padStart(2, "0")
@@ -59,6 +64,21 @@ function formatSchedulePreview(dateStr: string, timeStr: string): string | null 
   }
 }
 
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => {
+      const s = String(r.result || "")
+      const i = s.indexOf(",")
+      resolve(i >= 0 ? s.slice(i + 1) : s)
+    }
+    r.onerror = () => reject(new Error("Could not read file"))
+    r.readAsDataURL(file)
+  })
+}
+
+type LocalAttachment = { id: string; file: File }
+
 export function MailComposeFullscreen(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -69,15 +89,22 @@ export function MailComposeFullscreen(props: {
 }) {
   const { open, onOpenChange, organizationId, domain, onRefresh } = props
   const [mounted, setMounted] = useState(false)
-  const [composeFromLocal, setComposeFromLocal] = useState("noreply")
+  const [editorSession, setEditorSession] = useState(0)
+  const [richMode, setRichMode] = useState(true)
+  const [composeFromLocal, setComposeFromLocal] = useState("")
   const [composeTo, setComposeTo] = useState("")
   const [composeSubject, setComposeSubject] = useState("")
   const [composeBody, setComposeBody] = useState("")
+  const [composeHtml, setComposeHtml] = useState("")
+  const [composePlain, setComposePlain] = useState("")
+  const [attachments, setAttachments] = useState<LocalAttachment[]>([])
+  const [signatureHint, setSignatureHint] = useState<string | null>(null)
   const [scheduleDate, setScheduleDate] = useState("")
   const [scheduleTime, setScheduleTime] = useState("")
   const [sendingCompose, setSendingCompose] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const closingRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => setMounted(true), [])
 
@@ -86,38 +113,96 @@ export function MailComposeFullscreen(props: {
     setComposeTo("")
     setComposeSubject("")
     setComposeBody("")
+    setComposeHtml("")
+    setComposePlain("")
+    setAttachments([])
+    setSignatureHint(null)
+    setRichMode(true)
     const now = new Date()
     setScheduleDate(localDateString(now))
     setScheduleTime(localTimeString(now))
   }, [])
 
   useEffect(() => {
-    if (open) {
-      resetForm()
-      closingRef.current = false
+    if (!open) return
+    closingRef.current = false
+    resetForm()
+    setEditorSession((s) => s + 1)
+    void (async () => {
+      try {
+        const r = (await api.organizationSettings.getEmailComposer(organizationId)) as {
+          success?: boolean
+          data?: {
+            defaultFromLocal?: string
+            signatureEnabled?: boolean
+            signatureHtml?: string
+            signatureText?: string
+          }
+        }
+        if (r?.success && r.data) {
+          const d = r.data.defaultFromLocal?.trim()
+          setComposeFromLocal(d || "noreply")
+          if (r.data.signatureEnabled && (r.data.signatureHtml?.trim() || r.data.signatureText?.trim())) {
+            setSignatureHint("Your organization signature will be appended when the message is sent.")
+          }
+        } else {
+          setComposeFromLocal("noreply")
+        }
+      } catch {
+        setComposeFromLocal("noreply")
+      }
+    })()
+  }, [open, organizationId, resetForm])
+
+  const hasBody = useMemo(() => {
+    if (richMode) {
+      const t = composePlain.replace(/\u00a0/g, " ").trim()
+      const h = composeHtml.replace(/<[^>]+>/g, "").replace(/\u00a0/g, " ").trim()
+      return Boolean(t || h)
     }
-  }, [open, resetForm])
+    return Boolean(composeBody.trim())
+  }, [richMode, composePlain, composeHtml, composeBody])
 
   const hasDraftableContent = useMemo(() => {
     return Boolean(
       composeTo.trim() ||
         composeSubject.trim() ||
-        composeBody.trim() ||
+        hasBody ||
+        attachments.length > 0 ||
         (composeFromLocal.trim() && composeFromLocal.trim() !== "noreply")
     )
-  }, [composeTo, composeSubject, composeBody, composeFromLocal])
+  }, [composeTo, composeSubject, hasBody, attachments.length, composeFromLocal])
+
+  const buildAttachmentsPayload = useCallback(async () => {
+    const out: { filename: string; contentType: string; contentBase64: string }[] = []
+    for (const a of attachments.slice(0, 10)) {
+      if (a.file.size > OUTBOUND_MAX_ATTACHMENT_BYTES) {
+        throw new Error(`"${a.file.name}" is larger than 8 MB`)
+      }
+      const contentBase64 = await readFileAsBase64(a.file)
+      out.push({
+        filename: a.file.name,
+        contentType: a.file.type || "application/octet-stream",
+        contentBase64,
+      })
+    }
+    return out
+  }, [attachments])
 
   const saveDraftQuietly = useCallback(async (): Promise<boolean> => {
     if (!organizationId || !hasDraftableContent) return true
     setSavingDraft(true)
     try {
       const to = composeTo.trim()
+      const text = richMode ? composePlain.trim() : composeBody.trim()
+      const html = richMode && composeHtml.trim() ? composeHtml.trim() : undefined
       const result = (await api.emails.saveDraft({
         organizationId,
         fromLocalPart: composeFromLocal.trim(),
         to: to ? [to] : [],
         subject: composeSubject.trim(),
-        text: composeBody.trim(),
+        text,
+        html,
       })) as { success?: boolean; error?: string }
       if (!result?.success) throw new Error(result?.error || "Draft save failed")
       toast.success("Saved as draft")
@@ -135,7 +220,10 @@ export function MailComposeFullscreen(props: {
     composeTo,
     composeFromLocal,
     composeSubject,
+    richMode,
+    composePlain,
     composeBody,
+    composeHtml,
     onRefresh,
   ])
 
@@ -179,19 +267,39 @@ export function MailComposeFullscreen(props: {
     return localTimeString(new Date())
   }, [scheduleDate, minDateStr])
 
+  const handleAttachmentsPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files?.length) return
+    const next: LocalAttachment[] = []
+    for (let i = 0; i < files.length && attachments.length + next.length < 10; i++) {
+      const f = files[i]
+      if (f.size > OUTBOUND_MAX_ATTACHMENT_BYTES) {
+        toast.error(`"${f.name}" exceeds 8 MB`)
+        continue
+      }
+      next.push({ id: `${Date.now()}-${i}-${f.name}`, file: f })
+    }
+    setAttachments((prev) => [...prev, ...next].slice(0, 10))
+    e.target.value = ""
+  }
+
   const handleSendEmail = async () => {
     const to = composeTo.trim()
     const subject = composeSubject.trim()
-    const text = composeBody.trim()
-    if (!to || !subject || !text) return
+    const text = richMode ? composePlain.trim() : composeBody.trim()
+    const html = richMode && composeHtml.trim() ? composeHtml.trim() : undefined
+    if (!to || !subject || (!text && !html)) return
     setSendingCompose(true)
     try {
-      const result = (await api.post("/api/emails/send", {
+      const att = await buildAttachmentsPayload()
+      const result = (await api.emails.send({
         organizationId,
         fromLocalPart: composeFromLocal.trim(),
         to: [to],
         subject,
-        text,
+        text: text || "",
+        html,
+        attachments: att.length ? att : undefined,
       })) as { success?: boolean; error?: string }
       if (!result?.success) throw new Error(result?.error || "Failed to send email")
       toast.success("Email sent")
@@ -208,9 +316,10 @@ export function MailComposeFullscreen(props: {
   const handleScheduleSend = async () => {
     const to = composeTo.trim()
     const subject = composeSubject.trim()
-    const text = composeBody.trim()
+    const text = richMode ? composePlain.trim() : composeBody.trim()
+    const html = richMode && composeHtml.trim() ? composeHtml.trim() : undefined
     const when = combineLocalDateTime(scheduleDate, scheduleTime)
-    if (!to || !subject || !text || !when) {
+    if (!to || !subject || (!text && !html) || !when) {
       toast.error("Fill all fields and pick a valid date and time.")
       return
     }
@@ -220,13 +329,16 @@ export function MailComposeFullscreen(props: {
     }
     setSendingCompose(true)
     try {
+      const att = await buildAttachmentsPayload()
       const result = (await api.emails.scheduleSend({
         organizationId,
         fromLocalPart: composeFromLocal.trim(),
         to: [to],
         subject,
-        text,
+        text: text || "",
+        html,
         scheduledSendAt: when.toISOString(),
+        attachments: att.length ? att : undefined,
       })) as { success?: boolean; error?: string }
       if (!result?.success) throw new Error(result?.error || "Schedule failed")
       toast.success("Email scheduled")
@@ -245,12 +357,15 @@ export function MailComposeFullscreen(props: {
     setSavingDraft(true)
     try {
       const to = composeTo.trim()
+      const text = richMode ? composePlain.trim() : composeBody.trim()
+      const html = richMode && composeHtml.trim() ? composeHtml.trim() : undefined
       const result = (await api.emails.saveDraft({
         organizationId,
         fromLocalPart: composeFromLocal.trim(),
         to: to ? [to] : [],
         subject: composeSubject.trim(),
-        text: composeBody.trim(),
+        text,
+        html,
       })) as { success?: boolean; error?: string }
       if (!result?.success) throw new Error(result?.error || "Draft save failed")
       toast.success("Draft saved")
@@ -272,6 +387,20 @@ export function MailComposeFullscreen(props: {
       return "local time"
     }
   }, [])
+
+  const toggleRichMode = (next: boolean) => {
+    if (next === richMode) return
+    if (next) {
+      const lines = composeBody.trim().split("\n")
+      const wrapped = lines.length ? lines.map((l) => `<p>${l || "<br/>"}</p>`).join("") : "<p></p>"
+      setComposeHtml(wrapped)
+      setComposePlain(composeBody.trim())
+      setEditorSession((s) => s + 1)
+    } else {
+      setComposeBody(composePlain.trim() || composeHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    }
+    setRichMode(next)
+  }
 
   if (!mounted) return null
 
@@ -299,7 +428,7 @@ export function MailComposeFullscreen(props: {
             onClick={() => void requestClose()}
           />
           <motion.div
-            className="relative z-10 flex max-h-[min(88dvh,540px)] w-full max-w-[min(56rem,calc(100vw-1.25rem))] flex-col overflow-hidden rounded-t-2xl border border-border/60 bg-background shadow-2xl sm:rounded-2xl sm:max-h-[min(82dvh,520px)]"
+            className="relative z-10 flex max-h-[min(92dvh,620px)] w-full max-w-[min(56rem,calc(100vw-1.25rem))] flex-col overflow-hidden rounded-t-2xl border border-border/60 bg-background shadow-2xl sm:rounded-2xl sm:max-h-[min(88dvh,600px)]"
             initial={{ y: 24, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 16, opacity: 0 }}
@@ -390,23 +519,98 @@ export function MailComposeFullscreen(props: {
                       />
                     </div>
 
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={richMode ? "secondary" : "outline"}
+                        size="sm"
+                        className="h-8 rounded-lg gap-1.5"
+                        onClick={() => toggleRichMode(true)}
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Rich
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={!richMode ? "secondary" : "outline"}
+                        size="sm"
+                        className="h-8 rounded-lg gap-1.5"
+                        onClick={() => toggleRichMode(false)}
+                      >
+                        <Type className="h-3.5 w-3.5" />
+                        Plain
+                      </Button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={handleAttachmentsPick}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-lg gap-1.5"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={attachments.length >= 10}
+                      >
+                        <Paperclip className="h-3.5 w-3.5" />
+                        Attach {attachments.length > 0 ? `(${attachments.length})` : ""}
+                      </Button>
+                    </div>
+
+                    {attachments.length > 0 ? (
+                      <ul className="flex flex-wrap gap-2 text-xs">
+                        {attachments.map((a) => (
+                          <li
+                            key={a.id}
+                            className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 px-2 py-1"
+                          >
+                            <span className="max-w-[200px] truncate">{a.file.name}</span>
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-foreground"
+                              aria-label="Remove attachment"
+                              onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
+                            >
+                              ×
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+
                     <div className="space-y-1.5">
                       <Label htmlFor="mc-body" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         Message
                       </Label>
-                      <Textarea
-                        id="mc-body"
-                        placeholder="Write your message…"
-                        value={composeBody}
-                        onChange={(e) => setComposeBody(e.target.value)}
-                        className="min-h-[7.5rem] max-h-[min(28vh,200px)] resize-y rounded-lg border-border/80 text-[14px] leading-relaxed"
-                      />
+                      {richMode ? (
+                        <MailRichEditor
+                          sessionKey={editorSession}
+                          initialHtml={composeHtml || "<p></p>"}
+                          disabled={sendingCompose || savingDraft}
+                          onChange={(html, plain) => {
+                            setComposeHtml(html)
+                            setComposePlain(plain)
+                          }}
+                        />
+                      ) : (
+                        <Textarea
+                          id="mc-body"
+                          placeholder="Write your message…"
+                          value={composeBody}
+                          onChange={(e) => setComposeBody(e.target.value)}
+                          className="min-h-[7.5rem] max-h-[min(28vh,200px)] resize-y rounded-lg border-border/80 text-[14px] leading-relaxed"
+                        />
+                      )}
+                      {signatureHint ? <p className="text-[11px] text-primary/90">{signatureHint}</p> : null}
                     </div>
                   </div>
 
                   <TabsContent value="send" className="mt-0 space-y-3 outline-none">
                     <p className="text-xs text-muted-foreground sm:text-sm">
-                      Sends immediately from your organization domain.
+                      Sends immediately from your organization domain. Inline images and attachments are supported.
                     </p>
                     <div className="flex flex-col-reverse gap-2 border-t border-border/50 pt-4 sm:flex-row sm:justify-end">
                       <Button variant="outline" className="h-10 rounded-lg" onClick={() => void requestClose()} disabled={sendingCompose || savingDraft}>
@@ -415,7 +619,7 @@ export function MailComposeFullscreen(props: {
                       <Button
                         className="h-10 rounded-lg shadow-md shadow-primary/15"
                         onClick={() => void handleSendEmail()}
-                        disabled={sendingCompose || !composeTo.trim() || !composeSubject.trim() || !composeBody.trim()}
+                        disabled={sendingCompose || !composeTo.trim() || !composeSubject.trim() || !hasBody}
                       >
                         {sendingCompose ? (
                           <>
@@ -497,7 +701,7 @@ export function MailComposeFullscreen(props: {
                           sendingCompose ||
                           !composeTo.trim() ||
                           !composeSubject.trim() ||
-                          !composeBody.trim() ||
+                          !hasBody ||
                           !scheduleDate ||
                           !scheduleTime ||
                           (combineLocalDateTime(scheduleDate, scheduleTime)?.getTime() ?? 0) <= Date.now()

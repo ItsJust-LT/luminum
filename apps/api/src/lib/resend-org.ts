@@ -2,7 +2,7 @@ import { Resend } from "resend";
 import { prisma } from "./prisma.js";
 import { decryptEmailSecret } from "./email-secrets.js";
 
-const OUTBOUND_MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+export const OUTBOUND_MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
 export function maskResendApiKey(key: string): string {
   const t = key.trim();

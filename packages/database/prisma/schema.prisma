@@ -185,6 +185,8 @@ model email {
   starred         Boolean      @default(false)
   is_draft        Boolean      @default(false)
   scheduled_send_at DateTime?  @db.Timestamptz(6)
+  /// Pending file attachments for scheduled sends: [{ filename, contentType, contentBase64 }]
+  outbound_pending_attachments Json?
   /// Resolved Gravatar (or similar) URL for inbound sender; set when mail is received.
   sender_avatar_url String?    @db.Text
   attachments     attachment[]
@@ -258,6 +260,13 @@ model organization {
   resend_last_validated_at                                          DateTime?                 @db.Timestamptz(6)
   resend_last_error                                                 String?                   @db.Text
   email_from_address                                                String?                   @db.VarChar(255)
+  /// Rich HTML signature appended to outbound mail (sanitized on save and at send).
+  email_signature_html                                              String?                   @db.Text
+  /// Plain-text fallback for the signature (and for text-only clients).
+  email_signature_text                                              String?                   @db.Text
+  email_signature_enabled                                           Boolean                   @default(true)
+  /// Default mailbox local part when compose omits From (e.g. sales); must pass RFC local-part rules.
+  email_default_from_local                                          String?                   @db.VarChar(64)
   whatsapp_enabled                                                  Boolean                   @default(false)
   whatsapp_always_on                                                Boolean                   @default(false)
   analytics_enabled                                                 Boolean                   @default(false)

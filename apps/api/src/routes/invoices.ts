@@ -11,6 +11,7 @@ import { calculateTotals, type InvoiceItem, type CustomAdjustment } from "../lib
 import { generateInvoicePdf } from "../lib/invoice/pdf-generator.js";
 import type { InvoiceTemplateData } from "../lib/invoice/html-template.js";
 import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
+import { mergeOutboundWithSignature } from "../lib/email-outbound-body.js";
 import { broadcastOrgEmailOutboundSent } from "../lib/org-ws-broadcast.js";
 import { sendDocumentMessage } from "../whatsapp/manager.js";
 
@@ -612,6 +613,7 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
     const text =
       (message && String(message).trim()) ||
       `Please find your ${docWord.toLowerCase()} attached.\n\nThank you.`;
+    const merged = await mergeOutboundWithSignature(invoice.organization_id, { text, html: null });
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
     const prefix = isQuote ? "quote" : "invoice";
@@ -623,7 +625,8 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
       replyTo,
       to: [recipient],
       subject,
-      text,
+      text: merged.text,
+      html: merged.html,
       attachments: [
         {
           filename,
@@ -640,8 +643,8 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
         from,
         to: JSON.stringify([recipient]),
         subject,
-        text,
-        html: null,
+        text: merged.text,
+        html: merged.html ?? null,
         direction: "outbound",
         messageId: sendResult.messageId,
         sent_at: new Date(),
