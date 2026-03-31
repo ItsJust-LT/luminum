@@ -8,6 +8,11 @@ import { emailAttachmentKey, orgAttachmentsEmailsKey } from "./storage/keys.js";
 import { updateOrganizationStorage } from "./utils/storage.js";
 import { extractZipsFromBodies, type ExtractedZipPart } from "./email-binary-body.js";
 import { normalizeSenderEmail, resolveGravatarAvatarUrl } from "./email-gravatar.js";
+import {
+  normalizeMessageIdForStorage,
+  normalizeReferencesForStorage,
+  pickMailHeader,
+} from "./email-message-id.js";
 
 /** PostgreSQL text/JSON cannot store U+0000; inbound MIME can contain NUL in headers or bodies. */
 export function stripNul(s: string): string {
@@ -90,7 +95,14 @@ export async function persistInboundEmailFromPayload(
   const startTime = Date.now();
 
   const rawMessageId = payload.messageId != null ? stripNul(String(payload.messageId).trim()) || null : null;
-  const messageId = rawMessageId ? rawMessageId.toLowerCase() : null;
+  const messageId =
+    normalizeMessageIdForStorage(rawMessageId) ??
+    (rawMessageId ? stripNul(String(rawMessageId)).trim().toLowerCase() : null);
+
+  const inReplyToRaw = pickMailHeader(payload.headers, "in-reply-to");
+  const referencesRaw = pickMailHeader(payload.headers, "references");
+  const in_reply_to = normalizeMessageIdForStorage(inReplyToRaw);
+  const references = normalizeReferencesForStorage(referencesRaw);
 
   if (messageId) {
     const existing = await prisma.email.findUnique({ where: { messageId }, select: { id: true } });
@@ -188,6 +200,8 @@ export async function persistInboundEmailFromPayload(
       headers: headersSafe,
       receivedAt,
       messageId,
+      in_reply_to,
+      references,
       dedupeKey,
       contentHash,
       sender_avatar_url: senderAvatarUrl,

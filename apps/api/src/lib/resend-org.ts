@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { prisma } from "./prisma.js";
 import { decryptEmailSecret } from "./email-secrets.js";
+import { normalizeMessageIdForStorage } from "./email-message-id.js";
 
 export const OUTBOUND_MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
@@ -135,12 +136,20 @@ export async function sendOutboundViaResendApi(
 ): Promise<{ messageId: string; providerMessageId: string }> {
   const apiKey = await assertOrgCanSendWithResend(organizationId);
   const resend = createResendClient(apiKey);
-  const requestedMid = payload.messageId?.trim() || `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
+  const requestedRaw = payload.messageId?.trim() || `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
+  const messageId =
+    normalizeMessageIdForStorage(requestedRaw) ?? requestedRaw.trim().toLowerCase();
   const headers: Record<string, string> = {
-    "Message-ID": requestedMid,
+    "Message-ID": messageId,
   };
-  if (payload.inReplyTo?.trim()) headers["In-Reply-To"] = payload.inReplyTo.trim();
-  if (payload.references?.trim()) headers["References"] = payload.references.trim();
+  if (payload.inReplyTo?.trim()) {
+    const irt = normalizeMessageIdForStorage(payload.inReplyTo) ?? payload.inReplyTo.trim();
+    headers["In-Reply-To"] = irt;
+  }
+  if (payload.references?.trim()) {
+    const refs = normalizeReferencesForStorage(payload.references) ?? payload.references.trim();
+    headers["References"] = refs;
+  }
 
   const attachments =
     payload.attachments?.map((a) => {
@@ -170,5 +179,5 @@ export async function sendOutboundViaResendApi(
   }
   const id = data?.id?.trim();
   if (!id) throw new Error("Resend returned no message id");
-  return { messageId: requestedMid, providerMessageId: id };
+  return { messageId, providerMessageId: id };
 }

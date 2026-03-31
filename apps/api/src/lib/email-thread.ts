@@ -1,4 +1,5 @@
 import { prisma } from "./prisma.js";
+import { normalizeMessageIdForStorage } from "./email-message-id.js";
 
 /** Normalize subject for loose thread matching (Re:, Fwd:, etc.). */
 export function normalizeThreadSubject(subject: string | null | undefined): string {
@@ -78,8 +79,14 @@ export async function loadEmailThread(organizationId: string, seedId: string): P
   const add = (row: ThreadEmailRow) => {
     if (byId.has(row.id)) return;
     byId.set(row.id, row);
-    if (row.messageId) messageIds.add(row.messageId.trim());
-    if (row.in_reply_to) inReplyTos.add(row.in_reply_to.trim());
+    if (row.messageId) {
+      const n = normalizeMessageIdForStorage(row.messageId) ?? row.messageId.trim().toLowerCase();
+      messageIds.add(n);
+    }
+    if (row.in_reply_to) {
+      const n = normalizeMessageIdForStorage(row.in_reply_to) ?? row.in_reply_to.trim().toLowerCase();
+      inReplyTos.add(n);
+    }
   };
 
   add(seed as ThreadEmailRow);
@@ -91,13 +98,15 @@ export async function loadEmailThread(organizationId: string, seedId: string): P
     const irts = [...inReplyTos];
 
     const orClause: object[] = [];
-    if (mids.length) {
-      orClause.push({ in_reply_to: { in: mids } });
-      orClause.push({ messageId: { in: mids } });
+    for (const mid of mids) {
+      if (!mid) continue;
+      orClause.push({ in_reply_to: { equals: mid, mode: "insensitive" } });
+      orClause.push({ messageId: { equals: mid, mode: "insensitive" } });
     }
-    if (irts.length) {
-      orClause.push({ messageId: { in: irts } });
-      orClause.push({ in_reply_to: { in: irts } });
+    for (const irt of irts) {
+      if (!irt) continue;
+      orClause.push({ messageId: { equals: irt, mode: "insensitive" } });
+      orClause.push({ in_reply_to: { equals: irt, mode: "insensitive" } });
     }
     if (orClause.length === 0) break;
 
@@ -146,8 +155,9 @@ export async function loadEmailThread(organizationId: string, seedId: string): P
       if (!row.references?.trim()) continue;
       const parts = row.references.split(/\s+/).map((p) => p.trim()).filter(Boolean);
       for (const p of parts) {
-        if (!messageIds.has(p)) {
-          messageIds.add(p);
+        const n = normalizeMessageIdForStorage(p) ?? p.toLowerCase();
+        if (!messageIds.has(n)) {
+          messageIds.add(n);
           grew = true;
         }
       }

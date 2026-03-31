@@ -139,6 +139,30 @@ function stripHardcodedEmailColors(html: string): string {
   })
 }
 
+/** Collapse Gmail-style quoted thread into a <details> so the new reply stays readable. */
+function wrapGmailQuoteInDetails(html: string): string {
+  if (typeof window === "undefined") return html
+  try {
+    const doc = new DOMParser().parseFromString(`<div id="__root">${html}</div>`, "text/html")
+    const root = doc.getElementById("__root")
+    if (!root) return html
+    const quote = root.querySelector("div.gmail_quote")
+    if (!quote || quote.closest("details.email-quote-collapse")) return html
+    const details = doc.createElement("details")
+    details.className = "email-quote-collapse"
+    const summary = doc.createElement("summary")
+    summary.textContent = "Quoted conversation"
+    const inner = doc.createElement("div")
+    quote.parentNode?.insertBefore(details, quote)
+    details.appendChild(summary)
+    inner.appendChild(quote)
+    details.appendChild(inner)
+    return root.innerHTML
+  } catch {
+    return html
+  }
+}
+
 function linkifyPlainTextToHtml(text: string): string {
   const esc = text
     .replace(/&/g, "&amp;")
@@ -231,6 +255,10 @@ function EmailHTMLBody({ html }: { html: string }) {
           "prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:rounded-lg prose-pre:p-4 prose-pre:text-foreground",
           "prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground",
           "[&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_table]:text-sm",
+          "[&_.gmail_quote]:text-muted-foreground [&_.gmail_quote]:text-[13px] [&_.gmail_quote]:leading-relaxed",
+          "[&_.gmail_quote]:mt-3 [&_.gmail_quote]:max-h-[min(50vh,320px)] [&_.gmail_quote]:overflow-y-auto [&_.gmail_quote]:rounded-md [&_.gmail_quote]:border [&_.gmail_quote]:border-border/50 [&_.gmail_quote]:bg-muted/20 [&_.gmail_quote]:px-3 [&_.gmail_quote]:py-2",
+          "[&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_blockquote]:text-[13px]",
+          "[&_.email-quote-collapse]:not-prose",
         )}
         dangerouslySetInnerHTML={{ __html: html }}
       />
@@ -267,9 +295,16 @@ function MessageSanitizedHtml({ htmlBody }: { htmlBody: string }) {
       return
     }
     const stripped = stripHardcodedEmailColors(htmlBody)
+    const safe = DOMPurify.sanitize(stripped, {
+      ADD_ATTR: ["target", "rel", "class"],
+      ADD_TAGS: ["details", "summary"],
+      ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|cid):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+    })
+    const collapsed = wrapGmailQuoteInDetails(safe)
     setHtml(
-      DOMPurify.sanitize(stripped, {
+      DOMPurify.sanitize(collapsed, {
         ADD_ATTR: ["target", "rel", "class"],
+        ADD_TAGS: ["details", "summary"],
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|cid):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
       })
     )
@@ -745,9 +780,13 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
                           </div>
 
                           {msg.textBody && msg.htmlBody && (
-                            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setShowPlainTextFor(msg.id)}>
-                              View plain text
-                            </Button>
+                            <button
+                              type="button"
+                              className="mt-1 text-left text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                              onClick={() => setShowPlainTextFor((prev) => (prev === msg.id ? null : msg.id))}
+                            >
+                              {showPlainTextFor === msg.id ? "Hide plain text" : "Plain text version"}
+                            </button>
                           )}
                         </div>
                       </div>
