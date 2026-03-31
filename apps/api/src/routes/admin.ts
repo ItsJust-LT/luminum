@@ -809,6 +809,8 @@ router.post("/enable-organization-blogs", adminOnly, async (req: Request, res: R
       where: { id: organizationId },
       data: { blogs_enabled: true },
     });
+    const { invalidateAllBlogCacheForOrganization } = await import("../blog/blog-cache.js");
+    await invalidateAllBlogCacheForOrganization(organizationId);
     res.json({ success: true, message: "Blogs enabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -824,6 +826,8 @@ router.post("/disable-organization-blogs", adminOnly, async (req: Request, res: 
       where: { id: organizationId },
       data: { blogs_enabled: false },
     });
+    const { invalidateAllBlogCacheForOrganization } = await import("../blog/blog-cache.js");
+    await invalidateAllBlogCacheForOrganization(organizationId);
     res.json({ success: true, message: "Blogs disabled" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });

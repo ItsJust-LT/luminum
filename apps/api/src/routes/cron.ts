@@ -3,6 +3,7 @@ import { runEmailDnsVerification } from "../lib/cron-verify-email-dns.js";
 import { runAnalyticsScriptVerification } from "../lib/cron-verify-analytics-script.js";
 import { runScheduledSiteAudits } from "../lib/cron-scheduled-site-audits.js";
 import { runScheduledEmailOutbox } from "../lib/cron-send-scheduled-emails.js";
+import { runPublishScheduledBlogPosts } from "../lib/cron-publish-scheduled-blogs.js";
 
 const router = Router();
 
@@ -63,6 +64,16 @@ router.post("/run-site-audits", cronSecretAuth, async (_req: Request, res: Respo
 router.post("/send-scheduled-emails", cronSecretAuth, async (_req: Request, res: Response) => {
   try {
     const result = await runScheduledEmailOutbox();
+    res.json({ success: true, ...result });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+router.post("/publish-scheduled-blogs", cronSecretAuth, async (_req: Request, res: Response) => {
+  try {
+    const result = await runPublishScheduledBlogPosts();
     res.json({ success: true, ...result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

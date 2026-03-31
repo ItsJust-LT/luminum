@@ -9,7 +9,8 @@ import { prisma } from "../lib/prisma.js";
 import * as s3 from "../lib/storage/s3.js";
 import { orgBlogAssetKey, isOrgBlogKey, getOrganizationIdFromKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
-import { cacheGet, cacheSet, cacheDelByPrefix } from "../lib/redis-cache.js";
+import { cacheGet, cacheSet } from "../lib/redis-cache.js";
+import { invalidatePublishedBlogCache } from "../blog/blog-cache.js";
 import { publicBlogAssetUrl } from "../blog/urls.js";
 import { buildRenderSpecForPublish } from "../blog/parse-and-validate.js";
 import { collectReferencedBlogKeys, syncBlogAssetsToPost } from "../blog/sync-assets.js";
@@ -53,16 +54,30 @@ function slugify(input: string): string {
   return s || "post";
 }
 
-async function invalidatePublishedBlogCache(organizationId: string): Promise<void> {
-  await cacheDelByPrefix(`blog:pub:${organizationId}:`);
+export type BlogPreviewTokenPayload = {
+  organizationId: string;
+  blogPostId: string | null;
+};
+
+async function validatePreviewTokenPayload(
+  token: string | undefined
+): Promise<BlogPreviewTokenPayload | null> {
+  if (!token) return null;
+  const row = await prisma.blog_preview_token.findUnique({
+    where: { token },
+    select: { organization_id: true, expires_at: true, blog_post_id: true },
+  });
+  if (!row || row.expires_at < new Date()) return null;
+  return {
+    organizationId: row.organization_id,
+    blogPostId: row.blog_post_id,
+  };
 }
 
-async function validatePreviewTokenInternal(token: string | undefined): Promise<string | null> {
-  if (!token) return null;
-  const row = await prisma.blog_preview_token.findUnique({ where: { token } });
-  if (!row) return null;
-  if (row.expires_at < new Date()) return null;
-  return row.organization_id;
+/** Org id only — used by public blog-asset proxy. */
+export async function validatePreviewToken(token: string | undefined): Promise<string | null> {
+  const p = await validatePreviewTokenPayload(token);
+  return p?.organizationId ?? null;
 }
 
 async function ensureBlogsEnabled(organizationId: string): Promise<boolean> {
@@ -172,11 +187,9 @@ router.get("/posts", optionalAuth, async (req: Request, res: Response) => {
   const member =
     req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
 
-  if (member) {
-    if (!(await ensureBlogsEnabled(organizationId))) {
-      res.status(404).json({ error: "Not found" });
-      return;
-    }
+  if (!(await ensureBlogsEnabled(organizationId))) {
+    res.status(404).json({ error: "Not found" });
+    return;
   }
 
   if (!member) {
@@ -262,16 +275,25 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
     return;
   }
 
+  if (!(await ensureBlogsEnabled(organizationId))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   const member =
     req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
 
-  let previewOrgId: string | null = null;
-  if (!member && previewToken) {
-    previewOrgId = await validatePreviewTokenInternal(previewToken);
-  }
-  const isPreview = previewOrgId === organizationId;
+  const previewPayload =
+    !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
+  const previewForOrg =
+    previewPayload !== null && previewPayload.organizationId === organizationId;
 
-  if (!member && !isPreview) {
+  if (!member && previewToken && previewPayload && !previewForOrg) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  if (!member && !previewForOrg) {
     const cacheKey = `blog:pub:${organizationId}:post:${slug}`;
     const cached = await cacheGet<unknown>(cacheKey);
     if (cached) {
@@ -324,11 +346,18 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
     return;
   }
 
-  if (isPreview && !member) {
+  if (previewForOrg && !member) {
     const post = await prisma.blog_post.findFirst({
       where: { organization_id: organizationId, slug },
     });
     if (!post) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (
+      previewPayload!.blogPostId !== null &&
+      previewPayload!.blogPostId !== post.id
+    ) {
       res.status(404).json({ error: "Not found" });
       return;
     }
@@ -354,6 +383,7 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
       coverImageKey: post.cover_image_key,
       publishedAt: post.published_at,
       updatedAt: post.updated_at,
+      preview: true,
     });
     const cats = Array.isArray(post.categories) ? (post.categories as string[]) : [];
     res.json({
@@ -426,9 +456,22 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
     return;
   }
 
+  if (!(await ensureBlogsEnabled(organizationId))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   const member = req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
-  const previewOrgId = !member && previewToken ? await validatePreviewTokenInternal(previewToken) : null;
-  const isPreview = previewOrgId === organizationId;
+  const previewPayload =
+    !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
+  const isPreview =
+    !member &&
+    previewPayload !== null &&
+    previewPayload.organizationId === organizationId;
+  if (!member && previewToken && previewPayload && previewPayload.organizationId !== organizationId) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
 
   // Category filtering is based on slug matching, because blog_post.categories is JSONB.
   // `category` may be a display name or a slug; we slugify both sides to compare safely.
@@ -556,9 +599,22 @@ router.get("/categories", optionalAuth, async (req: Request, res: Response) => {
     return;
   }
 
+  if (!(await ensureBlogsEnabled(organizationId))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   const member = req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
-  const previewOrgId = !member && previewToken ? await validatePreviewTokenInternal(previewToken) : null;
-  const isPreview = previewOrgId === organizationId;
+  const previewPayload =
+    !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
+  const isPreview =
+    !member &&
+    previewPayload !== null &&
+    previewPayload.organizationId === organizationId;
+  if (!member && previewToken && previewPayload && previewPayload.organizationId !== organizationId) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
 
   const whereBase: Record<string, unknown> = {
     organization_id: organizationId,
@@ -622,11 +678,19 @@ router.get("/posts/by-category", optionalAuth, async (req: Request, res: Respons
     return;
   }
 
+  if (!(await ensureBlogsEnabled(organizationId))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   const member = req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
-  const previewOrgId = !member && previewToken ? await validatePreviewTokenInternal(previewToken) : null;
-  const isPreview = previewOrgId === organizationId;
-  if (!member && previewToken && !isPreview) {
-    // Token provided but not valid for this org.
+  const previewPayload =
+    !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
+  const isPreview =
+    !member &&
+    previewPayload !== null &&
+    previewPayload.organizationId === organizationId;
+  if (!member && previewToken && previewPayload && previewPayload.organizationId !== organizationId) {
     res.status(404).json({ error: "Not found" });
     return;
   }
@@ -817,7 +881,8 @@ router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
     cover_image_key?: string;
     seo_title?: string | null;
     seo_description?: string | null;
-    status?: "draft" | "published";
+    status?: "draft" | "published" | "scheduled";
+    scheduled_publish_at?: string | null;
     categories?: string[];
   };
 
@@ -843,8 +908,30 @@ router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
     data.slug = s;
   }
 
-  if (body.status === "draft" && existing.status === "published") {
+  if (body.status === "draft" && (existing.status === "published" || existing.status === "scheduled")) {
     data.status = "draft";
+    data.published_at = null;
+    data.scheduled_publish_at = null;
+    data.content_render_spec = null;
+  }
+
+  if (body.status === "scheduled") {
+    if (existing.status === "published") {
+      res.status(400).json({ error: "Unpublish the post before scheduling" });
+      return;
+    }
+    const raw = body.scheduled_publish_at;
+    if (!raw || typeof raw !== "string") {
+      res.status(400).json({ error: "scheduled_publish_at is required when status is scheduled" });
+      return;
+    }
+    const when = new Date(raw);
+    if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      res.status(400).json({ error: "scheduled_publish_at must be a valid future time" });
+      return;
+    }
+    data.status = "scheduled";
+    data.scheduled_publish_at = when;
     data.published_at = null;
     data.content_render_spec = null;
   }
@@ -893,6 +980,29 @@ router.post("/posts/:id/preview-spec", requireAuth, async (req: Request, res: Re
   }
 });
 
+/** POST /api/blog/posts/:id/validate-content — same validation as preview-spec; always 200 with { ok, error? } for editors. */
+router.post("/posts/:id/validate-content", requireAuth, async (req: Request, res: Response) => {
+  const id = one(req.params.id);
+  const existing = await prisma.blog_post.findUnique({ where: { id } });
+  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (!(await ensureBlogsEnabled(existing.organization_id))) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  const body = req.body as { content_markdown?: string };
+  const md = body.content_markdown ?? existing.content_markdown;
+  try {
+    await buildRenderSpecForPublish(md, existing.organization_id);
+    res.json({ ok: true });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Invalid content";
+    res.json({ ok: false, error: msg });
+  }
+});
+
 /** POST /api/blog/posts/:id/publish */
 router.post("/posts/:id/publish", requireAuth, async (req: Request, res: Response) => {
   const id = one(req.params.id);
@@ -937,6 +1047,7 @@ router.post("/posts/:id/publish", requireAuth, async (req: Request, res: Respons
           content_render_spec: renderSpec as object,
           status: "published",
           published_at: publishedAt,
+          scheduled_publish_at: null,
         },
       });
       await syncBlogAssetsToPost(tx, existing.organization_id, id, keys);
@@ -1016,6 +1127,7 @@ router.post("/posts/:id/preview-token", requireAuth, async (req: Request, res: R
   const row = await prisma.blog_preview_token.create({
     data: {
       organization_id: existing.organization_id,
+      blog_post_id: existing.id,
       expires_at: expiresAt,
     },
   });
@@ -1023,4 +1135,4 @@ router.post("/posts/:id/preview-token", requireAuth, async (req: Request, res: R
   res.json({ token: row.token, expiresAt: expiresAt.toISOString() });
 });
 
-export { router as blogRouter, validatePreviewTokenInternal as validatePreviewToken };
+export { router as blogRouter };

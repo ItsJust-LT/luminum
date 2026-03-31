@@ -19,10 +19,15 @@ export { submitForm, type SubmitFormOptions, type SubmitFormResult } from "./for
 export {
   getPublishedPosts,
   getPublishedPostBySlug,
+  fetchBlogPostDetail,
   getAllPublishedPosts,
   type BlogFetchOptions,
 } from "./blog/index.js";
-export { renderBlogSpec, type BlogComponentMap } from "./blog/index.js";
+export {
+  renderBlogSpec,
+  type BlogComponentMap,
+  type BlogRenderOptions,
+} from "./blog/index.js";
 export type { BlogRenderSpec, RenderSpecBlock, MarkdownRenderBlock, ComponentRenderBlock } from "./blog/index.js";
 
 // Metadata

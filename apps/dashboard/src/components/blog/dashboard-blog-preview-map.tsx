@@ -16,17 +16,41 @@ function PreviewCallout(props: {
   );
 }
 
-function PreviewImage(props: { src?: string; alt?: string; width?: number; height?: number; caption?: string }) {
+function PreviewImage(props: {
+  src?: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  caption?: string;
+  rounded?: boolean;
+  objectFit?: string;
+  layout?: string;
+  maxWidth?: number;
+}) {
   if (!props.src) return null;
+  const rounded =
+    props.rounded === false ? "rounded-none" : props.rounded === true ? "rounded-xl" : "rounded-md";
+  const fit =
+    props.objectFit === "cover"
+      ? "object-cover"
+      : props.objectFit === "fill"
+        ? "object-fill"
+        : "object-contain";
+  const layout = props.layout === "full" ? "w-full" : "mx-auto max-w-2xl";
+  const maxW =
+    typeof props.maxWidth === "number" && props.maxWidth > 0
+      ? { maxWidth: Math.min(props.maxWidth, 1600) }
+      : undefined;
   return (
-    <figure className="my-4">
+    <figure className={`my-4 ${layout}`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={props.src}
         alt={props.alt ?? ""}
         width={props.width}
         height={props.height}
-        className="max-h-96 max-w-full rounded-md object-contain"
+        style={maxW}
+        className={`max-h-96 w-full ${rounded} ${fit}`}
       />
       {props.caption && <figcaption className="mt-1 text-xs text-muted-foreground">{props.caption}</figcaption>}
     </figure>

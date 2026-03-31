@@ -56,6 +56,15 @@ router.get("/*", async (req: Request, res: Response) => {
     return;
   }
 
+  const orgRow = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { blogs_enabled: true },
+  });
+  if (!orgRow?.blogs_enabled) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
   const previewTokenParam = (req.query.previewToken as string) || undefined;
   const previewOrgId = await validatePreviewToken(previewTokenParam);
   const isPreview = previewOrgId === orgId;

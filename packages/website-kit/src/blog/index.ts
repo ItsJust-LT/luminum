@@ -1,6 +1,7 @@
 export {
   getPublishedPosts,
   getPublishedPostBySlug,
+  fetchBlogPostDetail,
   getAllPublishedPosts,
   searchPosts,
   getCategories,
@@ -9,7 +10,11 @@ export {
   type BlogCategory,
 } from "./fetch.js";
 
-export { renderBlogSpec, type BlogComponentMap } from "@itsjust-lt/blog-renderer";
+export {
+  renderBlogSpec,
+  type BlogComponentMap,
+  type BlogRenderOptions,
+} from "@itsjust-lt/blog-renderer";
 export type {
   BlogRenderSpec,
   RenderSpecBlock,

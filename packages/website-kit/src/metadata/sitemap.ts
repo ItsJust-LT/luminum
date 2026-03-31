@@ -54,18 +54,23 @@ export async function getBlogSitemapEntries(
   const entries: SitemapEntry[] = [];
   let page = 1;
 
-  while (true) {
-    const data = await getPublishedPosts({ ...opts, page, limit: pageSize });
-    for (const post of data.posts) {
-      entries.push({
-        url: `${base}${postPrefix}/${encodeURIComponent(post.slug)}`,
-        lastModified: post.publishedAt ? new Date(post.publishedAt) : new Date(),
-        changeFrequency: "weekly",
-        priority: 0.7,
-      });
+  try {
+    while (true) {
+      const data = await getPublishedPosts({ ...opts, page, limit: pageSize });
+      for (const post of data.posts) {
+        entries.push({
+          url: `${base}${postPrefix}/${encodeURIComponent(post.slug)}`,
+          lastModified: post.publishedAt ? new Date(post.publishedAt) : new Date(),
+          changeFrequency: "weekly",
+          priority: 0.7,
+        });
+      }
+      if (page >= data.totalPages) break;
+      page++;
     }
-    if (page >= data.totalPages) break;
-    page++;
+  } catch {
+    // Blogs disabled, network error, or 404 from API — omit blog URLs from sitemap.
+    return entries;
   }
 
   if (includeCategories) {
@@ -97,13 +102,16 @@ export async function getBlogSitemapEntriesPage(
   const base = opts.baseUrl.replace(/\/$/, "");
   const pageSize = opts.pageSize ?? 50;
 
-  const data = await getPublishedPosts({ ...opts, page: opts.page, limit: pageSize });
-  const entries: SitemapEntry[] = data.posts.map((post) => ({
-    url: `${base}${postPrefix}/${encodeURIComponent(post.slug)}`,
-    lastModified: post.publishedAt ? new Date(post.publishedAt) : new Date(),
-    changeFrequency: "weekly" as const,
-    priority: 0.7,
-  }));
-
-  return { entries, totalPages: data.totalPages };
+  try {
+    const data = await getPublishedPosts({ ...opts, page: opts.page, limit: pageSize });
+    const entries: SitemapEntry[] = data.posts.map((post) => ({
+      url: `${base}${postPrefix}/${encodeURIComponent(post.slug)}`,
+      lastModified: post.publishedAt ? new Date(post.publishedAt) : new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    }));
+    return { entries, totalPages: data.totalPages };
+  } catch {
+    return { entries: [], totalPages: 1 };
+  }
 }

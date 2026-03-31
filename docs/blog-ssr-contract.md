@@ -1,5 +1,9 @@
 # Blog SSR contract (public API + `renderSpec`)
 
+## Organization gate
+
+All public blog JSON and public blog assets require `organization.blogs_enabled === true`. If blogs are disabled, anonymous requests return **404** (no Redis hits first). Preview tokens do not bypass this. Toggling the flag clears Redis keys under `blog:pub:{orgId}:` and `blog:draft:{orgId}:`.
+
 ## Endpoints (no auth)
 
 - `GET /api/blog/posts?organizationId={id}&page=1&limit=12` — published posts only. Cached when Redis is configured.
@@ -34,9 +38,22 @@
 
 - `post`: `{ id, slug, title, coverImageUrl, publishedAt, categories? }`
 - `renderSpec`: `{ "version": 1, "blocks": [ ... ] }`
-- `seo`: `{ canonicalUrl, title, description, openGraph, twitter, jsonLd? }`
+- `seo`: `{ canonicalUrl, title, description, robots?, openGraph, twitter, jsonLd? }` — draft **preview** responses set `preview: true`, `robots: { index: false, follow: false }`, and richer `jsonLd` is omitted or minimized for previews.
 
-Use `seo` in Next.js `generateMetadata` / `<head>`. Ensure `organization.metadata` includes `publicBaseUrl` (or `baseUrl` / `siteUrl`) so `canonicalUrl` and OG URLs point at the **marketing site**, not the API.
+Use `seo` in Next.js `generateMetadata` / `<head>`. Ensure `organization.metadata` includes `publicBaseUrl` (or `baseUrl` / `siteUrl`) so `canonicalUrl` and OG URLs point at the **marketing site**, not the API. Emit `seo.jsonLd` with a `<script type="application/ld+json">` when you want Article structured data on the marketing site.
+
+## Scheduling
+
+Posts may have `status: "scheduled"` and `scheduled_publish_at` (future ISO time). They are treated like drafts for **anonymous** list/detail/search until a worker publishes them (`POST /api/cron/publish-scheduled-blogs` with cron secret, or in-process poll via `SCHEDULED_BLOG_POLL_MS`).
+
+## Editor validation (auth)
+
+- `POST /api/blog/posts/{id}/preview-spec` — returns `renderSpec` or **400** with an error message.
+- `POST /api/blog/posts/{id}/validate-content` — same parser, **200** with `{ ok: true }` or `{ ok: false, error: "..." }`.
+
+## Preview tokens
+
+Mint: `POST /api/blog/posts/{id}/preview-token` (member). Tokens are scoped to the **post** (`blog_post_id`); only that slug’s draft can be loaded with the token on `GET /api/blog/posts/{slug}?previewToken=`.
 
 ## `renderSpec` blocks
 

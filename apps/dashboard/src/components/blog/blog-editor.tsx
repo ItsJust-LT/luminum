@@ -41,6 +41,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { dashboardBlogAssetUrlFromKey, getHostnameLabelForSiteBase } from "@/lib/blog-public-url";
 import { slugifyFromTitle } from "@/lib/blog-slug";
+import {
+  quickLintBlogMarkdown,
+  toDatetimeLocalValue,
+} from "@/lib/blog-markdown-lint";
 import { BlogRichEditor, type BlogRichEditorHandle } from "./blog-rich-editor";
 import { BlogAssetUploadContext } from "./blog-upload-context";
 import { BlogCategoryCombobox } from "./blog-category-combobox";
@@ -63,6 +67,7 @@ import {
   Undo2,
   Redo2,
   Search,
+  CalendarClock,
 } from "lucide-react";
 
 type AllowComponent = { name: string; props: Record<string, { type: string; required?: boolean }> };
@@ -119,6 +124,10 @@ export function BlogEditor(props: {
   const [imageUrlDialogOpen, setImageUrlDialogOpen] = React.useState(false);
   const [imageUrlDraft, setImageUrlDraft] = React.useState("");
   const [imageAltDraft, setImageAltDraft] = React.useState("Image");
+  const [scheduleLocal, setScheduleLocal] = React.useState("");
+  const [scheduling, setScheduling] = React.useState(false);
+  const [contentParseError, setContentParseError] = React.useState<string | null>(null);
+  const [markdownHints, setMarkdownHints] = React.useState<string[]>([]);
 
   const markDirty = React.useCallback(() => setDirty(true), []);
 
@@ -164,6 +173,11 @@ export function BlogEditor(props: {
         setSeoTitle(String(p.seo_title ?? ""));
         setSeoDescription(String(p.seo_description ?? ""));
         setStatus(String(p.status ?? "draft"));
+        setScheduleLocal(
+          toDatetimeLocalValue(
+            typeof p.scheduled_publish_at === "string" ? p.scheduled_publish_at : null
+          )
+        );
         setCategories(Array.isArray(p.categories) ? (p.categories as string[]) : []);
         setAllowlist(compRes.components ?? []);
         setDirty(false);
@@ -269,6 +283,35 @@ export function BlogEditor(props: {
     }, 1800);
     return () => window.clearTimeout(t);
   }, [loading, dirty, title, slug, content, coverKey, seoTitle, seoDescription, categories, persist]);
+
+  React.useEffect(() => {
+    if (!useAdvancedMarkdown || loading) {
+      setMarkdownHints([]);
+      return;
+    }
+    setMarkdownHints(quickLintBlogMarkdown(content));
+  }, [content, useAdvancedMarkdown, loading]);
+
+  React.useEffect(() => {
+    if (!useAdvancedMarkdown || loading) {
+      setContentParseError(null);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = (await api.blog.validateContent(props.postId, {
+            content_markdown: content,
+          })) as { ok?: boolean; error?: string };
+          if (res.ok) setContentParseError(null);
+          else setContentParseError(res.error ?? "Invalid content");
+        } catch {
+          setContentParseError(null);
+        }
+      })();
+    }, 1400);
+    return () => window.clearTimeout(t);
+  }, [content, useAdvancedMarkdown, loading, props.postId]);
 
   const openSitePreview = async () => {
     if (!slug.trim()) {
@@ -456,11 +499,58 @@ export function BlogEditor(props: {
     try {
       await api.blog.updatePost(props.postId, { status: "draft" });
       setStatus("draft");
+      setScheduleLocal("");
       toast.success("Moved to drafts (unpublished)");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Unpublish failed");
     } finally {
       setUnpublishing(false);
+    }
+  };
+
+  const schedulePublish = async () => {
+    if (!scheduleLocal.trim()) {
+      toast.error("Pick a date and time first.");
+      return;
+    }
+    const when = new Date(scheduleLocal);
+    if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      toast.error("Schedule time must be in the future.");
+      return;
+    }
+    setScheduling(true);
+    try {
+      const out = (await api.blog.updatePost(props.postId, {
+        status: "scheduled",
+        scheduled_publish_at: when.toISOString(),
+      })) as { post?: Record<string, unknown> };
+      toast.success("Publish scheduled");
+      const p = out.post;
+      if (p) {
+        setStatus(String(p.status ?? "scheduled"));
+        const at = p.scheduled_publish_at;
+        setScheduleLocal(
+          typeof at === "string" ? toDatetimeLocalValue(at) : toDatetimeLocalValue(when.toISOString())
+        );
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Schedule failed");
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  const clearSchedule = async () => {
+    setScheduling(true);
+    try {
+      await api.blog.updatePost(props.postId, { status: "draft" });
+      setStatus("draft");
+      setScheduleLocal("");
+      toast.success("Schedule cleared");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not clear schedule");
+    } finally {
+      setScheduling(false);
     }
   };
 
@@ -521,7 +611,17 @@ export function BlogEditor(props: {
               </p>
             ) : null}
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <Badge variant={status === "published" ? "default" : "secondary"}>{status}</Badge>
+              <Badge
+                variant={
+                  status === "published"
+                    ? "default"
+                    : status === "scheduled"
+                      ? "outline"
+                      : "secondary"
+                }
+              >
+                {status}
+              </Badge>
               <AnimatePresence mode="wait">
                 {autoSaveState === "saving" && (
                   <motion.span
@@ -640,6 +740,19 @@ export function BlogEditor(props: {
               Unpublish
             </Button>
           )}
+          {status === "scheduled" && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={scheduling}
+              onClick={() => void clearSchedule()}
+              className="gap-1.5"
+            >
+              {scheduling ? <Loader2 className="h-4 w-4 animate-spin" /> : <EyeOff className="h-4 w-4" />}
+              Cancel schedule
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="ghost" size="icon" className="rounded-lg">
@@ -748,6 +861,61 @@ export function BlogEditor(props: {
                   suggestions={categorySuggestions}
                 />
               </div>
+
+              {status !== "published" && (
+                <div className="space-y-3 rounded-xl border border-border/60 bg-muted/15 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background text-muted-foreground">
+                      <CalendarClock className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-sm font-semibold">Schedule publish</p>
+                      <p className="text-xs text-muted-foreground">
+                        The post goes live automatically at this time (cover image still required). Uses your local
+                        timezone.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Label htmlFor="blog_schedule_at" className="text-xs">
+                        Date and time
+                      </Label>
+                      <Input
+                        id="blog_schedule_at"
+                        type="datetime-local"
+                        value={scheduleLocal}
+                        onChange={(e) => setScheduleLocal(e.target.value)}
+                        disabled={scheduling}
+                        className="font-mono text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={scheduling}
+                        onClick={() => void schedulePublish()}
+                        className="gap-1.5"
+                      >
+                        {scheduling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        <span>{status === "scheduled" ? "Update schedule" : "Set schedule"}</span>
+                      </Button>
+                      {status === "scheduled" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={scheduling}
+                          onClick={() => void clearSchedule()}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <Separator className="bg-border/80" />
 
@@ -902,6 +1070,18 @@ export function BlogEditor(props: {
                     <strong>Markdown mode</strong> — for posts with custom blocks (Callout, Gallery, …). Use{" "}
                     <strong>Visual editor</strong> above for normal writing.
                   </p>
+                  {contentParseError && (
+                    <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                      {contentParseError}
+                    </p>
+                  )}
+                  {markdownHints.length > 0 && !contentParseError && (
+                    <ul className="list-inside list-disc rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+                      {markdownHints.map((h) => (
+                        <li key={h}>{h}</li>
+                      ))}
+                    </ul>
+                  )}
                   <Textarea
                     ref={advancedTextareaRef}
                     spellCheck

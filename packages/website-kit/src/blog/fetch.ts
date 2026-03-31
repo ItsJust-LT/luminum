@@ -11,6 +11,8 @@ export interface BlogFetchOptions {
   revalidateSeconds?: number;
   /** Force no-store requests (useful for preview/admin surfaces). */
   noStore?: boolean;
+  /** Extra tags merged into `next.tags` for on-demand revalidation (ignored with previewToken/noStore). */
+  revalidateTags?: string[];
   /** Extra fetch options such as headers, signal, or next tags. */
   fetchOptions?: RequestInit;
 }
@@ -32,7 +34,7 @@ function buildRequestInit(
   fallbackRevalidate: number
 ): RequestInit {
   const nextFromCaller = (opts.fetchOptions as RequestInit & {
-    next?: Record<string, unknown>;
+    next?: { revalidate?: number; tags?: string[] };
   } | undefined)?.next;
   const shouldNoStore = Boolean(opts.noStore || opts.previewToken);
   const revalidate =
@@ -40,8 +42,29 @@ function buildRequestInit(
       ? opts.revalidateSeconds
       : fallbackRevalidate;
 
-  const next =
-    nextFromCaller ?? (shouldNoStore ? undefined : { revalidate });
+  const wid = normalizeWebsiteId(opts.websiteId);
+  const autoTags = [`luminum-blog-${wid}`, ...(opts.revalidateTags ?? [])];
+  const uniqueAutoTags = [...new Set(autoTags)];
+
+  let next: RequestInit["next"];
+  if (shouldNoStore) {
+    next = nextFromCaller;
+  } else if (nextFromCaller && typeof nextFromCaller === "object") {
+    const mergedTags = [
+      ...uniqueAutoTags,
+      ...(Array.isArray(nextFromCaller.tags) ? nextFromCaller.tags : []),
+    ];
+    next = {
+      ...nextFromCaller,
+      revalidate:
+        typeof nextFromCaller.revalidate === "number"
+          ? nextFromCaller.revalidate
+          : revalidate,
+      tags: [...new Set(mergedTags)],
+    };
+  } else {
+    next = { revalidate, tags: uniqueAutoTags };
+  }
 
   return {
     ...(opts.fetchOptions ?? {}),
@@ -118,6 +141,9 @@ export async function getPublishedPostBySlug(
   }
   return res.json();
 }
+
+/** Alias for `getPublishedPostBySlug` — full post + renderSpec + SEO JSON for custom layouts. */
+export const fetchBlogPostDetail = getPublishedPostBySlug;
 
 /**
  * Search published blog posts by query text and/or category.

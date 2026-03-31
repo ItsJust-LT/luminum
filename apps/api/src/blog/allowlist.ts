@@ -25,6 +25,10 @@ export const BLOG_COMPONENT_PROP_SCHEMAS: Record<string, Record<string, PropSpec
     width: { type: "number" },
     height: { type: "number" },
     caption: { type: "string" },
+    rounded: { type: "boolean" },
+    objectFit: { type: "string" },
+    layout: { type: "string" },
+    maxWidth: { type: "number" },
   },
   Button: {
     href: { type: "string", required: true },

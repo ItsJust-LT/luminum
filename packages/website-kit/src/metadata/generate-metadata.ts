@@ -27,6 +27,7 @@ export function blogSeoToMetadata(seo: BlogSeoPayload): Record<string, unknown> 
     alternates: {
       canonical: seo.canonicalUrl,
     },
+    ...(seo.robots ? { robots: seo.robots } : {}),
     openGraph: {
       title: seo.openGraph.title,
       description: seo.openGraph.description,

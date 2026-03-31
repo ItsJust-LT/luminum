@@ -19,6 +19,7 @@ export interface BlogSeoPayload {
   canonicalUrl: string;
   title: string;
   description: string;
+  robots?: { index: boolean; follow: boolean };
   openGraph: {
     title: string;
     description: string;
@@ -41,6 +42,8 @@ export interface BlogPostDetail {
   post: BlogPostSummary;
   renderSpec: import("@itsjust-lt/blog-renderer").BlogRenderSpec | null;
   seo: BlogSeoPayload;
+  /** Present when the response is a draft/share preview. */
+  preview?: boolean;
 }
 
 export interface BlogPostListResponse {

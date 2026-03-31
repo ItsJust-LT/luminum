@@ -5,6 +5,8 @@ export type BlogSeoPayload = {
   canonicalUrl: string;
   title: string;
   description: string;
+  /** When set, consumers should map to Next.js `metadata.robots` (e.g. noindex for draft preview). */
+  robots?: { index: boolean; follow: boolean };
   openGraph: {
     title: string;
     description: string;
@@ -33,6 +35,8 @@ export function buildBlogSeo(args: {
   coverImageKey: string;
   publishedAt: Date | null;
   updatedAt: Date;
+  /** Draft/share preview — minimal JSON-LD and noindex. */
+  preview?: boolean;
 }): BlogSeoPayload {
   const siteBase = getOrgPublicSiteBase(args.organizationMetadata) ?? config.appUrl.replace(/\/$/, "");
   const canonicalUrl = `${siteBase}/blog/${encodeURIComponent(args.slug)}`;
@@ -41,6 +45,37 @@ export function buildBlogSeo(args: {
   const ogImageUrl = publicBlogAssetUrl(args.coverImageKey);
   const publishedTime = args.publishedAt?.toISOString();
   const modifiedTime = args.updatedAt.toISOString();
+
+  if (args.preview) {
+    return {
+      canonicalUrl,
+      title,
+      description,
+      robots: { index: false, follow: false },
+      openGraph: {
+        title,
+        description,
+        url: canonicalUrl,
+        type: "article",
+        images: args.coverImageKey ? [{ url: ogImageUrl, alt: title }] : [],
+        ...(publishedTime ? { publishedTime } : {}),
+        modifiedTime,
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+        images: args.coverImageKey ? [ogImageUrl] : [],
+      },
+      jsonLd: {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        headline: title,
+        description,
+        url: canonicalUrl,
+      },
+    };
+  }
 
   return {
     canonicalUrl,
@@ -67,9 +102,11 @@ export function buildBlogSeo(args: {
       headline: title,
       description,
       url: canonicalUrl,
+      mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
       datePublished: publishedTime,
       dateModified: modifiedTime,
-      image: [ogImageUrl],
+      image: args.coverImageKey ? [ogImageUrl] : [],
+      publisher: { "@type": "Organization", name: siteBase.replace(/^https?:\/\//, "").split("/")[0] || "Organization" },
     },
   };
 }

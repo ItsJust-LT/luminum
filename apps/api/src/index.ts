@@ -56,6 +56,7 @@ import { initWhatsAppManager } from "./whatsapp/manager.js";
 import { createWhatsAppOrgFanout } from "./whatsapp/whatsapp-org-fanout.js";
 import { startEmailDnsPeriodicScheduler } from "./lib/start-email-dns-scheduler.js";
 import { startScheduledEmailPoller } from "./lib/start-scheduled-email-sender.js";
+import { startBlogScheduledPublisher } from "./lib/start-blog-scheduled-publisher.js";
 import { startSiteAuditsPeriodicScheduler } from "./lib/start-site-audits-scheduler.js";
 
 const app = express();
@@ -199,6 +200,7 @@ httpServer.listen(config.port, () => {
   startEmailDnsPeriodicScheduler();
   startSiteAuditsPeriodicScheduler();
   startScheduledEmailPoller();
+  startBlogScheduledPublisher();
 
   // Redis fan-out so org-scoped WS events (WhatsApp, inbound email, etc.) reach every API instance
   const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);

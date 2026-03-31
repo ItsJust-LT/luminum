@@ -666,6 +666,7 @@ model website_audit_result {
 
 enum BlogPostStatus {
   draft
+  scheduled
   published
 }
 
@@ -677,20 +678,23 @@ model blog_post {
   content_markdown      String         @db.Text
   content_render_spec   Json?
   cover_image_key       String         @db.Text
-  status                BlogPostStatus @default(draft)
-  published_at          DateTime?      @db.Timestamptz(6)
+  status                 BlogPostStatus @default(draft)
+  scheduled_publish_at   DateTime?      @db.Timestamptz(6)
+  published_at           DateTime?      @db.Timestamptz(6)
   seo_title             String?        @db.VarChar(500)
   seo_description       String?        @db.Text
   categories            Json?          @db.JsonB
   created_at            DateTime       @default(now()) @db.Timestamptz(6)
   updated_at            DateTime       @updatedAt @db.Timestamptz(6)
-  organization          organization   @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  organization          organization       @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   blog_assets           blog_asset[]
+  blog_preview_tokens   blog_preview_token[]
 
   @@unique([organization_id, slug])
   @@index([organization_id])
   @@index([organization_id, status])
   @@index([published_at])
+  @@index([organization_id, scheduled_publish_at])
   @@index([categories], type: Gin)
 }
 
@@ -714,16 +718,19 @@ model blog_asset {
 }
 
 model blog_preview_token {
-  id              String    @id @default(cuid())
+  id              String       @id @default(cuid())
   organization_id String
-  token           String    @unique @default(cuid())
-  expires_at      DateTime  @db.Timestamptz(6)
-  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  blog_post_id    String?
+  token           String       @unique @default(cuid())
+  expires_at      DateTime     @db.Timestamptz(6)
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
   organization    organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  blog_post       blog_post?   @relation(fields: [blog_post_id], references: [id], onDelete: Cascade)
 
   @@index([organization_id])
   @@index([token])
   @@index([expires_at])
+  @@index([blog_post_id])
 }
 
 // ── Invoices (per-organization invoice generation + PDF storage) ─────

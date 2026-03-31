@@ -178,7 +178,7 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
       <img src={data.post.coverImageUrl} alt={data.post.title} />
       <h1>{data.post.title}</h1>
       <time>{data.post.publishedAt}</time>
-      <div>{renderBlogSpec(data.renderSpec, componentMap)}</div>
+      <div>{renderBlogSpec(data.renderSpec, componentMap, { rootClassName: "space-y-6" })}</div>
       {data.seo.jsonLd && (
         <script
           type="application/ld+json"
@@ -190,7 +190,15 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
 }
 ```
 
+Optional third argument to `renderBlogSpec`: `BlogRenderOptions` (`markdownClassName`, `rootClassName`) to tune Tailwind Typography / layout per site.
+
+Blog `fetch` helpers (except when `previewToken` or `noStore` is set) attach `next.tags` including `luminum-blog-{websiteId}` for on-demand revalidation. Pass `revalidateTags: ["my-extra-tag"]` to add more. After a post is published, revalidate from your app (e.g. `revalidateTag` in a Route Handler) if you add a webhook.
+
+Use `fetchBlogPostDetail` as an alias for `getPublishedPostBySlug` when you want the full JSON (`post`, `renderSpec`, `seo`) for a fully custom layout.
+
 ### 4. Sitemap
+
+Merge static routes with API-driven blog URLs. If blogs are disabled for the org or the request fails, `getBlogSitemapEntries` returns no blog rows (safe to spread).
 
 ```ts
 // app/sitemap.ts

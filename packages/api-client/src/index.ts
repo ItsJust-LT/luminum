@@ -822,6 +822,11 @@ function createApiClient(baseUrl: string = "") {
       post<{ token: string; expiresAt: string }>(`/api/blog/posts/${encodeURIComponent(id)}/preview-token`, {}),
     previewSpec: (id: string, body?: { content_markdown?: string }) =>
       post(`/api/blog/posts/${encodeURIComponent(id)}/preview-spec`, body ?? {}),
+    validateContent: (id: string, body?: { content_markdown?: string }) =>
+      post<{ ok: boolean; error?: string }>(
+        `/api/blog/posts/${encodeURIComponent(id)}/validate-content`,
+        body ?? {}
+      ),
   };
 
   // ─── User Management ─────────────────────────────────────

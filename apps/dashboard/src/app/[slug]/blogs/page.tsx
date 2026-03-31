@@ -52,10 +52,11 @@ type BlogRow = {
   status: string;
   cover_image_key?: string;
   published_at?: string | null;
+  scheduled_publish_at?: string | null;
   updated_at?: string;
 };
 
-type StatusFilter = "all" | "published" | "draft";
+type StatusFilter = "all" | "published" | "draft" | "scheduled";
 
 export default function OrgBlogsListPage() {
   const { data: session, isPending: sessionPending } = useSession();
@@ -107,7 +108,8 @@ export default function OrgBlogsListPage() {
   const stats = useMemo(() => {
     const published = posts.filter((p) => p.status === "published").length;
     const draft = posts.filter((p) => p.status === "draft").length;
-    return { published, draft, total: posts.length };
+    const scheduled = posts.filter((p) => p.status === "scheduled").length;
+    return { published, draft, scheduled, total: posts.length };
   }, [posts]);
 
   const clearFilters = () => {
@@ -176,6 +178,8 @@ export default function OrgBlogsListPage() {
                 <span className="mx-1.5 text-border">·</span>
                 <span>{stats.published} published</span>
                 <span className="mx-1.5 text-border">·</span>
+                <span>{stats.scheduled} scheduled</span>
+                <span className="mx-1.5 text-border">·</span>
                 <span>{stats.draft} draft</span>
               </p>
             )}
@@ -222,7 +226,7 @@ export default function OrgBlogsListPage() {
             <Filter className="h-3.5 w-3.5" aria-hidden />
             Status
           </span>
-          {(["all", "published", "draft"] as const).map((f) => (
+          {(["all", "published", "scheduled", "draft"] as const).map((f) => (
             <Button
               key={f}
               type="button"
@@ -323,7 +327,16 @@ export default function OrgBlogsListPage() {
                         </p>
                       )}
                     </div>
-                    <Badge variant={p.status === "published" ? "default" : "secondary"} className="capitalize">
+                    <Badge
+                      variant={
+                        p.status === "published"
+                          ? "default"
+                          : p.status === "scheduled"
+                            ? "outline"
+                            : "secondary"
+                      }
+                      className="capitalize"
+                    >
                       {p.status}
                     </Badge>
                     <div className="flex items-center gap-1">
