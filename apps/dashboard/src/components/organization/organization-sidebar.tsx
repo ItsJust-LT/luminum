@@ -15,7 +15,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, Mail, MessageCircle, Gauge, Receipt, CalendarClock } from "lucide-react"
+import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { NAV_ITEM_REQUIRED_PERMISSIONS, hasAllPermissions } from "@luminum/org-permissions"
@@ -128,9 +128,8 @@ export function OrganizationSidebar({
       badge: unreadWhatsappCount > 0 ? unreadWhatsappCount : undefined,
     })
   }
-  if (invoicesEnabled) {
-    if (navOk("invoices")) sidebarItems.push({ title: "Invoices", icon: Receipt, href: nav("invoices") })
-    if (navOk("invoices/schedules")) sidebarItems.push({ title: "Recurring", icon: CalendarClock, href: nav("invoices/schedules") })
+  if (invoicesEnabled && navOk("invoices")) {
+    sidebarItems.push({ title: "Invoices", icon: Receipt, href: nav("invoices") })
   }
   if (navOk("team")) sidebarItems.push({ title: "Team", icon: Users, href: nav("team") })
   if (navOk("settings")) sidebarItems.push({ title: "Settings", icon: Settings, href: nav("settings") })

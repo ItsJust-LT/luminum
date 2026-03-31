@@ -10,7 +10,6 @@ import {
   Mail,
   MessageCircle,
   Receipt,
-  CalendarClock,
   Settings,
   Users,
 } from 'lucide-react'
@@ -66,17 +65,8 @@ export function mobilePrimaryNavItems(
   if (org.whatsapp_enabled && allowedNav('whatsapp', permissionSet)) {
     items.push({ title: 'WhatsApp', icon: MessageCircle, href: orgNavPath(slug, flatRoutes, 'whatsapp') })
   }
-  if (org.invoices_enabled) {
-    if (allowedNav('invoices', permissionSet)) {
-      items.push({ title: 'Invoices', icon: Receipt, href: orgNavPath(slug, flatRoutes, 'invoices') })
-    }
-    if (allowedNav('invoices/schedules', permissionSet)) {
-      items.push({
-        title: 'Recurring',
-        icon: CalendarClock,
-        href: orgNavPath(slug, flatRoutes, 'invoices/schedules'),
-      })
-    }
+  if (org.invoices_enabled && allowedNav('invoices', permissionSet)) {
+    items.push({ title: 'Invoices', icon: Receipt, href: orgNavPath(slug, flatRoutes, 'invoices') })
   }
   if (allowedNav('team', permissionSet)) {
     items.push({ title: 'Team', icon: Users, href: orgNavPath(slug, flatRoutes, 'team') })
