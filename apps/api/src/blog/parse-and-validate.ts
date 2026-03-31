@@ -19,6 +19,11 @@ marked.use({
   breaks: true,
 });
 
+/** Only these style properties (TipTap alignment → inline style in saved markdown). */
+const ALIGN_STYLE: Record<string, RegExp[]> = {
+  "text-align": [/^(?:left|right|center|justify)$/i],
+};
+
 const SANITIZE: sanitizeHtml.IOptions = {
   allowedTags: [
     "p",
@@ -52,8 +57,26 @@ const SANITIZE: sanitizeHtml.IOptions = {
   allowedAttributes: {
     a: ["href", "name", "target", "rel"],
     img: ["src", "alt", "width", "height", "loading"],
-    th: ["colspan", "rowspan"],
-    td: ["colspan", "rowspan"],
+    th: ["colspan", "rowspan", "style"],
+    td: ["colspan", "rowspan", "style"],
+    p: ["style"],
+    h1: ["style"],
+    h2: ["style"],
+    h3: ["style"],
+    h4: ["style"],
+    blockquote: ["style"],
+    li: ["style"],
+  },
+  allowedStyles: {
+    p: { ...ALIGN_STYLE },
+    h1: { ...ALIGN_STYLE },
+    h2: { ...ALIGN_STYLE },
+    h3: { ...ALIGN_STYLE },
+    h4: { ...ALIGN_STYLE },
+    blockquote: { ...ALIGN_STYLE },
+    li: { ...ALIGN_STYLE },
+    th: { ...ALIGN_STYLE },
+    td: { ...ALIGN_STYLE },
   },
   allowedSchemes: ["http", "https", "mailto"],
   allowProtocolRelative: false,

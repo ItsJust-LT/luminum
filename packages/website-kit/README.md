@@ -16,6 +16,135 @@ pnpm add @itsjust-lt/website-kit
 
 For development inside the Luminum monorepo, depend on `workspace:*` as other packages do.
 
+**Current published versions** are in each package’s `package.json` (`@itsjust-lt/website-kit`, `@itsjust-lt/blog-renderer`). After pulling new Luminum releases, bump the dependency in your site and run `pnpm install` (or publish from this monorepo per [`docs/github-packages.md`](../../docs/github-packages.md)).
+
+## Setting up blog components (Next.js)
+
+Blog posts return a `renderSpec` from the API. **Markdown** becomes sanitized HTML blocks; **custom blocks** (Callout, Image, Gallery, …) are rendered only if you supply a matching **`BlogComponentMap`**. Names and props are enforced on publish by the Luminum API (see [`apps/api/src/blog/allowlist.ts`](../../apps/api/src/blog/allowlist.ts) in this repo, or `GET /api/blog/components` when authenticated to the dashboard).
+
+### 1. Transpile packages
+
+Next must compile the workspace/source packages:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  transpilePackages: ["@itsjust-lt/website-kit", "@itsjust-lt/blog-renderer"],
+};
+
+export default nextConfig;
+```
+
+### 2. Implement the component map
+
+Export a map whose keys are **exactly**: `Callout`, `Image`, `Button`, `Accordion`, `Gallery`, `Video`, `CodeBlock`, `AuthorCard`. Each value is a React component receiving the props stored in `renderSpec` (strings, numbers, booleans, or JSON for `items` / `images`).
+
+```tsx
+// app/blog/luminum-blog-map.tsx  (or components/blog/map.tsx)
+import type { BlogComponentMap } from "@itsjust-lt/website-kit/blog";
+
+export const luminumBlogMap: BlogComponentMap = {
+  Callout: ({ variant, title, children }) => (
+    <aside className={`my-6 rounded-lg border p-4 callout-${variant ?? "info"}`}>
+      {title ? <p className="mb-2 font-semibold">{title}</p> : null}
+      <div className="text-muted-foreground">{children}</div>
+    </aside>
+  ),
+  Image: ({ src, alt, caption, rounded, objectFit, layout, maxWidth }) => (
+    <figure className={layout === "full" ? "my-6 w-full" : "my-6 mx-auto max-w-3xl"}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className={`w-full ${rounded === false ? "rounded-none" : "rounded-xl"} ${
+          objectFit === "cover" ? "object-cover" : "object-contain"
+        }`}
+        style={typeof maxWidth === "number" ? { maxWidth } : undefined}
+      />
+      {caption ? <figcaption className="mt-2 text-sm text-muted-foreground">{caption}</figcaption> : null}
+    </figure>
+  ),
+  Button: ({ href, label, variant }) => (
+    <a href={href} className={`btn btn-${variant ?? "primary"} my-2 inline-block`}>
+      {label}
+    </a>
+  ),
+  Accordion: ({ items }) => {
+    const list = Array.isArray(items) ? items : [];
+    return (
+      <div className="my-6 space-y-2">
+        {list.map((item: { title?: string; content?: string }, i: number) => (
+          <details key={i} className="rounded-lg border p-3">
+            <summary className="cursor-pointer font-medium">{item.title ?? `Section ${i + 1}`}</summary>
+            <div className="mt-2 text-sm opacity-90">{item.content}</div>
+          </details>
+        ))}
+      </div>
+    );
+  },
+  Gallery: ({ images, columns }) => {
+    const imgs = Array.isArray(images) ? images : [];
+    const cols = typeof columns === "number" ? columns : 3;
+    return (
+      <div className="my-6 grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        {imgs.map((img: { src?: string; alt?: string }, i: number) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={i} src={img.src} alt={img.alt ?? ""} className="aspect-square w-full rounded-md object-cover" />
+        ))}
+      </div>
+    );
+  },
+  Video: ({ src, poster, title, width, height }) => (
+    <div className="my-6">
+      {title ? <p className="mb-1 text-sm font-medium">{title}</p> : null}
+      <video src={src} poster={poster} width={width} height={height} controls className="max-w-full rounded-lg" />
+    </div>
+  ),
+  CodeBlock: ({ code, language, filename, showLineNumbers }) => (
+    <div className="my-6 overflow-x-auto rounded-lg border bg-muted/40 p-4 font-mono text-sm">
+      {filename ? <div className="mb-2 text-xs text-muted-foreground">{filename}</div> : null}
+      <pre>
+        <code className={language ? `language-${language}` : undefined}>{code}</code>
+      </pre>
+    </div>
+  ),
+  AuthorCard: ({ name, bio, avatarSrc, url }) => (
+    <div className="my-6 flex gap-4 rounded-xl border p-4">
+      {avatarSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatarSrc} alt="" className="h-16 w-16 shrink-0 rounded-full object-cover" />
+      ) : null}
+      <div>
+        {url ? (
+          <a href={url} className="font-semibold hover:underline">
+            {name}
+          </a>
+        ) : (
+          <p className="font-semibold">{name}</p>
+        )}
+        {bio ? <p className="mt-1 text-sm text-muted-foreground">{bio}</p> : null}
+      </div>
+    </div>
+  ),
+};
+```
+
+Style these however your design system requires; the important part is **prop names** matching what the API stores.
+
+### 3. Use the map on the post page
+
+```tsx
+import { getPublishedPostBySlug, renderBlogSpec } from "@itsjust-lt/website-kit/blog";
+import { luminumBlogMap } from "./luminum-blog-map";
+
+// inside page component:
+<div>{renderBlogSpec(data.renderSpec, luminumBlogMap, { rootClassName: "space-y-6" })}</div>
+```
+
+Optional third argument: `BlogRenderOptions` — `markdownClassName` (Tailwind Typography / prose) and `rootClassName` wrapper.
+
 ## Quick Start
 
 ### 1. Analytics Tracking
@@ -121,7 +250,6 @@ export default async function BlogPage() {
             <Link href={`/blog/${post.slug}`}>
               <img src={post.coverImageUrl} alt={post.title} />
               <h2>{post.title}</h2>
-              <p>{post.summary}</p>
             </Link>
           </article>
         ))}
