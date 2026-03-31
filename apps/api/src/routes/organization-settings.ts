@@ -188,6 +188,7 @@ router.patch("/", async (req: Request, res: Response) => {
       ...allowedUpdates
     } = updates;
     await prisma.organization.update({ where: { id: organizationId }, data: allowedUpdates });
+    await invalidateDomainLookupCacheForOrganization(organizationId);
     res.json({ success: true, message: "Settings updated" });
   } catch (error: any) {
     res.json({ success: false, error: error.message });

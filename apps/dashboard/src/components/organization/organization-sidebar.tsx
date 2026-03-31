@@ -19,7 +19,7 @@ import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Set
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { orgNavPath } from "@/lib/org-nav-path"
-import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
+import { orgLogoOrBrandProxy } from "@/lib/org-display-logo"
 
 interface Organization {
   id: string
@@ -64,8 +64,7 @@ export function OrganizationSidebar({
 }) {
   const pathname = usePathname()
   const nav = (section: string) => orgNavPath(workspaceSlug, flatRoutes, section)
-  const orgBrandSrc =
-    organization.logo?.trim() || orgBrandIconProxyUrl(organization.name)
+  const orgBrandSrc = orgLogoOrBrandProxy(organization.logo, organization.name)
   const [unseenFormsCount, setUnseenFormsCount] = useState(initialUnseenFormsCount)
   const [unreadEmailsCount, setUnreadEmailsCount] = useState(initialUnreadEmailsCount)
   const [unreadWhatsappCount, setUnreadWhatsappCount] = useState(initialUnreadWhatsappCount)

@@ -2,6 +2,8 @@
 
 Drop-in package for customer Next.js (App Router) websites. Provides analytics tracking, form submission, blog rendering with SSR/SEO, and Next.js metadata helpers — all powered by a single `websiteId`.
 
+Supports Next.js `14`, `15`, and `16` (App Router).
+
 ## Installation
 
 Published to **GitHub Packages** (private). Full setup (GitHub Packages, CI publish, `.npmrc`, `NODE_AUTH_TOKEN`, Next.js `transpilePackages`) is in **[`docs/github-packages.md`](../../docs/github-packages.md)**.
@@ -67,6 +69,8 @@ export function ContactForm() {
       analyticsBaseUrl: process.env.NEXT_PUBLIC_LUMINUM_ANALYTICS_URL,
       formName: "Contact Form",
       fields,
+      // Optional: pass signal/headers/etc.
+      // fetchOptions: { signal: controller.signal },
     });
 
     setStatus(result.ok ? "sent" : "error");
@@ -102,6 +106,10 @@ export default async function BlogPage() {
   const { posts } = await getPublishedPosts({
     websiteId: process.env.LUMINUM_WEBSITE_ID!,
     apiBaseUrl: process.env.LUMINUM_API_URL,
+    // Optional caching control for Next.js 14/15/16:
+    // revalidateSeconds: 600,
+    // noStore: false,
+    // fetchOptions: { next: { tags: ["blog"] } },
   });
 
   return (
@@ -254,6 +262,41 @@ export default async function Image({ params }: { params: { slug: string } }) {
 | `NEXT_PUBLIC_LUMINUM_WEBSITE_ID` | Yes (client) | Same as above, exposed to browser for forms |
 | `LUMINUM_API_URL` | No | Express API base URL (default: `https://api.luminum.app`) |
 | `NEXT_PUBLIC_LUMINUM_ANALYTICS_URL` | No | Go analytics base URL (default: `https://analytics.luminum.app`) |
+
+## Next.js 16 Compatibility
+
+- `@itsjust-lt/website-kit` now declares peer support for `next@^16`.
+- Keep `transpilePackages` enabled in your consumer project:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  transpilePackages: ["@itsjust-lt/website-kit", "@itsjust-lt/blog-renderer"],
+};
+
+export default nextConfig;
+```
+
+## Advanced Fetch Controls
+
+Blog fetch functions (`getPublishedPosts`, `getPublishedPostBySlug`, `searchPosts`, etc.) accept:
+
+- `revalidateSeconds?: number` - override default ISR revalidate window (`300`).
+- `noStore?: boolean` - force uncached fetches (`cache: "no-store"`).
+- `fetchOptions?: RequestInit` - pass `signal`, custom headers, or `next: { tags: [...] }`.
+
+Example:
+
+```ts
+const data = await getPublishedPostBySlug({
+  websiteId: process.env.LUMINUM_WEBSITE_ID!,
+  slug,
+  revalidateSeconds: 60,
+  fetchOptions: { next: { tags: ["blog-post", slug] } },
+});
+```
 
 ## Exports
 

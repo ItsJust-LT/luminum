@@ -8,7 +8,7 @@ import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Download, Share, MoreVertical, Smartphone, Monitor, Plus, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { orgBrandIconProxyUrl } from '@/lib/org-brand-icon'
+import { orgLogoOrBrandProxy } from '@/lib/org-display-logo'
 
 type Platform = 'ios' | 'android' | 'desktop'
 
@@ -141,13 +141,9 @@ export default function InstallContent({ orgName, orgLogo, brandIconSrc }: Insta
   }, [isReady, isStandalone, router])
 
   const appName = orgName || 'Luminum'
-  const installIconSrc = orgLogo?.trim()
-    ? orgLogo.trim()
-    : brandIconSrc
-      ? brandIconSrc
-      : orgName
-        ? orgBrandIconProxyUrl(orgName)
-        : '/images/logo.png'
+  const installIconSrc =
+    brandIconSrc ||
+    (orgName ? orgLogoOrBrandProxy(orgLogo, orgName) : '/images/logo.png')
   const installIconUnopt = true
   const [platform, setPlatform] = useState<Platform>('ios')
   const [detected, setDetected] = useState(false)

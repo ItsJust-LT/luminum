@@ -52,7 +52,7 @@ import { AppShellLayout } from "@/components/app-shell/app-shell-layout"
 import { cn } from "@/lib/utils"
 import { CustomDomainCtx, type CustomDomainContext } from "@/lib/hooks/use-custom-domain"
 import { orgNavPath } from "@/lib/org-nav-path"
-import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
+import { orgLogoOrBrandProxy } from "@/lib/org-display-logo"
 
 interface Organization {
   id: string
@@ -389,10 +389,7 @@ export default function SlugLayout({
             <div className="flex items-center gap-3">
               <Avatar className="h-8 w-8 ring-2 ring-primary/20">
                 <AvatarImage
-                  src={
-                    state.organization?.logo?.trim() ||
-                    orgBrandIconProxyUrl(state.organization?.name || "Organization")
-                  }
+                  src={orgLogoOrBrandProxy(state.organization?.logo, state.organization?.name || "Organization")}
                 />
                 <AvatarFallback className="bg-primary/10 text-primary text-sm font-bold">
                   {state.organization?.name.charAt(0).toUpperCase()}
@@ -555,7 +552,7 @@ export default function SlugLayout({
               organizationName={state.organization.name}
               organizationLogo={
                 state.organization.logo?.trim() ||
-                orgBrandIconProxyUrl(state.organization.name)
+                orgLogoOrBrandProxy(state.organization.logo, state.organization.name)
               }
               emailsEnabled={state.organization.emails_enabled ?? false}
               userRole={state.userRole ?? "member"}
@@ -631,7 +628,7 @@ export default function SlugLayout({
                   <Image
                     src={
                       isCustomDomain && state.organization
-                        ? state.organization.logo?.trim() || orgBrandIconProxyUrl(state.organization.name)
+                        ? orgLogoOrBrandProxy(state.organization.logo, state.organization.name)
                         : "/images/logo.png"
                     }
                     alt={isCustomDomain && state.organization?.name ? state.organization.name : "Luminum"}
@@ -704,10 +701,7 @@ export default function SlugLayout({
                       <DropdownMenuItem className="flex items-center gap-2">
                         <Avatar className="h-4 w-4">
                           <AvatarImage
-                            src={
-                              state.organization?.logo?.trim() ||
-                              orgBrandIconProxyUrl(state.organization?.name || "Organization")
-                            }
+                            src={orgLogoOrBrandProxy(state.organization?.logo, state.organization?.name || "Organization")}
                           />
                           <AvatarFallback className="text-xs">
                             {state.organization?.name.charAt(0).toUpperCase()}

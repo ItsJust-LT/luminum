@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ImageResponse } from "next/og"
 import { headers } from "next/headers"
-import {
-  hueFromString,
-  initialsFromOrgName,
-  isRasterImageUrl,
-  isSvgImageUrl,
-} from "@/lib/org-brand-initials"
+import { hasUploadedOrgLogo, toAbsoluteOrgLogoUrl } from "@/lib/org-display-logo"
+import { hueFromString, initialsFromOrgName, isSvgImageUrl } from "@/lib/org-brand-initials"
 
 function clampSize(raw: string | null): number {
   const n = parseInt(raw || "192", 10)
@@ -19,7 +15,9 @@ export async function GET(request: NextRequest) {
   const hdrs = await headers()
   const isCustom = hdrs.get("x-custom-domain") === "true"
   const orgName = hdrs.get("x-org-name")
-  const orgLogo = hdrs.get("x-org-logo")?.trim()
+  const orgLogoRaw = hdrs.get("x-org-logo")
+  const host = hdrs.get("x-forwarded-host") || hdrs.get("host") || ""
+  const proto = hdrs.get("x-forwarded-proto") || "https"
 
   const fallbackStatic = (s: number) => {
     const u = request.nextUrl.clone()
@@ -32,14 +30,12 @@ export async function GET(request: NextRequest) {
     return fallbackStatic(size)
   }
 
-  if (orgLogo && isRasterImageUrl(orgLogo)) {
-    const target =
-      orgLogo.startsWith("http://") || orgLogo.startsWith("https://")
-        ? orgLogo
-        : new URL(orgLogo, request.url).toString()
-    return NextResponse.redirect(target, 302)
-  }
-  if (orgLogo && !isSvgImageUrl(orgLogo)) {
+  if (hasUploadedOrgLogo(orgLogoRaw)) {
+    const orgLogo = orgLogoRaw!.trim()
+    if (isSvgImageUrl(orgLogo)) {
+      const target = toAbsoluteOrgLogoUrl(orgLogo, host, proto)
+      return NextResponse.redirect(target, 302)
+    }
     const target =
       orgLogo.startsWith("http://") || orgLogo.startsWith("https://")
         ? orgLogo

@@ -1,7 +1,8 @@
 {
   "name": "@itsjust-lt/website-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
+  "sideEffects": false,
   "files": [
     "src",
     "README.md"
@@ -24,7 +25,7 @@
     "./metadata": "./src/metadata/index.ts"
   },
   "peerDependencies": {
-    "next": "^14 || ^15",
+    "next": "^14 || ^15 || ^16",
     "react": "^18 || ^19"
   },
   "dependencies": {

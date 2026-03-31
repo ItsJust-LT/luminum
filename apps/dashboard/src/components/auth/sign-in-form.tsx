@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 import { signInWithEmail, signInWithGoogle } from "@/lib/auth/sign-in"
 import { SkeletonLoader } from "@/components/ui/skeleton-loader"
-import { orgBrandIconProxyUrl } from "@/lib/org-brand-icon"
+import { orgLogoOrBrandProxy } from "@/lib/org-display-logo"
 
 
 
@@ -21,8 +21,7 @@ interface SignInFormProps {
 
 function signInBrandImageSrc(orgBranding: SignInFormProps["orgBranding"]): string {
   if (!orgBranding) return "/images/logo.png"
-  if (orgBranding.logo?.trim()) return orgBranding.logo.trim()
-  return orgBrandIconProxyUrl(orgBranding.name)
+  return orgLogoOrBrandProxy(orgBranding.logo, orgBranding.name)
 }
 
 export function SignInForm({ orgBranding }: SignInFormProps) {

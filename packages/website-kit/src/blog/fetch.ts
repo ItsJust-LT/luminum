@@ -6,10 +6,39 @@ export interface BlogFetchOptions {
   apiBaseUrl?: string;
   /** Preview token for accessing draft posts (org-scoped). */
   previewToken?: string;
+  /** Override fetch revalidation seconds for Next.js data cache. */
+  revalidateSeconds?: number;
+  /** Force no-store requests (useful for preview/admin surfaces). */
+  noStore?: boolean;
+  /** Extra fetch options such as headers, signal, or next tags. */
+  fetchOptions?: RequestInit;
 }
 
 function baseUrl(opts: BlogFetchOptions): string {
   return (opts.apiBaseUrl ?? "https://api.luminum.app").replace(/\/$/, "");
+}
+
+function buildRequestInit(
+  opts: BlogFetchOptions,
+  fallbackRevalidate: number
+): RequestInit {
+  const nextFromCaller = (opts.fetchOptions as RequestInit & {
+    next?: Record<string, unknown>;
+  } | undefined)?.next;
+  const shouldNoStore = Boolean(opts.noStore || opts.previewToken);
+  const revalidate =
+    typeof opts.revalidateSeconds === "number"
+      ? opts.revalidateSeconds
+      : fallbackRevalidate;
+
+  const next =
+    nextFromCaller ?? (shouldNoStore ? undefined : { revalidate });
+
+  return {
+    ...(opts.fetchOptions ?? {}),
+    ...(shouldNoStore ? { cache: "no-store" as const } : {}),
+    ...(next ? { next } : {}),
+  };
 }
 
 /**
@@ -25,10 +54,12 @@ export async function getPublishedPosts(
   if (opts.limit) url.searchParams.set("limit", String(opts.limit));
 
   const res = await fetch(url.toString(), {
-    next: { revalidate: 300 },
-  } as RequestInit);
+    ...buildRequestInit(opts, 300),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to fetch blog posts: ${res.status}`);
+    throw new Error(
+      `Failed to fetch blog posts (${res.status}) for websiteId "${opts.websiteId}".`
+    );
   }
   return res.json();
 }
@@ -65,13 +96,14 @@ export async function getPublishedPostBySlug(
   url.searchParams.set("websiteId", opts.websiteId);
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
 
-  const revalidate = opts.previewToken ? 0 : 300;
   const res = await fetch(url.toString(), {
-    next: { revalidate },
-  } as RequestInit);
+    ...buildRequestInit(opts, 300),
+  });
   if (res.status === 404) return null;
   if (!res.ok) {
-    throw new Error(`Failed to fetch blog post: ${res.status}`);
+    throw new Error(
+      `Failed to fetch blog post "${opts.slug}" (${res.status}) for websiteId "${opts.websiteId}".`
+    );
   }
   return res.json();
 }
@@ -91,10 +123,12 @@ export async function searchPosts(
   if (opts.limit) url.searchParams.set("limit", String(opts.limit));
 
   const res = await fetch(url.toString(), {
-    next: { revalidate: opts.previewToken ? 0 : 300 },
-  } as RequestInit);
+    ...buildRequestInit(opts, 300),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to search blog posts: ${res.status}`);
+    throw new Error(
+      `Failed to search blog posts (${res.status}) for websiteId "${opts.websiteId}".`
+    );
   }
   return res.json();
 }
@@ -115,10 +149,12 @@ export async function getCategories(
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
 
   const res = await fetch(url.toString(), {
-    next: { revalidate: opts.previewToken ? 0 : 300 },
-  } as RequestInit);
+    ...buildRequestInit(opts, 300),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to fetch categories: ${res.status}`);
+    throw new Error(
+      `Failed to fetch categories (${res.status}) for websiteId "${opts.websiteId}".`
+    );
   }
   return res.json();
 }
@@ -137,10 +173,12 @@ export async function getPostsByCategory(
   if (opts.limit) url.searchParams.set("limit", String(opts.limit));
 
   const res = await fetch(url.toString(), {
-    next: { revalidate: opts.previewToken ? 0 : 300 },
-  } as RequestInit);
+    ...buildRequestInit(opts, 300),
+  });
   if (!res.ok) {
-    throw new Error(`Failed to fetch posts by category: ${res.status}`);
+    throw new Error(
+      `Failed to fetch posts by category "${opts.categorySlug}" (${res.status}) for websiteId "${opts.websiteId}".`
+    );
   }
   return res.json();
 }

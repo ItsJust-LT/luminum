@@ -8,6 +8,8 @@ export interface SubmitFormOptions {
   formName?: string;
   /** Key-value pairs of form field data */
   fields: Record<string, string>;
+  /** Extra fetch options such as signal or custom headers. */
+  fetchOptions?: RequestInit;
 }
 
 export interface SubmitFormResult {
@@ -27,6 +29,7 @@ export async function submitForm({
   analyticsBaseUrl = "https://analytics.luminum.app",
   formName,
   fields,
+  fetchOptions,
 }: SubmitFormOptions): Promise<SubmitFormResult> {
   const base = analyticsBaseUrl.replace(/\/$/, "");
   const sessionId = getSessionId();
@@ -40,8 +43,12 @@ export async function submitForm({
 
   try {
     const res = await fetch(`${base}/form`, {
+      ...fetchOptions,
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(fetchOptions?.headers ?? {}),
+      },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {

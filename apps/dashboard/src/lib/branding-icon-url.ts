@@ -1,13 +1,14 @@
-import { isRasterImageUrl } from "@/lib/org-brand-initials"
+import { hasUploadedOrgLogo, toAbsoluteOrgLogoUrl } from "@/lib/org-display-logo"
 
-/** MIME for <link type="> and manifest icon entries. */
+/** MIME hint for <link type> / manifest (proxy URLs may omit extensions). */
 export function guessImageMimeFromUrl(url: string): string {
-  const u = url.split("?")[0]?.toLowerCase() || ""
-  if (u.endsWith(".svg")) return "image/svg+xml"
-  if (u.endsWith(".png")) return "image/png"
-  if (u.endsWith(".jpg") || u.endsWith(".jpeg")) return "image/jpeg"
-  if (u.endsWith(".webp")) return "image/webp"
-  if (u.endsWith(".gif")) return "image/gif"
+  const pathOnly = url.split("?")[0]?.toLowerCase() || ""
+  if (pathOnly.endsWith(".svg")) return "image/svg+xml"
+  if (pathOnly.endsWith(".png")) return "image/png"
+  if (pathOnly.endsWith(".jpg") || pathOnly.endsWith(".jpeg")) return "image/jpeg"
+  if (pathOnly.endsWith(".webp")) return "image/webp"
+  if (pathOnly.endsWith(".gif")) return "image/gif"
+  if (pathOnly.includes("/api/files/") || pathOnly.includes("/api/proxy/")) return "image/png"
   return "image/png"
 }
 
@@ -16,8 +17,7 @@ function pwaPngPath(size: number): string {
 }
 
 /**
- * PNG (or raster logo) URLs for tabs, install UI, and manifest.
- * Chrome/Android often ignore SVG manifest icons and fall back to static Luminum PNGs.
+ * Icons for tabs, manifest, install: use uploaded logo when present; otherwise generated initials PNG.
  */
 export function absoluteBrandingIconUrls(input: {
   host: string
@@ -29,19 +29,14 @@ export function absoluteBrandingIconUrls(input: {
   icon512: string
   icon180: string
   type: string
-  /** Prefer for OG / single link fallbacks */
   primary: string
 } {
   const base = input.host ? `${input.proto}://${input.host.replace(/:\d+$/, "")}` : ""
   const trimmed = input.orgLogo?.trim()
-  if (trimmed && isRasterImageUrl(trimmed)) {
-    const url =
-      trimmed.startsWith("http://") || trimmed.startsWith("https://")
-        ? trimmed
-        : base
-          ? `${base}${trimmed.startsWith("/") ? trimmed : `/${trimmed}`}`
-          : trimmed
-    const type = guessImageMimeFromUrl(trimmed)
+
+  if (hasUploadedOrgLogo(trimmed)) {
+    const url = toAbsoluteOrgLogoUrl(trimmed!, input.host, input.proto)
+    const type = guessImageMimeFromUrl(trimmed!)
     return { icon192: url, icon512: url, icon180: url, type, primary: url }
   }
 
