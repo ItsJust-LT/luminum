@@ -25,6 +25,7 @@ export interface EmailListItem {
   is_draft?: boolean
   scheduled_send_at?: string | null
   sent_at?: string | null
+  sender_avatar_url?: string | null
 }
 
 interface EmailsContextValue {

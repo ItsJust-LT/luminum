@@ -7,6 +7,7 @@ import { upload, isStorageConfigured } from "./storage/s3.js";
 import { emailAttachmentKey, orgAttachmentsEmailsKey } from "./storage/keys.js";
 import { updateOrganizationStorage } from "./utils/storage.js";
 import { extractZipsFromBodies, type ExtractedZipPart } from "./email-binary-body.js";
+import { normalizeSenderEmail, resolveGravatarAvatarUrl } from "./email-gravatar.js";
 
 /** PostgreSQL text/JSON cannot store U+0000; inbound MIME can contain NUL in headers or bodies. */
 export function stripNul(s: string): string {
@@ -166,6 +167,16 @@ export async function persistInboundEmailFromPayload(
       ? (stripNulDeep(payload.headers) as Prisma.InputJsonValue)
       : {};
 
+  let senderAvatarUrl: string | null = null;
+  const senderAddr = normalizeSenderEmail(fromString);
+  if (senderAddr) {
+    try {
+      senderAvatarUrl = await resolveGravatarAvatarUrl(senderAddr);
+    } catch {
+      senderAvatarUrl = null;
+    }
+  }
+
   const email = await prisma.email.create({
     data: {
       organization_id: organizationId,
@@ -179,6 +190,7 @@ export async function persistInboundEmailFromPayload(
       messageId,
       dedupeKey,
       contentHash,
+      sender_avatar_url: senderAvatarUrl,
     },
   });
 

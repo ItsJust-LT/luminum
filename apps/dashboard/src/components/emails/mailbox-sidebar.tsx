@@ -39,7 +39,7 @@ export function MailboxSidebar({
       className={cn(
         "flex flex-col shrink-0 border-b border-border/60 bg-card/95 md:w-[min(15rem,28vw)] md:max-w-[16rem] lg:w-64 md:border-b-0 md:border-r",
         "md:min-h-[calc(100dvh-4.5rem)] md:self-stretch",
-        "py-4 pl-[max(0.75rem,env(safe-area-inset-left))] pr-3 md:py-6 md:pl-[max(1rem,env(safe-area-inset-left))] md:pr-4",
+        "py-4 pl-[max(0px,env(safe-area-inset-left))] pr-3 md:py-6 md:pl-[max(0px,env(safe-area-inset-left))] md:pr-4",
         className
       )}
     >

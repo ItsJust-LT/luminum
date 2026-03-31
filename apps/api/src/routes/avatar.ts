@@ -1,14 +1,14 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { gravatarUrlForEmail } from "../lib/email-gravatar.js";
 
 const router = Router();
 router.use(requireAuth);
 
-async function resolveAvatarUrls(email: string) {
-  const crypto = await import("crypto");
-  const hash = crypto.createHash("md5").update(email.toLowerCase().trim()).digest("hex");
-  const gravatar = `https://www.gravatar.com/avatar/${hash}?d=404&s=80`;
+function resolveAvatarUrls(email: string) {
+  const normalized = email.trim().toLowerCase();
+  const gravatar = gravatarUrlForEmail(normalized);
   return { bimi: null as string | null, gravatar };
 }
 
@@ -32,7 +32,7 @@ router.get("/", async (req: Request, res: Response) => {
       }
     } catch {}
 
-    const { bimi, gravatar } = await resolveAvatarUrls(normalized);
+    const { bimi, gravatar } = resolveAvatarUrls(normalized);
     const candidates: string[] = [];
     if (bimi) candidates.push(bimi);
     candidates.push(gravatar);

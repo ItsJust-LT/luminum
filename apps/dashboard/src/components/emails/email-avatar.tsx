@@ -1,20 +1,12 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
-import { api } from "@/lib/api"
-
-const CLEARBIT_BASE = "https://logo.clearbit.com"
-const FAVICON_BASE = "https://icons.duckduckgo.com/ip3"
-
-// In-memory cache so we only call the server once per email per session (avoids duplicate POSTs on re-mounts)
-const avatarCache = new Map<string, { imageUrl: string | null; bimi: string | null; gravatar: string | null }>()
-
-function getDomain(email: string): string | null {
-  const at = email.indexOf("@")
-  if (at === -1) return null
-  return email.slice(at + 1).trim().toLowerCase() || null
-}
+import {
+  displayNameForOrgBrand,
+  extractEmailFromFromHeader,
+  getPublicApiBase,
+} from "@/lib/email-from-header"
 
 function getInitials(email: string): string {
   const local = email.split("@")[0] || ""
@@ -39,78 +31,47 @@ export interface EmailAvatarProps {
   email: string | null
   /** When provided, skip server lookup and use this URL first (e.g. from notification data). */
   imageUrl?: string | null
+  /** Stored Gravatar URL from webhook / database (preferred). */
+  senderAvatarUrl?: string | null
   className?: string
   size?: number
 }
 
-const avatarSizes: Record<string, number> = {
-  xs: 24,
-  sm: 32,
-  md: 40,
-  lg: 56,
-  xl: 72,
-}
-
-export function EmailAvatar({ email, imageUrl: initialImageUrl, className, size = 40 }: EmailAvatarProps) {
+export function EmailAvatar({
+  email,
+  imageUrl: initialImageUrl,
+  senderAvatarUrl,
+  className,
+  size = 40,
+}: EmailAvatarProps) {
   const [sourceIndex, setSourceIndex] = useState(0)
-  const [serverUrls, setServerUrls] = useState<{
-    imageUrl: string | null
-    bimi: string | null
-    gravatar: string | null
-  }>({ imageUrl: null, bimi: null, gravatar: null })
-  const requestedRef = useRef<string | null>(null)
-
   const normalizedEmail = email?.trim() || ""
-  const domain = useMemo(() => getDomain(normalizedEmail), [normalizedEmail])
-  const pixelSize = typeof size === "string" ? avatarSizes[size] ?? 40 : size
-
-  useEffect(() => {
-    if (!normalizedEmail) return
-    setSourceIndex(0)
-    const cacheKey = normalizedEmail.toLowerCase()
-    const cached = avatarCache.get(cacheKey)
-    if (cached) {
-      setServerUrls(cached)
-      return
-    }
-    if (requestedRef.current === cacheKey) return
-    requestedRef.current = cacheKey
-    let cancelled = false
-    api.avatar.getForEmail(normalizedEmail)
-      .then((result) => {
-        if (!cancelled) {
-          const urls = {
-            imageUrl: result.imageUrl,
-            bimi: result.bimi,
-            gravatar: result.gravatar,
-          }
-          avatarCache.set(cacheKey, urls)
-          setServerUrls(urls)
-          setSourceIndex(0)
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) requestedRef.current = null
-      })
-    return () => {
-      cancelled = true
+  const parsedAddr = useMemo(() => {
+    if (!normalizedEmail) return ""
+    try {
+      return extractEmailFromFromHeader(normalizedEmail).toLowerCase()
+    } catch {
+      return normalizedEmail.toLowerCase()
     }
   }, [normalizedEmail])
+
+  const brandLabel = useMemo(() => displayNameForOrgBrand(normalizedEmail), [normalizedEmail])
+  const apiBase = useMemo(() => getPublicApiBase(), [])
 
   const sources = useMemo(() => {
     const list: string[] = []
     if (initialImageUrl) list.push(initialImageUrl)
-    if (serverUrls.imageUrl) list.push(serverUrls.imageUrl)
-    if (serverUrls.bimi) list.push(serverUrls.bimi)
-    if (serverUrls.gravatar) list.push(serverUrls.gravatar)
-    if (domain) {
-      list.push(`${CLEARBIT_BASE}/${domain}`)
-      list.push(`${FAVICON_BASE}/${domain}.ico`)
+    if (senderAvatarUrl) list.push(senderAvatarUrl)
+    if (parsedAddr && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsedAddr)) {
+      list.push(`/api/email-gravatar?email=${encodeURIComponent(parsedAddr)}`)
+    }
+    if (apiBase && brandLabel) {
+      list.push(`${apiBase}/api/public/org-brand?name=${encodeURIComponent(brandLabel)}`)
     }
     return list
-  }, [initialImageUrl, serverUrls.imageUrl, serverUrls.bimi, serverUrls.gravatar, domain])
+  }, [initialImageUrl, senderAvatarUrl, parsedAddr, apiBase, brandLabel])
 
+  const pixelSize = size
   const currentUrl = sources[sourceIndex]
   const showInitials = !normalizedEmail || sourceIndex >= sources.length
 
@@ -130,8 +91,8 @@ export function EmailAvatar({ email, imageUrl: initialImageUrl, className, size 
   }
 
   if (showInitials) {
-    const bg = getInitialsColor(normalizedEmail)
-    const initials = getInitials(normalizedEmail)
+    const bg = getInitialsColor(parsedAddr || normalizedEmail)
+    const initials = getInitials(parsedAddr || normalizedEmail)
     return (
       <div
         className={cn("rounded-full flex items-center justify-center shrink-0 text-white font-semibold antialiased", className)}

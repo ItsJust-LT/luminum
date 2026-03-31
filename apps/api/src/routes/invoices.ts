@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { buffer as streamToBuffer } from "node:stream/consumers";
 import { Prisma } from "@luminum/database";
 import { requireAuth } from "../middleware/require-auth.js";
 import { canAccessOrganization } from "../lib/access.js";
@@ -9,6 +10,8 @@ import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import { calculateTotals, type InvoiceItem, type CustomAdjustment } from "../lib/invoice/calculations.js";
 import { generateInvoicePdf } from "../lib/invoice/pdf-generator.js";
 import type { InvoiceTemplateData } from "../lib/invoice/html-template.js";
+import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
+import { broadcastOrgEmailOutboundSent } from "../lib/org-ws-broadcast.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -23,6 +26,76 @@ async function ensureInvoicesEnabled(organizationId: string): Promise<boolean> {
     select: { invoices_enabled: true },
   });
   return org?.invoices_enabled === true;
+}
+
+type InvoiceWithItems = Prisma.invoiceGetPayload<{ include: { items: true } }>;
+
+function invoiceToTemplateData(invoice: InvoiceWithItems): InvoiceTemplateData {
+  return {
+    documentType: invoice.document_type === "quote" ? "quote" : "invoice",
+    company: {
+      name: invoice.company_name,
+      email: invoice.company_email || undefined,
+      phone: invoice.company_phone || undefined,
+      vat: invoice.company_vat || undefined,
+      logo: invoice.company_logo || undefined,
+      address: invoice.company_address as any,
+    },
+    client: {
+      name: invoice.client_name,
+      email: invoice.client_email || undefined,
+      phone: invoice.client_phone || undefined,
+      address: invoice.client_address as any,
+    },
+    invoiceNumber: invoice.invoice_number,
+    date: invoice.date.toISOString().split("T")[0]!,
+    dueDate: invoice.due_date?.toISOString().split("T")[0],
+    currency: invoice.currency,
+    language: invoice.language,
+    items: invoice.items.map((it) => ({
+      description: it.description,
+      quantity: it.quantity,
+      unit_price: Number(it.unit_price),
+      tax_percent: it.tax_percent ?? undefined,
+      tax_exempt: it.tax_exempt,
+      special_tax_rate: it.special_tax_rate ?? undefined,
+      sort_order: it.sort_order,
+    })),
+    subtotal: Number(invoice.subtotal),
+    totalTax: Number(invoice.total_tax),
+    discount: Number(invoice.discount_amount),
+    shipping: Number(invoice.shipping_amount),
+    grandTotal: Number(invoice.grand_total),
+    taxInclusive: invoice.tax_inclusive,
+    globalTaxPercent: invoice.global_tax_percent ?? undefined,
+    customAdjustments: (invoice.custom_adjustments as unknown as CustomAdjustment[] | null) ?? undefined,
+    notes: invoice.notes || undefined,
+    terms: invoice.terms || undefined,
+  };
+}
+
+async function ensureInvoicePdfBuffer(invoice: InvoiceWithItems): Promise<Buffer> {
+  if (invoice.pdf_storage_key) {
+    const obj = await s3.getObject(invoice.pdf_storage_key);
+    if (!obj?.stream) throw new Error("PDF file missing in storage");
+    return streamToBuffer(obj.stream);
+  }
+
+  const templateData = invoiceToTemplateData(invoice);
+  const pdfBuffer = await generateInvoicePdf(templateData);
+  const oldSize = 0;
+  const storageKey = orgInvoiceKey(invoice.organization_id, invoice.id);
+
+  await s3.upload(pdfBuffer, storageKey, { contentType: "application/pdf" });
+
+  await prisma.invoice.update({
+    where: { id: invoice.id },
+    data: { pdf_storage_key: storageKey, pdf_generated_at: new Date() },
+  });
+
+  await updateOrganizationStorage(invoice.organization_id, pdfBuffer.length - oldSize);
+
+  return pdfBuffer;
 }
 
 // GET /api/invoices?organizationId=&status=&search=&page=&limit=&document_type=
@@ -444,50 +517,7 @@ router.post("/:id/generate-pdf", async (req: Request, res: Response) => {
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
     if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
 
-    const invoiceWithItems = invoice as typeof invoice & { items: Array<{ description: string; quantity: number; unit_price: any; tax_percent: number | null; tax_exempt: boolean; special_tax_rate: number | null; sort_order: number }> };
-
-    const templateData: InvoiceTemplateData = {
-      documentType: (invoice as any).document_type === "quote" ? "quote" : "invoice",
-      company: {
-        name: invoice.company_name,
-        email: invoice.company_email || undefined,
-        phone: invoice.company_phone || undefined,
-        vat: invoice.company_vat || undefined,
-        logo: invoice.company_logo || undefined,
-        address: invoice.company_address as any,
-      },
-      client: {
-        name: invoice.client_name,
-        email: invoice.client_email || undefined,
-        phone: invoice.client_phone || undefined,
-        address: invoice.client_address as any,
-      },
-      invoiceNumber: invoice.invoice_number,
-      date: invoice.date.toISOString().split("T")[0]!,
-      dueDate: invoice.due_date?.toISOString().split("T")[0],
-      currency: invoice.currency,
-      language: invoice.language,
-      items: invoiceWithItems.items.map((it) => ({
-        description: it.description,
-        quantity: it.quantity,
-        unit_price: Number(it.unit_price),
-        tax_percent: it.tax_percent ?? undefined,
-        tax_exempt: it.tax_exempt,
-        special_tax_rate: it.special_tax_rate ?? undefined,
-        sort_order: it.sort_order,
-      })),
-      subtotal: Number(invoice.subtotal),
-      totalTax: Number(invoice.total_tax),
-      discount: Number(invoice.discount_amount),
-      shipping: Number(invoice.shipping_amount),
-      grandTotal: Number(invoice.grand_total),
-      taxInclusive: invoice.tax_inclusive,
-      globalTaxPercent: invoice.global_tax_percent ?? undefined,
-      customAdjustments: (invoice.custom_adjustments as unknown as CustomAdjustment[] | null) ?? undefined,
-      notes: invoice.notes || undefined,
-      terms: invoice.terms || undefined,
-    };
-
+    const templateData = invoiceToTemplateData(invoice);
     const pdfBuffer = await generateInvoicePdf(templateData);
     const oldSize = invoice.pdf_storage_key ? pdfBuffer.length : 0;
     const storageKey = orgInvoiceKey(invoice.organization_id, invoice.id);
@@ -509,6 +539,118 @@ router.post("/:id/generate-pdf", async (req: Request, res: Response) => {
     const pdfUrl = `${apiUrl.replace(/\/$/, "")}/api/invoices/${invoice.id}/pdf`;
 
     res.json({ success: true, pdfUrl, storageKey });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/invoices/:id/send-email
+router.post("/:id/send-email", async (req: Request, res: Response) => {
+  try {
+    const id = paramId(req);
+    const { to, message, fromLocalPart, markSent } = req.body as {
+      to?: string;
+      message?: string;
+      fromLocalPart?: string;
+      markSent?: boolean;
+    };
+
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { items: { orderBy: { sort_order: "asc" } } },
+    });
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await ensureInvoicesEnabled(invoice.organization_id))) return res.status(403).json({ error: "Invoices not enabled" });
+
+    const org = await prisma.organization.findUnique({
+      where: { id: invoice.organization_id },
+      select: { emails_enabled: true },
+    });
+    if (!org?.emails_enabled) {
+      return res.status(400).json({
+        error:
+          "Organization email is not enabled. Turn on mail and complete domain setup before sending invoices by email.",
+      });
+    }
+
+    const recipient = (to && String(to).trim()) || invoice.client_email?.trim() || "";
+    if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+      return res.status(400).json({
+        error: 'A valid recipient email is required. Add a client email on the invoice or pass "to".',
+      });
+    }
+
+    let from: string;
+    let replyTo: string;
+    try {
+      ({ from, replyTo } = await getOrgReplyAddress(invoice.organization_id, fromLocalPart));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(400).json({ error: msg });
+    }
+
+    const isQuote = invoice.document_type === "quote";
+    const docWord = isQuote ? "Quote" : "Invoice";
+    const subject = `${docWord} ${invoice.invoice_number} from ${invoice.company_name}`;
+    const text =
+      (message && String(message).trim()) ||
+      `Please find your ${docWord.toLowerCase()} attached.\n\nThank you.`;
+
+    const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
+    const prefix = isQuote ? "quote" : "invoice";
+    const filename = `${prefix}-${invoice.invoice_number.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
+
+    const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
+    const sendResult = await sendOutboundViaResend(invoice.organization_id, {
+      from,
+      replyTo,
+      to: [recipient],
+      subject,
+      text,
+      attachments: [
+        {
+          filename,
+          contentType: "application/pdf",
+          contentBase64: pdfBuffer.toString("base64"),
+        },
+      ],
+      messageId,
+    });
+
+    const emailRecord = await prisma.email.create({
+      data: {
+        organization_id: invoice.organization_id,
+        from,
+        to: JSON.stringify([recipient]),
+        subject,
+        text,
+        html: null,
+        direction: "outbound",
+        messageId: sendResult.messageId,
+        sent_at: new Date(),
+        receivedAt: null,
+        read: true,
+        starred: false,
+        is_draft: false,
+        outbound_provider: sendResult.provider,
+        fallback_used: false,
+        fallback_reason: null,
+        provider_message_id: sendResult.providerMessageId ?? null,
+      },
+    });
+    broadcastOrgEmailOutboundSent(invoice.organization_id, emailRecord.id);
+
+    let updatedInvoice: InvoiceWithItems = invoice;
+    if (markSent !== false && invoice.status === "draft") {
+      updatedInvoice = await prisma.invoice.update({
+        where: { id },
+        data: { status: "sent" },
+        include: { items: { orderBy: { sort_order: "asc" } } },
+      });
+    }
+
+    res.json({ success: true, invoice: updatedInvoice, providerMessageId: sendResult.providerMessageId });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

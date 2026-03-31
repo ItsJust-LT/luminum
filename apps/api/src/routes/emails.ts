@@ -731,6 +731,7 @@ router.get("/", async (req: Request, res: Response) => {
         is_draft: !!e.is_draft,
         scheduled_send_at: e.scheduled_send_at ?? null,
         sent_at: e.sent_at ?? null,
+        sender_avatar_url: e.sender_avatar_url ?? null,
         attachments: e.attachments.map((a: any) => {
           const base = config.apiUrl.replace(/\/$/, "");
           const url = a.r2Key ? `${base}/api/files/${encodeURIComponent(a.r2Key)}` : a.url;

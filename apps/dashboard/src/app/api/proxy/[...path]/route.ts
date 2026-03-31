@@ -5,6 +5,15 @@ import { getInternalApiBaseUrl } from "@/lib/internal-api-url"
 async function proxyData(req: NextRequest) {
   const segments = req.nextUrl.pathname.split("/").slice(3) // strip ["", "api", "proxy"]
   const path = "/" + segments.join("/")
+  if (path === "/api/avatar" || path.startsWith("/api/avatar/")) {
+    return NextResponse.json(
+      {
+        error:
+          "The avatar endpoint is not available through this proxy. Gravatar URLs are stored on each email when it arrives; the dashboard resolves avatars without proxying this path.",
+      },
+      { status: 410 }
+    )
+  }
   const url = new URL(path + req.nextUrl.search, getInternalApiBaseUrl())
 
   const headers = new Headers(req.headers)

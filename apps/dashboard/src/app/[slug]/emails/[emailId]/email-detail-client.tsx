@@ -72,6 +72,7 @@ interface Email {
   is_draft?: boolean
   scheduled_send_at?: string | null
   sent_at?: string | null
+  sender_avatar_url?: string | null
 }
 
 interface EmailDetailClientProps {
@@ -495,7 +496,12 @@ export function EmailDetailClient({ email, organizationSlug }: EmailDetailClient
           <Card className="rounded-xl border bg-card shadow-sm overflow-hidden">
             <CardContent className="p-0">
               <div className="flex gap-3 sm:gap-4 p-3 sm:p-4 md:p-5">
-                <EmailAvatar email={email.from} size={56} className="h-12 w-12 sm:h-14 sm:w-14 ring-2 ring-primary/5 shrink-0" />
+                <EmailAvatar
+                  email={email.from}
+                  senderAvatarUrl={email.sender_avatar_url}
+                  size={56}
+                  className="h-12 w-12 sm:h-14 sm:w-14 ring-2 ring-primary/5 shrink-0"
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">

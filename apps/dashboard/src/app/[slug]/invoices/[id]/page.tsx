@@ -24,9 +24,21 @@ import {
   ArrowLeft, FileDown, Pencil, Trash2, Loader2, Send,
   CheckCircle, MoreHorizontal, RefreshCw, FileText, Clock,
   AlertCircle, Building2, User, Calendar, Receipt, ExternalLink,
-  ArrowRightLeft, FileCheck,
+  ArrowRightLeft, FileCheck, Mail,
 } from "lucide-react";
 import { InvoicePdfPreview } from "./invoice-pdf-preview";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className?: string; icon: typeof Receipt }> = {
   draft: { label: "Draft", variant: "secondary", icon: FileText },
@@ -53,6 +65,12 @@ export default function InvoiceViewPage() {
   const [showDelete, setShowDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [sendEmailOpen, setSendEmailOpen] = useState(false);
+  const [sendTo, setSendTo] = useState("");
+  const [sendMessage, setSendMessage] = useState("");
+  const [sendFromLocal, setSendFromLocal] = useState("noreply");
+  const [markSentAfterEmail, setMarkSentAfterEmail] = useState(true);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     if (!invoiceId) return;
@@ -67,6 +85,12 @@ export default function InvoiceViewPage() {
       }
     })();
   }, [invoiceId]);
+
+  useEffect(() => {
+    if (sendEmailOpen && invoice?.client_email) {
+      setSendTo(String(invoice.client_email).trim());
+    }
+  }, [sendEmailOpen, invoice?.client_email]);
 
   const isQuote = invoice?.document_type === "quote";
   const docLabel = isQuote ? "Quote" : "Invoice";
@@ -108,6 +132,32 @@ export default function InvoiceViewPage() {
     }
   }
 
+  async function handleSendByEmail() {
+    const to = sendTo.trim();
+    if (!to) {
+      toast.error("Enter a recipient email address.");
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      const res = (await api.invoices.sendEmail(invoiceId, {
+        to,
+        message: sendMessage.trim() || undefined,
+        fromLocalPart: sendFromLocal.trim() || undefined,
+        markSent: markSentAfterEmail,
+      })) as { success?: boolean; invoice?: any; error?: string };
+      if (!res?.success) throw new Error(res?.error || "Send failed");
+      if (res.invoice) setInvoice(res.invoice);
+      toast.success(`${docLabel} emailed to ${to}`);
+      setSendEmailOpen(false);
+      setSendMessage("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send email");
+    } finally {
+      setSendingEmail(false);
+    }
+  }
+
   async function handleDelete() {
     setDeleting(true);
     try {
@@ -139,6 +189,7 @@ export default function InvoiceViewPage() {
     catch { return `${cur} ${Number(v).toFixed(2)}`; }
   };
   const hasPdf = !!invoice.pdf_storage_key;
+  const canSendOrgEmail = !!organization?.emails_enabled;
 
   return (
     <div className="min-h-screen pb-8">
@@ -180,6 +231,20 @@ export default function InvoiceViewPage() {
                 <FileDown className="h-4 w-4 mr-2" /> Download
               </Button>
             )}
+            <Button
+              size="sm"
+              className="hidden sm:inline-flex gap-2"
+              disabled={!canSendOrgEmail}
+              onClick={() => setSendEmailOpen(true)}
+              title={
+                !canSendOrgEmail
+                  ? "Enable organization email and complete domain setup to send from the dashboard."
+                  : `Email this ${docLabel.toLowerCase()} with PDF attached`
+              }
+            >
+              <Mail className="h-4 w-4" />
+              Send by email
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" className="h-9 w-9">
@@ -198,6 +263,13 @@ export default function InvoiceViewPage() {
                     <FileDown className="h-4 w-4 mr-2" /> Download PDF
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem
+                  disabled={!canSendOrgEmail}
+                  onClick={() => setSendEmailOpen(true)}
+                  className="sm:hidden"
+                >
+                  <Mail className="h-4 w-4 mr-2" /> Send by email
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {isQuote && invoice.status !== "accepted" && (
                   <DropdownMenuItem onClick={handleConvertToInvoice} disabled={converting} className="sm:hidden">
@@ -289,6 +361,33 @@ export default function InvoiceViewPage() {
 
           {/* Sidebar details */}
           <div className="lg:col-span-4 space-y-4">
+            <Card className={canSendOrgEmail ? "border-primary/25 bg-primary/[0.03]" : "border-muted"}>
+              <CardContent className="pt-4 pb-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Mail className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-medium leading-tight">Send to client</p>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      {canSendOrgEmail
+                        ? "Delivers the PDF by email from your verified domain. A PDF is created automatically if needed."
+                        : "Turn on mail for this organization and finish domain verification in Settings."}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  className="w-full"
+                  size="sm"
+                  disabled={!canSendOrgEmail}
+                  onClick={() => setSendEmailOpen(true)}
+                >
+                  <Send className="h-3.5 w-3.5 mr-2" />
+                  Send by email
+                </Button>
+              </CardContent>
+            </Card>
+
             {/* Amount card */}
             <Card className="border-primary/20">
               <CardContent className="pt-5 pb-4">
@@ -468,6 +567,68 @@ export default function InvoiceViewPage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={sendEmailOpen} onOpenChange={setSendEmailOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send {docLabel} by email</DialogTitle>
+            <DialogDescription>
+              The recipient receives a short message and a PDF attachment. Uses the same sending domain as Mail in this workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-send-to">To</Label>
+              <Input
+                id="inv-send-to"
+                type="email"
+                placeholder="client@example.com"
+                value={sendTo}
+                onChange={(e) => setSendTo(e.target.value)}
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-send-from">From (local part)</Label>
+              <Input
+                id="inv-send-from"
+                placeholder="noreply"
+                value={sendFromLocal}
+                onChange={(e) => setSendFromLocal(e.target.value)}
+                spellCheck={false}
+              />
+              <p className="text-[11px] text-muted-foreground">Address will be <span className="font-mono">{sendFromLocal.trim() || "noreply"}@your-domain</span> on the server.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="inv-send-msg">Message (optional)</Label>
+              <Textarea
+                id="inv-send-msg"
+                placeholder="Add a personal note above the default text…"
+                value={sendMessage}
+                onChange={(e) => setSendMessage(e.target.value)}
+                className="min-h-[88px] resize-y text-sm"
+              />
+            </div>
+            <label className="flex items-start gap-2 text-sm leading-snug cursor-pointer">
+              <Checkbox
+                checked={markSentAfterEmail}
+                onCheckedChange={(v) => setMarkSentAfterEmail(v === true)}
+                className="mt-0.5"
+              />
+              <span>Mark as sent after the email is delivered (when status is draft)</span>
+            </label>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setSendEmailOpen(false)} disabled={sendingEmail}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleSendByEmail()} disabled={sendingEmail || !sendTo.trim()}>
+              {sendingEmail ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
         <AlertDialogContent>

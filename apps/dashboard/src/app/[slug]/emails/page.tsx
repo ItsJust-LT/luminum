@@ -546,7 +546,7 @@ export default function EmailsPage() {
     return <MailProvisioningView workspaceName={organization?.name} />
   }
   return (
-    <AppPageContainer fullWidth className="!space-y-0 !px-0 pb-8 pt-0 sm:pt-1">
+    <AppPageContainer fullWidth className="!space-y-0 !px-0 pb-8 pt-0 sm:pt-1 -mx-4 w-[calc(100%+2rem)] max-w-none self-stretch sm:-mx-4">
       <div className="flex w-full flex-col gap-0 md:min-h-[calc(100dvh-4.5rem)] md:flex-row md:items-stretch">
         <MailboxSidebar
           active={mailbox}
@@ -804,7 +804,12 @@ export default function EmailsPage() {
                       (email.read || mailbox !== "inbox") && "border-l-[3px] border-l-transparent",
                     )}
                   >
-                    <EmailAvatar email={email.from} size={40} className="h-9 w-9 sm:h-10 sm:w-10 ring-1 ring-border/40" />
+                    <EmailAvatar
+                      email={email.from}
+                      senderAvatarUrl={email.sender_avatar_url}
+                      size={40}
+                      className="h-9 w-9 sm:h-10 sm:w-10 ring-1 ring-border/40"
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between gap-2 mb-0.5">
                         <span

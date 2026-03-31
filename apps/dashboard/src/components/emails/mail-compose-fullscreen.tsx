@@ -283,7 +283,7 @@ export function MailComposeFullscreen(props: {
           role="dialog"
           aria-modal="true"
           aria-labelledby="mail-compose-title"
-          className="fixed inset-0 z-[200] flex min-h-0 flex-col"
+          className="fixed inset-0 z-[200] flex min-h-0 items-end justify-center sm:items-center sm:p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -299,19 +299,19 @@ export function MailComposeFullscreen(props: {
             onClick={() => void requestClose()}
           />
           <motion.div
-            className="relative z-10 flex min-h-[100dvh] flex-1 flex-col overflow-hidden bg-background md:mx-auto md:my-3 md:min-h-0 md:max-h-[calc(100dvh-1.5rem)] md:w-full md:max-w-[min(72rem,calc(100vw-2rem))] md:rounded-2xl md:border md:border-border/60 md:shadow-2xl lg:my-4"
+            className="relative z-10 flex max-h-[min(88dvh,540px)] w-full max-w-[min(56rem,calc(100vw-1.25rem))] flex-col overflow-hidden rounded-t-2xl border border-border/60 bg-background shadow-2xl sm:rounded-2xl sm:max-h-[min(82dvh,520px)]"
             initial={{ y: 24, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 16, opacity: 0 }}
             transition={{ type: "spring", stiffness: 380, damping: 32 }}
           >
-            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border/70 bg-gradient-to-r from-primary/[0.07] via-transparent to-transparent px-5 py-4 sm:px-6 sm:py-5">
-              <div className="min-w-0 space-y-1">
-                <h2 id="mail-compose-title" className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+            <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border/70 bg-gradient-to-r from-primary/[0.06] via-transparent to-transparent px-4 py-3 sm:px-5">
+              <div className="min-w-0 space-y-0.5">
+                <h2 id="mail-compose-title" className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
                   New message
                 </h2>
-                <p className="text-sm text-muted-foreground">
-                  Closing saves a draft if you have written anything. Press Esc to close.
+                <p className="text-xs text-muted-foreground sm:text-sm">
+                  Esc or backdrop closes · unsaved content becomes a draft
                 </p>
               </div>
               <Button
@@ -327,9 +327,9 @@ export function MailComposeFullscreen(props: {
               </Button>
             </header>
 
-            <Tabs defaultValue="send" className="flex min-h-0 flex-1 flex-col">
-              <div className="shrink-0 border-b border-border/60 px-5 pt-4 sm:px-6">
-                <TabsList className="grid h-12 w-full max-w-xl grid-cols-3 gap-1 rounded-xl bg-muted/60 p-1">
+            <Tabs defaultValue="send" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="shrink-0 border-b border-border/60 px-4 pt-3 sm:px-5">
+                <TabsList className="grid h-10 w-full max-w-xl grid-cols-3 gap-1 rounded-lg bg-muted/60 p-1">
                   <TabsTrigger value="send" className="rounded-lg text-sm gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
                     <Send className="h-4 w-4 opacity-80" />
                     Send
@@ -346,69 +346,74 @@ export function MailComposeFullscreen(props: {
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="mx-auto max-w-3xl space-y-6 px-5 py-6 sm:px-8 sm:py-8">
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">From</Label>
-                    <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border/80 bg-muted/30 px-4 py-3">
+                <div className="mx-auto w-full max-w-[46rem] space-y-3 px-4 py-4 sm:px-5">
+                  <div className="space-y-3 min-w-0">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">From</Label>
+                        <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-muted/25 px-3 py-2">
+                          <Input
+                            placeholder="noreply"
+                            value={composeFromLocal}
+                            onChange={(e) => setComposeFromLocal(e.target.value)}
+                            className="h-8 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                          <span className="shrink-0 truncate text-xs text-muted-foreground">@{domain ?? "…"}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="mc-to" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          To
+                        </Label>
+                        <Input
+                          id="mc-to"
+                          placeholder="recipient@example.com"
+                          value={composeTo}
+                          onChange={(e) => setComposeTo(e.target.value)}
+                          className="h-9 rounded-lg border-border/80 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mc-subject" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Subject
+                      </Label>
                       <Input
-                        placeholder="noreply"
-                        value={composeFromLocal}
-                        onChange={(e) => setComposeFromLocal(e.target.value)}
-                        className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                        autoComplete="off"
-                        spellCheck={false}
+                        id="mc-subject"
+                        placeholder="What is this about?"
+                        value={composeSubject}
+                        onChange={(e) => setComposeSubject(e.target.value)}
+                        className="h-9 rounded-lg border-border/80 text-sm"
                       />
-                      <span className="shrink-0 truncate text-sm text-muted-foreground">@{domain ?? "…"}</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mc-body" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Message
+                      </Label>
+                      <Textarea
+                        id="mc-body"
+                        placeholder="Write your message…"
+                        value={composeBody}
+                        onChange={(e) => setComposeBody(e.target.value)}
+                        className="min-h-[7.5rem] max-h-[min(28vh,200px)] resize-y rounded-lg border-border/80 text-[14px] leading-relaxed"
+                      />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="mc-to" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      To
-                    </Label>
-                    <Input
-                      id="mc-to"
-                      placeholder="recipient@example.com"
-                      value={composeTo}
-                      onChange={(e) => setComposeTo(e.target.value)}
-                      className="h-12 rounded-xl border-border/80 text-base"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mc-subject" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Subject
-                    </Label>
-                    <Input
-                      id="mc-subject"
-                      placeholder="What is this about?"
-                      value={composeSubject}
-                      onChange={(e) => setComposeSubject(e.target.value)}
-                      className="h-12 rounded-xl border-border/80 text-base"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mc-body" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Message
-                    </Label>
-                    <Textarea
-                      id="mc-body"
-                      placeholder="Write your message…"
-                      value={composeBody}
-                      onChange={(e) => setComposeBody(e.target.value)}
-                      className="min-h-[min(50vh,320px)] rounded-xl border-border/80 text-[15px] leading-relaxed"
-                    />
-                  </div>
-
-                  <TabsContent value="send" className="mt-0 space-y-4 outline-none">
-                    <p className="text-sm text-muted-foreground">The message is sent immediately from your organization domain.</p>
-                    <div className="flex flex-col-reverse gap-3 border-t border-border/50 pt-6 sm:flex-row sm:justify-end">
-                      <Button variant="outline" className="h-11 rounded-xl" onClick={() => void requestClose()} disabled={sendingCompose || savingDraft}>
+                  <TabsContent value="send" className="mt-0 space-y-3 outline-none">
+                    <p className="text-xs text-muted-foreground sm:text-sm">
+                      Sends immediately from your organization domain.
+                    </p>
+                    <div className="flex flex-col-reverse gap-2 border-t border-border/50 pt-4 sm:flex-row sm:justify-end">
+                      <Button variant="outline" className="h-10 rounded-lg" onClick={() => void requestClose()} disabled={sendingCompose || savingDraft}>
                         Cancel
                       </Button>
                       <Button
-                        className="h-11 rounded-xl shadow-md shadow-primary/15"
+                        className="h-10 rounded-lg shadow-md shadow-primary/15"
                         onClick={() => void handleSendEmail()}
                         disabled={sendingCompose || !composeTo.trim() || !composeSubject.trim() || !composeBody.trim()}
                       >
@@ -427,15 +432,15 @@ export function MailComposeFullscreen(props: {
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="schedule" className="mt-0 space-y-5 outline-none">
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-5 sm:p-6">
-                      <div className="mb-4 flex items-center gap-2 text-foreground">
-                        <CalendarDays className="h-5 w-5 text-primary" />
-                        <span className="font-medium">When to send</span>
+                  <TabsContent value="schedule" className="mt-0 space-y-3 outline-none">
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-4 sm:p-5">
+                      <div className="mb-3 flex items-center gap-2 text-foreground">
+                        <CalendarDays className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">When to send</span>
                       </div>
-                      <div className="grid gap-5 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="mc-schedule-date" className="text-sm font-medium text-foreground">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="mc-schedule-date" className="text-xs font-medium text-foreground">
                             Date
                           </Label>
                           <Input
@@ -444,11 +449,11 @@ export function MailComposeFullscreen(props: {
                             min={minDateStr}
                             value={scheduleDate}
                             onChange={(e) => setScheduleDate(e.target.value)}
-                            className="h-12 rounded-xl border-border/80 bg-background text-base"
+                            className="h-9 rounded-lg border-border/80 bg-background text-sm"
                           />
                         </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mc-schedule-time" className="text-sm font-medium text-foreground">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="mc-schedule-time" className="text-xs font-medium text-foreground">
                             Time
                           </Label>
                           <Input
@@ -457,11 +462,11 @@ export function MailComposeFullscreen(props: {
                             min={scheduleDate === minDateStr ? minTimeForDate : undefined}
                             value={scheduleTime}
                             onChange={(e) => setScheduleTime(e.target.value)}
-                            className="h-12 rounded-xl border-border/80 bg-background text-base"
+                            className="h-9 rounded-lg border-border/80 bg-background text-sm"
                           />
                         </div>
                       </div>
-                      <p className="mt-4 text-xs text-muted-foreground">Times use your device timezone ({tzName}).</p>
+                      <p className="mt-3 text-[11px] text-muted-foreground">Timezone: {tzName}</p>
                       {schedulePreview ? (
                         <div
                           className={cn(
@@ -481,12 +486,12 @@ export function MailComposeFullscreen(props: {
                         </div>
                       ) : null}
                     </div>
-                    <div className="flex flex-col-reverse gap-3 border-t border-border/50 pt-2 sm:flex-row sm:justify-end">
-                      <Button variant="outline" className="h-11 rounded-xl" onClick={() => void requestClose()} disabled={sendingCompose || savingDraft}>
+                    <div className="flex flex-col-reverse gap-2 border-t border-border/50 pt-3 sm:flex-row sm:justify-end">
+                      <Button variant="outline" className="h-10 rounded-lg" onClick={() => void requestClose()} disabled={sendingCompose || savingDraft}>
                         Cancel
                       </Button>
                       <Button
-                        className="h-11 rounded-xl"
+                        className="h-10 rounded-lg"
                         onClick={() => void handleScheduleSend()}
                         disabled={
                           sendingCompose ||
@@ -504,15 +509,15 @@ export function MailComposeFullscreen(props: {
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="draft" className="mt-0 space-y-4 outline-none">
-                    <p className="text-sm text-muted-foreground">
-                      Save without sending. You can open the message again from the Drafts folder.
+                  <TabsContent value="draft" className="mt-0 space-y-3 outline-none">
+                    <p className="text-xs text-muted-foreground sm:text-sm">
+                      Save without sending. Open again from Drafts.
                     </p>
-                    <div className="flex flex-col-reverse gap-3 border-t border-border/50 pt-6 sm:flex-row sm:justify-end">
-                      <Button variant="outline" className="h-11 rounded-xl" onClick={() => void requestClose()} disabled={savingDraft}>
+                    <div className="flex flex-col-reverse gap-2 border-t border-border/50 pt-4 sm:flex-row sm:justify-end">
+                      <Button variant="outline" className="h-10 rounded-lg" onClick={() => void requestClose()} disabled={savingDraft}>
                         Cancel
                       </Button>
-                      <Button variant="secondary" className="h-11 rounded-xl" onClick={() => void handleSaveDraftClick()} disabled={savingDraft}>
+                      <Button variant="secondary" className="h-10 rounded-lg" onClick={() => void handleSaveDraftClick()} disabled={savingDraft}>
                         {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileEdit className="mr-2 h-4 w-4" />}
                         Save draft
                       </Button>

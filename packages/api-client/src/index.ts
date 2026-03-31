@@ -815,6 +815,10 @@ function createApiClient(baseUrl: string = "") {
     getLastCompany: (organizationId: string) =>
       get("/api/invoices/last-company", { organizationId }),
     convertToInvoice: (id: string) => post(`/api/invoices/${id}/convert-to-invoice`),
+    sendEmail: (
+      id: string,
+      body?: { to?: string; message?: string; fromLocalPart?: string; markSent?: boolean }
+    ) => post(`/api/invoices/${id}/send-email`, body ?? {}),
   };
 
   // ─── Website Audits ──────────────────────────────────────
