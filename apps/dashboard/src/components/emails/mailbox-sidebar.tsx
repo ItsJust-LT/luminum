@@ -37,12 +37,16 @@ export function MailboxSidebar({
   return (
     <aside
       className={cn(
-        "flex flex-col md:w-[220px] shrink-0 border-b md:border-b-0 md:border-r border-border/80 bg-muted/20 backdrop-blur-sm py-3 md:py-4 px-2",
+        "flex flex-col shrink-0 border-b border-border/60 bg-card/95 md:w-[min(15rem,28vw)] md:max-w-[16rem] lg:w-64 md:border-b-0 md:border-r",
+        "md:min-h-[calc(100dvh-4.5rem)] md:self-stretch",
+        "py-4 pl-[max(0.75rem,env(safe-area-inset-left))] pr-3 md:py-6 md:pl-[max(1rem,env(safe-area-inset-left))] md:pr-4",
         className
       )}
     >
-      <p className="hidden md:block px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Mail</p>
-      <nav className="flex flex-row md:flex-col gap-1 md:gap-0.5 overflow-x-auto pb-1 md:pb-0 -mx-1 px-1 md:mx-0 md:px-0">
+      <p className="hidden md:block px-1 pb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        Mail
+      </p>
+      <nav className="flex flex-row gap-1 overflow-x-auto pb-1 md:flex-col md:gap-1 md:overflow-visible md:pb-0">
         {items.map((item, i) => {
           const Icon = item.icon
           const n = item.countKey ? counts[item.countKey] : 0
@@ -57,10 +61,10 @@ export function MailboxSidebar({
               transition={{ delay: i * 0.04, type: "spring", stiffness: 380, damping: 28 }}
               onClick={() => onSelect(item.id)}
               className={cn(
-                "relative flex items-center gap-2 rounded-xl px-3 py-2 md:py-2.5 text-left text-sm transition-colors shrink-0 whitespace-nowrap",
+                "relative flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-all whitespace-nowrap md:w-full md:py-3",
                 active === item.id
-                  ? "bg-primary/12 text-foreground font-medium shadow-sm ring-1 ring-primary/15"
-                  : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                  ? "bg-primary/12 font-medium text-foreground shadow-sm ring-1 ring-primary/20"
+                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
               )}
             >
               <Icon className={cn("h-4 w-4 shrink-0", active === item.id && "text-primary")} />
@@ -79,9 +83,9 @@ export function MailboxSidebar({
           )
         })}
       </nav>
-      <Separator className="my-3 md:my-4 opacity-60 hidden md:block" />
-      <p className="hidden md:block px-3 text-[11px] leading-relaxed text-muted-foreground">
-        Inbox shows received mail. Sent and scheduled use your org domain in Resend.
+      <Separator className="my-4 hidden opacity-50 md:block" />
+      <p className="hidden px-1 text-[11px] leading-relaxed text-muted-foreground md:block">
+        Inbox shows received mail. Sent and scheduled messages use your organization domain.
       </p>
     </aside>
   )

@@ -12,7 +12,6 @@ import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -29,10 +28,8 @@ import {
   Paperclip,
   RefreshCw,
   InboxIcon,
-  Loader2,
   Star,
   Clock,
-  FileEdit,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -41,18 +38,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { EmailAvatar } from "@/components/emails/email-avatar"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { cn } from "@/lib/utils"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
-import { Textarea } from "@/components/ui/textarea"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { MailboxSidebar, type MailboxId, type FolderCounts } from "@/components/emails/mailbox-sidebar"
 import { MailProvisioningView } from "@/components/emails/mail-provisioning-view"
+import { MailComposeFullscreen } from "@/components/emails/mail-compose-fullscreen"
 
 function smartDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : new Date(date)
@@ -120,14 +108,6 @@ export default function EmailsPage() {
     scheduled: 0,
   })
   const [composeOpen, setComposeOpen] = useState(false)
-  const [scheduleAt, setScheduleAt] = useState("")
-  const [savingDraft, setSavingDraft] = useState(false)
-  /** Local part only; server appends @org domain */
-  const [composeFromLocal, setComposeFromLocal] = useState("noreply")
-  const [composeTo, setComposeTo] = useState("")
-  const [composeSubject, setComposeSubject] = useState("")
-  const [composeBody, setComposeBody] = useState("")
-  const [sendingCompose, setSendingCompose] = useState(false)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
@@ -535,115 +515,39 @@ export default function EmailsPage() {
       ? (unreadCountFromApi ?? folderCounts.inboxUnread)
       : emails.filter((e) => !e.read).length
 
-  const handleSendEmail = async () => {
-    const to = composeTo.trim()
-    const subject = composeSubject.trim()
-    const text = composeBody.trim()
-    if (!organization?.id || !to || !subject || !text) return
-    setSendingCompose(true)
-    try {
-      const result = await api.post("/api/emails/send", {
-        organizationId: organization.id,
-        fromLocalPart: composeFromLocal.trim(),
-        to: [to],
-        subject,
-        text,
-      }) as { success?: boolean; error?: string }
-      if (!result?.success) throw new Error(result?.error || "Failed to send email")
-      toast.success("Email sent")
-      setComposeOpen(false)
-      setComposeFromLocal("noreply")
-      setComposeTo("")
-      setComposeSubject("")
-      setComposeBody("")
-      setScheduleAt("")
-      setPage(1)
-      await fetchEmails(1, true)
+  const handleMailRefresh = useCallback(
+    async (opts?: { mailbox?: MailboxId }) => {
+      if (!organization?.id) return
+      const targetMb = opts?.mailbox ?? mailbox
+      if (opts?.mailbox) {
+        setMailbox(opts.mailbox)
+        setEmails([])
+        setPage(1)
+        setLoadedForOrgId(null)
+      } else {
+        setPage(1)
+      }
+      await fetchEmails(1, true, { mailbox: targetMb })
       await refreshFolderCounts()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to send email")
-    } finally {
-      setSendingCompose(false)
-    }
-  }
-
-  const handleScheduleSend = async () => {
-    const to = composeTo.trim()
-    const subject = composeSubject.trim()
-    const text = composeBody.trim()
-    if (!organization?.id || !to || !subject || !text || !scheduleAt) {
-      toast.error("Fill all fields and pick a send time.")
-      return
-    }
-    const when = new Date(scheduleAt)
-    if (Number.isNaN(when.getTime())) {
-      toast.error("Invalid date")
-      return
-    }
-    setSendingCompose(true)
-    try {
-      const result = (await api.emails.scheduleSend({
-        organizationId: organization.id,
-        fromLocalPart: composeFromLocal.trim(),
-        to: [to],
-        subject,
-        text,
-        scheduledSendAt: when.toISOString(),
-      })) as { success?: boolean; error?: string }
-      if (!result?.success) throw new Error(result?.error || "Schedule failed")
-      toast.success("Email scheduled")
-      setComposeOpen(false)
-      setComposeTo("")
-      setComposeSubject("")
-      setComposeBody("")
-      setScheduleAt("")
-      setEmails([])
-      setMailbox("scheduled")
-      setPage(1)
-      setLoadedForOrgId(null)
-      await fetchEmails(1, true, { mailbox: "scheduled" })
-      await refreshFolderCounts()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Schedule failed")
-    } finally {
-      setSendingCompose(false)
-    }
-  }
-
-  const handleSaveDraftCompose = async () => {
-    if (!organization?.id) return
-    setSavingDraft(true)
-    try {
-      const to = composeTo.trim()
-      const result = (await api.emails.saveDraft({
-        organizationId: organization.id,
-        fromLocalPart: composeFromLocal.trim(),
-        to: to ? [to] : [],
-        subject: composeSubject.trim(),
-        text: composeBody.trim(),
-      })) as { success?: boolean; error?: string; data?: { id: string } }
-      if (!result?.success) throw new Error(result?.error || "Draft save failed")
-      toast.success("Draft saved")
-      setComposeOpen(false)
-      setEmails([])
-      setMailbox("drafts")
-      setPage(1)
-      setLoadedForOrgId(null)
-      await fetchEmails(1, true, { mailbox: "drafts" })
-      await refreshFolderCounts()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Draft save failed")
-    } finally {
-      setSavingDraft(false)
-    }
-  }
+    },
+    [
+      organization?.id,
+      mailbox,
+      fetchEmails,
+      refreshFolderCounts,
+      setEmails,
+      setPage,
+      setLoadedForOrgId,
+      setMailbox,
+    ],
+  )
 
   if (showSetupRequired) {
     return <MailProvisioningView workspaceName={organization?.name} />
   }
   return (
-    <AppPageContainer fullWidth>
-      <div className="flex flex-col md:flex-row min-h-[min(100dvh,920px)] gap-0">
+    <AppPageContainer fullWidth className="!space-y-0 !px-0 pb-8 pt-0 sm:pt-1">
+      <div className="flex w-full flex-col gap-0 md:min-h-[calc(100dvh-4.5rem)] md:flex-row md:items-stretch">
         <MailboxSidebar
           active={mailbox}
           counts={folderCounts}
@@ -654,12 +558,12 @@ export default function EmailsPage() {
             setEmails([])
           }}
         />
-        <div className="flex-1 min-w-0 flex flex-col min-h-0 px-3 sm:px-5 lg:px-8 pb-8 pt-3 md:pt-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-8 px-4 py-6 sm:px-6 sm:py-7 lg:gap-10 lg:px-10 lg:py-8">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="relative overflow-hidden app-hero bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 p-4 sm:p-6 md:p-8 lg:p-10 border border-border/40 rounded-2xl shadow-sm"
+            className="app-hero relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 p-5 shadow-sm sm:p-6 md:p-8 lg:p-10"
           >
             <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] pointer-events-none" />
             <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -717,187 +621,30 @@ export default function EmailsPage() {
                     Mark all read
                   </Button>
                 ) : null}
-                <Sheet open={composeOpen} onOpenChange={setComposeOpen}>
-                  <SheetTrigger asChild>
-                    <Button
-                      size="sm"
-                      className="shrink-0 rounded-xl shadow-md shadow-primary/15 bg-primary hover:bg-primary/90 transition-transform active:scale-[0.98]"
-                    >
-                      <Send className="h-4 w-4 mr-2" />
-                      Compose
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent
-                    side="right"
-                    className="w-full sm:max-w-[min(100vw-1rem,480px)] p-0 gap-0 flex flex-col border-l border-border/80 bg-background/95 backdrop-blur-xl data-[state=open]:duration-300"
-                  >
-                    <div className="relative overflow-hidden border-b border-border/60 bg-gradient-to-br from-primary/14 via-primary/5 to-transparent px-6 pt-7 pb-5">
-                      <SheetHeader className="space-y-1.5 text-left">
-                        <SheetTitle className="text-xl font-semibold tracking-tight">Compose</SheetTitle>
-                        <SheetDescription className="text-[13px] leading-relaxed">
-                          Mail sends through your verified domain on Resend. Recipients see a professional from-address.
-                        </SheetDescription>
-                      </SheetHeader>
-                    </div>
-                    <Tabs defaultValue="send" className="flex-1 flex flex-col min-h-0">
-                      <TabsList className="mx-4 mt-4 grid grid-cols-3 h-11 rounded-xl bg-muted/60 p-1">
-                        <TabsTrigger value="send" className="rounded-lg text-xs sm:text-sm gap-1.5 data-[state=active]:shadow-sm">
-                          <Send className="h-3.5 w-3.5 opacity-70" />
-                          Send
-                        </TabsTrigger>
-                        <TabsTrigger value="schedule" className="rounded-lg text-xs sm:text-sm gap-1.5 data-[state=active]:shadow-sm">
-                          <Clock className="h-3.5 w-3.5 opacity-70" />
-                          Schedule
-                        </TabsTrigger>
-                        <TabsTrigger value="draft" className="rounded-lg text-xs sm:text-sm gap-1.5 data-[state=active]:shadow-sm">
-                          <FileEdit className="h-3.5 w-3.5 opacity-70" />
-                          Draft
-                        </TabsTrigger>
-                      </TabsList>
-                      <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 min-h-0">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">From</Label>
-                          <div className="flex items-center gap-2 min-w-0 rounded-xl border border-border/80 bg-muted/20 px-3 py-2">
-                            <Input
-                              placeholder="noreply"
-                              value={composeFromLocal}
-                              onChange={(e) => setComposeFromLocal(e.target.value)}
-                              className="min-w-0 flex-1 border-0 bg-transparent shadow-none focus-visible:ring-0 h-9 px-0"
-                              autoComplete="off"
-                              spellCheck={false}
-                            />
-                            <span className="text-sm text-muted-foreground shrink-0 truncate max-w-[50%]">
-                              @{setupStatus?.domain ?? "…"}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="compose-to" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            To
-                          </Label>
-                          <Input
-                            id="compose-to"
-                            placeholder="recipient@example.com"
-                            value={composeTo}
-                            onChange={(e) => setComposeTo(e.target.value)}
-                            className="rounded-xl h-11 border-border/80"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="compose-subject" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Subject
-                          </Label>
-                          <Input
-                            id="compose-subject"
-                            placeholder="What’s this about?"
-                            value={composeSubject}
-                            onChange={(e) => setComposeSubject(e.target.value)}
-                            className="rounded-xl h-11 border-border/80"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label htmlFor="compose-body" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Message
-                          </Label>
-                          <Textarea
-                            id="compose-body"
-                            placeholder="Write your message…"
-                            value={composeBody}
-                            onChange={(e) => setComposeBody(e.target.value)}
-                            className="min-h-[200px] rounded-xl border-border/80 text-[15px] leading-relaxed resize-y"
-                          />
-                        </div>
-                        <TabsContent value="send" className="mt-0 space-y-3 outline-none">
-                          <p className="text-xs text-muted-foreground">Delivered immediately via Resend.</p>
-                          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
-                            <Button
-                              variant="ghost"
-                              className="rounded-xl"
-                              onClick={() => setComposeOpen(false)}
-                              disabled={sendingCompose}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              className="rounded-xl shadow-md shadow-primary/20"
-                              onClick={() => void handleSendEmail()}
-                              disabled={
-                                sendingCompose || !composeTo.trim() || !composeSubject.trim() || !composeBody.trim()
-                              }
-                            >
-                              {sendingCompose ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                  Sending…
-                                </>
-                              ) : (
-                                <>
-                                  <Send className="h-4 w-4 mr-2" />
-                                  Send now
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="schedule" className="mt-0 space-y-3 outline-none">
-                          <div className="space-y-1.5">
-                            <Label htmlFor="schedule-at" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                              Send at
-                            </Label>
-                            <Input
-                              id="schedule-at"
-                              type="datetime-local"
-                              value={scheduleAt}
-                              onChange={(e) => setScheduleAt(e.target.value)}
-                              className="rounded-xl h-11 border-border/80"
-                            />
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            We’ll queue the message and send it at the chosen time (UTC from your browser).
-                          </p>
-                          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
-                            <Button variant="ghost" className="rounded-xl" onClick={() => setComposeOpen(false)} disabled={sendingCompose}>
-                              Cancel
-                            </Button>
-                            <Button
-                              className="rounded-xl"
-                              onClick={() => void handleScheduleSend()}
-                              disabled={
-                                sendingCompose ||
-                                !composeTo.trim() ||
-                                !composeSubject.trim() ||
-                                !composeBody.trim() ||
-                                !scheduleAt
-                              }
-                            >
-                              {sendingCompose ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Clock className="h-4 w-4 mr-2" />}
-                              Schedule send
-                            </Button>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="draft" className="mt-0 space-y-3 outline-none">
-                          <p className="text-xs text-muted-foreground">Save without sending. Open Drafts to continue editing.</p>
-                          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-1">
-                            <Button variant="ghost" className="rounded-xl" onClick={() => setComposeOpen(false)} disabled={savingDraft}>
-                              Cancel
-                            </Button>
-                            <Button variant="secondary" className="rounded-xl" onClick={() => void handleSaveDraftCompose()} disabled={savingDraft}>
-                              {savingDraft ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileEdit className="h-4 w-4 mr-2" />}
-                              Save draft
-                            </Button>
-                          </div>
-                        </TabsContent>
-                      </div>
-                    </Tabs>
-                  </SheetContent>
-                </Sheet>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="shrink-0 rounded-xl bg-primary shadow-md shadow-primary/15 transition-transform hover:bg-primary/90 active:scale-[0.98]"
+                  onClick={() => setComposeOpen(true)}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  Compose
+                </Button>
               </div>
             </div>
           </motion.div>
 
+          <MailComposeFullscreen
+            open={composeOpen}
+            onOpenChange={setComposeOpen}
+            organizationId={organization.id}
+            domain={setupStatus?.domain}
+            onRefresh={handleMailRefresh}
+          />
+
       {/* Toolbar */}
-      <div className="space-y-3 sm:space-y-4">
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-center">
+      <div className="space-y-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="relative flex-1 w-full min-w-0 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
@@ -1006,7 +753,7 @@ export default function EmailsPage() {
       </div>
 
       {/* Email list: show cached list instantly when returning from detail */}
-      <div className="app-card border bg-card shadow-sm overflow-hidden">
+      <div className="app-card overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
         {!hasCachedList(organization?.id ?? "") && (orgLoading || loading) ? (
           <div className="divide-y">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -1034,7 +781,7 @@ export default function EmailsPage() {
           </div>
         ) : (
           <div ref={listContainerRef} className="h-full">
-          <ScrollArea className="h-[calc(100vh-22rem)] md:h-[calc(100vh-20rem)]">
+          <ScrollArea className="h-[min(560px,calc(100vh-19rem))] md:h-[min(640px,calc(100vh-17rem))]">
             <div className="divide-y divide-border/60">
               <AnimatePresence initial={false}>
                 {emails.map((email) => (
