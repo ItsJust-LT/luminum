@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -34,6 +34,8 @@ export function OrganizationInviteDialog({
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<"admin" | "member">("member")
+  const [orgRoles, setOrgRoles] = useState<{ id: string; name: string; kind: string }[]>([])
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState("")
@@ -41,9 +43,30 @@ export function OrganizationInviteDialog({
   const resetForm = () => {
     setEmail("")
     setRole("member")
+    setSelectedRoleId("")
     setError("")
     setSuccess(false)
   }
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    api.organizationRoles
+      .list(organizationId)
+      .then((res) => {
+        const r = res as { success?: boolean; roles?: { id: string; name: string; kind: string }[] }
+        if (cancelled || !r.success || !r.roles) return
+        const invitable = r.roles.filter((x) => x.kind !== "owner")
+        setOrgRoles(invitable)
+        const memberTemplate = invitable.find((x) => x.kind === "member_template")
+        const fallback = memberTemplate?.id ?? invitable.find((x) => x.kind === "admin")?.id ?? invitable[0]?.id ?? ""
+        setSelectedRoleId(fallback)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open, organizationId])
 
   const handleClose = () => {
     setOpen(false)
@@ -62,11 +85,20 @@ export function OrganizationInviteDialog({
         throw new Error("You must be logged in to send invitations")
       }
 
+      let resolvedRole: "admin" | "member" = role
+      let organizationRoleId: string | undefined
+      if (orgRoles.length > 0 && selectedRoleId) {
+        const picked = orgRoles.find((x) => x.id === selectedRoleId)
+        organizationRoleId = selectedRoleId
+        resolvedRole = picked?.kind === "admin" ? "admin" : "member"
+      }
+
       const result = await api.organizationActions.sendInvitation({
         email,
-        role: role as "admin" | "member",
+        role: resolvedRole,
         organizationId,
         organizationName,
+        ...(organizationRoleId ? { organizationRoleId } : {}),
       })
 
       if (!result.success) {
@@ -106,7 +138,18 @@ export function OrganizationInviteDialog({
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">Invitation Sent!</h3>
             <p className="text-muted-foreground text-center">
-              An invitation has been sent to <strong>{email}</strong> to join <strong>{organizationName}</strong> as a <strong>{role}</strong>.
+              An invitation has been sent to <strong>{email}</strong> to join <strong>{organizationName}</strong>
+              {orgRoles.length > 0 && selectedRoleId ? (
+                <>
+                  {" "}
+                  as <strong>{orgRoles.find((r) => r.id === selectedRoleId)?.name ?? "member"}</strong>.
+                </>
+              ) : (
+                <>
+                  {" "}
+                  as a <strong>{role}</strong>.
+                </>
+              )}
             </p>
           </div>
         </DialogContent>
@@ -164,31 +207,46 @@ export function OrganizationInviteDialog({
                 <Shield className="w-4 h-4 text-muted-foreground" />
                 Role
               </Label>
-              <Select value={role} onValueChange={(value: "admin" | "member") => setRole(value)}>
-                <SelectTrigger className="bg-background/50 border-border/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-emerald-500" />
-                      <div>
-                        <div className="font-medium">Member</div>
-                        <div className="text-xs text-muted-foreground">Can view and contribute to projects</div>
+              {orgRoles.length > 0 ? (
+                <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
+                  <SelectTrigger className="bg-background/50 border-border/50">
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {orgRoles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        <span className="font-medium">{r.name}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={role} onValueChange={(value: "admin" | "member") => setRole(value)}>
+                  <SelectTrigger className="bg-background/50 border-border/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-emerald-500" />
+                        <div>
+                          <div className="font-medium">Member</div>
+                          <div className="text-xs text-muted-foreground">Default workspace access</div>
+                        </div>
                       </div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="admin">
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-slate-500" />
-                      <div>
-                        <div className="font-medium">Admin</div>
-                        <div className="text-xs text-muted-foreground">Can manage projects and invite members</div>
+                    </SelectItem>
+                    <SelectItem value="admin">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-slate-500" />
+                        <div>
+                          <div className="font-medium">Admin</div>
+                          <div className="text-xs text-muted-foreground">Full workspace management</div>
+                        </div>
                       </div>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </div>
 

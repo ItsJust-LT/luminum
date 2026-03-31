@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { canAccessOrganization } from "../lib/access.js";
+import { hasOrgPermissions, requireOrgPermissions } from "../lib/org-permission-http.js";
+import { resolveOrgMemberPermissions } from "../lib/org-permissions-resolve.js";
 import { runAnalyticsScriptVerificationForOrg } from "../lib/cron-verify-analytics-script.js";
 import { createLiveToken, getLivePages } from "../lib/analytics-live.js";
 import { cacheGet, cacheSet, isAnalyticsDirty } from "../lib/redis-cache.js";
@@ -22,11 +23,8 @@ async function resolveWebsiteWithAccess(
   });
   if (!website) return null;
   if (!website.organization?.analytics_enabled) return null;
-  if (user.role === "admin") return { id: website.id, website_id: website.website_id, organization_id: website.organization_id };
-  const member = await prisma.member.findFirst({
-    where: { organizationId: website.organization_id, userId: user.id },
-  });
-  if (!member) return null;
+  const resolved = await resolveOrgMemberPermissions(prisma, website.organization_id, user);
+  if (!resolved || !hasOrgPermissions(resolved.effectivePermissions, ["analytics:read"])) return null;
   return { id: website.id, website_id: website.website_id, organization_id: website.organization_id };
 }
 
@@ -42,7 +40,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
   try {
     const organizationId = (req.query as { organizationId?: string }).organizationId;
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["analytics:read"]))) return;
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { analytics_enabled: true },
@@ -83,7 +81,7 @@ router.post("/verify-script-now", async (req: Request, res: Response) => {
   try {
     const organizationId = (req.body as { organizationId?: string }).organizationId;
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["analytics:setup"]))) return;
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { analytics_enabled: true },

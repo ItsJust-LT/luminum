@@ -28,6 +28,9 @@ import { EmailsProvider } from "@/lib/contexts/emails-context"
 import { OrganizationSidebarWrapper } from "@/components/organization/organization-sidebar-wrapper"
 import NotificationBell from "@/components/NotificationBell"
 import { api } from "@/lib/api"
+import { getAllGrantablePermissionsSet } from "@luminum/org-permissions"
+import { OrgRouteGuard } from "@/components/organization/org-route-guard"
+import type { OrganizationRoleDisplay } from "@/lib/contexts/organization-context"
 import { UserNotificationProvider } from "@/components/realtime/user-notification-provider"
 import { usePreferAppShell } from "@/lib/hooks/use-prefer-app-shell"
 import { mobileManagementNavItems, mobilePrimaryNavItems } from "@/lib/org-mobile-nav"
@@ -58,6 +61,10 @@ interface LayoutState {
   loading: boolean
   error: string | null
   userRole: string | null
+  permissionSet: Set<string>
+  permissionsReady: boolean
+  organizationRole: OrganizationRoleDisplay | null
+  organizationRoleId: string | null
   sidebarData: {
     unseenFormsCount: number
     unreadEmailsCount: number
@@ -84,6 +91,10 @@ export default function SlugLayout({
     loading: true,
     error: null,
     userRole: null,
+    permissionSet: new Set(),
+    permissionsReady: false,
+    organizationRole: null,
+    organizationRoleId: null,
     sidebarData: null,
   })
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -122,15 +133,23 @@ export default function SlugLayout({
           api.organizationSettings.getAnalyticsEnabled(orgId).catch(() => ({ enabled: false })),
           api.organizationSettings.getBlogsEnabled(orgId).catch(() => ({ enabled: false })),
           api.organizationSettings.getInvoicesEnabled(orgId).catch(() => ({ enabled: false })),
-        ]).then(([emailRes, waRes, analyticsRes, blogsRes, invoicesRes]) => {
+          api.members.getAccess(orgId).catch(() => null),
+        ]).then(([emailRes, waRes, analyticsRes, blogsRes, invoicesRes, accessRes]) => {
           const emailsEnabled = (emailRes as { enabled?: boolean })?.enabled ?? false
           const whatsappEnabled = (waRes as { enabled?: boolean })?.enabled ?? false
           const analyticsEnabled = (analyticsRes as { enabled?: boolean })?.enabled ?? false
           const blogsEnabled = (blogsRes as { enabled?: boolean })?.enabled ?? false
           const invoicesEnabled = (invoicesRes as { enabled?: boolean })?.enabled ?? false
+          const access = accessRes as {
+            success?: boolean
+            permissions?: string[]
+            organizationRole?: OrganizationRoleDisplay | null
+            organizationRoleId?: string | null
+            memberRoleString?: string
+          } | null
           setState((prev) => {
             if (!prev.organization || prev.organization.id !== orgId) return prev
-            return {
+            const next: LayoutState = {
               ...prev,
               organization: {
                 ...prev.organization,
@@ -151,6 +170,17 @@ export default function SlugLayout({
                   }
                 : null,
             }
+            if (access?.success && Array.isArray(access.permissions)) {
+              next.permissionSet = new Set(access.permissions)
+              next.organizationRole = access.organizationRole ?? null
+              next.organizationRoleId = access.organizationRoleId ?? null
+              next.permissionsReady = true
+              if (access.memberRoleString) {
+                next.userRole = access.memberRoleString
+                next.organization = { ...next.organization!, role: access.memberRoleString }
+              }
+            }
+            return next
           })
         }).catch(() => {})
         return
@@ -182,6 +212,10 @@ export default function SlugLayout({
             loading: false,
             error: "You don't have access to any organizations",
             userRole: null,
+            permissionSet: new Set(),
+            permissionsReady: false,
+            organizationRole: null,
+            organizationRoleId: null,
             sidebarData: null,
           })
           return
@@ -209,6 +243,10 @@ export default function SlugLayout({
               loading: false,
               error: "Organization not found",
               userRole: null,
+              permissionSet: new Set(),
+              permissionsReady: false,
+              organizationRole: null,
+              organizationRoleId: null,
               sidebarData: null,
             })
             return
@@ -219,6 +257,10 @@ export default function SlugLayout({
             loading: false,
             error: "Organization not found or you don't have access to it",
             userRole: null,
+            permissionSet: new Set(),
+            permissionsReady: false,
+            organizationRole: null,
+            organizationRoleId: null,
             sidebarData: null,
           })
           return
@@ -283,6 +325,10 @@ export default function SlugLayout({
             loading: false,
             error: "You don't have access to this organization",
             userRole: null,
+            permissionSet: new Set(),
+            permissionsReady: false,
+            organizationRole: null,
+            organizationRoleId: null,
             sidebarData: null,
           })
           return
@@ -297,14 +343,37 @@ export default function SlugLayout({
         emailsEnabled ? api.emails.getUnreadCount(organization.id) : Promise.resolve({ success: true, count: 0 }),
         whatsappEnabled ? api.whatsapp.getUnreadCount(organization.id).catch(() => ({ success: true, count: 0 })) : Promise.resolve({ success: true, count: 0 }),
       ])
-      
+
+      let permissionSet = getAllGrantablePermissionsSet()
+      let organizationRole: OrganizationRoleDisplay | null = null
+      let organizationRoleId: string | null = null
+      let accessMemberRole = resolvedRole || null
+      try {
+        const access = (await api.members.getAccess(organization.id)) as {
+          success?: boolean
+          permissions?: string[]
+          organizationRole?: OrganizationRoleDisplay | null
+          organizationRoleId?: string | null
+          memberRoleString?: string
+        }
+        if (access.success && Array.isArray(access.permissions)) {
+          permissionSet = new Set(access.permissions)
+          organizationRole = access.organizationRole ?? null
+          organizationRoleId = access.organizationRoleId ?? null
+          if (access.memberRoleString) accessMemberRole = access.memberRoleString
+        }
+      } catch (e) {
+        console.warn("Failed to load org member permissions:", e)
+        permissionSet = getAllGrantablePermissionsSet()
+      }
+
       setState({
         organization: {
           ...organization,
           createdAt:
             typeof organization.createdAt === "string" ? organization.createdAt : organization.createdAt.toISOString(),
           members,
-          role: resolvedRole,
+          role: accessMemberRole ?? resolvedRole,
           emails_enabled: emailsEnabled,
           whatsapp_enabled: whatsappEnabled,
           analytics_enabled: analyticsEnabled,
@@ -313,7 +382,11 @@ export default function SlugLayout({
         },
         loading: false,
         error: null,
-        userRole: resolvedRole || null,
+        userRole: accessMemberRole ?? resolvedRole ?? null,
+        permissionSet,
+        permissionsReady: true,
+        organizationRole,
+        organizationRoleId,
         sidebarData: {
           unseenFormsCount: unseenFormsResult.success ? unseenFormsResult.count : 0,
           unreadEmailsCount: unreadEmailsResult.success ? unreadEmailsResult.count : 0,
@@ -332,6 +405,10 @@ export default function SlugLayout({
         loading: false,
         error: error.message || "Failed to validate organization access",
         userRole: null,
+        permissionSet: new Set(),
+        permissionsReady: false,
+        organizationRole: null,
+        organizationRoleId: null,
         sidebarData: null,
       })
     }
@@ -365,8 +442,8 @@ export default function SlugLayout({
       emails_enabled: org.emails_enabled,
       whatsapp_enabled: org.whatsapp_enabled,
       invoices_enabled: org.invoices_enabled,
-    })
-    const sheetManagement = mobileManagementNavItems(slug, flatRoutes)
+    }, state.permissionSet)
+    const sheetManagement = mobileManagementNavItems(slug, flatRoutes, state.permissionSet)
     return (
     <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
       <SheetTrigger asChild>
@@ -508,6 +585,10 @@ export default function SlugLayout({
         loading={state.loading}
         error={state.error}
         onRefresh={validateOrganizationAccess}
+        permissionSet={state.permissionSet}
+        permissionsReady={state.permissionsReady}
+        organizationRole={state.organizationRole}
+        organizationRoleId={state.organizationRoleId}
       >
         <UserNotificationProvider>
           <EmailsProvider>
@@ -525,6 +606,7 @@ export default function SlugLayout({
               whatsappEnabled={state.organization.whatsapp_enabled ?? false}
               invoicesEnabled={state.organization.invoices_enabled ?? false}
               userRole={state.userRole ?? "member"}
+              permissionSet={state.permissionSet}
               sessionUser={{
                 name: session?.user?.name,
                 image: session?.user?.image,
@@ -532,7 +614,9 @@ export default function SlugLayout({
               }}
               onSignOut={handleSignOut}
             >
-              {children}
+              <OrgRouteGuard slug={slug} flatRoutes={flatRoutes}>
+                {children}
+              </OrgRouteGuard>
             </AppShellLayout>
           </EmailsProvider>
         </UserNotificationProvider>
@@ -549,6 +633,10 @@ export default function SlugLayout({
       loading={state.loading}
       error={state.error}
       onRefresh={validateOrganizationAccess}
+      permissionSet={state.permissionSet}
+      permissionsReady={state.permissionsReady}
+      organizationRole={state.organizationRole}
+      organizationRoleId={state.organizationRoleId}
     >
       <UserNotificationProvider>
         <EmailsProvider>
@@ -579,6 +667,7 @@ export default function SlugLayout({
               initialAnalyticsEnabled={state.sidebarData?.analyticsEnabled ?? false}
               initialBlogsEnabled={state.sidebarData?.blogsEnabled ?? false}
               initialInvoicesEnabled={state.sidebarData?.invoicesEnabled ?? false}
+              permissionSet={state.permissionSet}
             />
           </div>
 
@@ -680,7 +769,7 @@ export default function SlugLayout({
                       </DropdownMenuItem>
                       <DropdownMenuItem className="justify-center">
                         <Badge className={getRoleColor(state.userRole || "member")} variant="secondary">
-                          {state.userRole || "member"}
+                          {state.organizationRole?.name || state.userRole || "member"}
                         </Badge>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -721,7 +810,9 @@ export default function SlugLayout({
               "flex-1 bg-background/50 min-h-0 flex flex-col",
               isWhatsappRoute || isMailRoute ? "overflow-hidden p-0" : "overflow-auto p-3 md:p-6",
             )}>
-              {children}
+              <OrgRouteGuard slug={slug} flatRoutes={flatRoutes}>
+                {children}
+              </OrgRouteGuard>
             </main>
           </SidebarInset>
         </div>

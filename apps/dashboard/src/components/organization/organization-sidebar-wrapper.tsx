@@ -36,6 +36,7 @@ interface OrganizationSidebarWrapperProps {
   initialAnalyticsEnabled?: boolean
   initialBlogsEnabled?: boolean
   initialInvoicesEnabled?: boolean
+  permissionSet?: Set<string>
 }
 
 export function OrganizationSidebarWrapper({
@@ -52,6 +53,7 @@ export function OrganizationSidebarWrapper({
   initialAnalyticsEnabled = false,
   initialBlogsEnabled = false,
   initialInvoicesEnabled = false,
+  permissionSet,
 }: OrganizationSidebarWrapperProps) {
   const [unseenFormsCount, setUnseenFormsCount] = useState(initialUnseenFormsCount)
   const [unreadEmailsCount, setUnreadEmailsCount] = useState(initialUnreadEmailsCount)
@@ -119,6 +121,7 @@ export function OrganizationSidebarWrapper({
       initialAnalyticsEnabled={initialAnalyticsEnabled}
       initialBlogsEnabled={initialBlogsEnabled}
       initialInvoicesEnabled={initialInvoicesEnabled}
+      permissionSet={permissionSet}
       isLoading={false}
     />
   )

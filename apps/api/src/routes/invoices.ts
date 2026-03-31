@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { Prisma } from "@luminum/database";
 import { requireAuth } from "../middleware/require-auth.js";
-import { canAccessOrganization } from "../lib/access.js";
+import { requireOrgPermissions } from "../lib/org-permission-http.js";
 import { prisma } from "../lib/prisma.js";
 import * as s3 from "../lib/storage/s3.js";
 import { orgInvoiceKey } from "../lib/storage/keys.js";
@@ -47,7 +47,7 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoices:read"]))) return;
     if (!(await ensureInvoicesEnabled(organizationId))) return res.status(403).json({ error: "Invoices not enabled" });
 
     const status = req.query.status as string | undefined;
@@ -90,7 +90,7 @@ router.get("/stats", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoices:read"]))) return;
 
     const documentType = req.query.document_type as string | undefined;
     const baseWhere: any = { organization_id: organizationId };
@@ -135,7 +135,7 @@ router.get("/next-number", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoices:read"]))) return;
 
     const documentType = (req.query.document_type as string) || "invoice";
     const prefix = documentType === "quote" ? "QUO" : "INV";
@@ -163,7 +163,7 @@ router.get("/clients", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoices:read"]))) return;
 
     const q = (req.query.q as string || "").trim();
 
@@ -207,7 +207,7 @@ router.get("/last-company", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoices:read"]))) return;
 
     const last = await prisma.invoice.findFirst({
       where: { organization_id: organizationId },
@@ -237,7 +237,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       include: { items: { orderBy: { sort_order: "asc" } }, organization: { select: { id: true, name: true, currency: true } } },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:read"]))) return;
 
     res.json({ success: true, invoice });
   } catch (err: any) {
@@ -251,7 +251,7 @@ router.post("/", async (req: Request, res: Response) => {
     const body = req.body;
     const organizationId = body.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoices:write"]))) return;
     if (!(await ensureInvoicesEnabled(organizationId))) return res.status(403).json({ error: "Invoices not enabled" });
 
     const items: InvoiceItem[] = (body.items || []).map((it: any, i: number) => ({
@@ -342,7 +342,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
       select: { organization_id: true },
     });
     if (!existing) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(existing.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(existing.organization_id, req.user, res, ["invoices:write"]))) return;
 
     const body = req.body;
     const items: InvoiceItem[] | undefined = body.items
@@ -437,7 +437,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
       select: { organization_id: true, pdf_storage_key: true },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:delete"]))) return;
 
     if (invoice.pdf_storage_key) {
       await s3.remove(invoice.pdf_storage_key);
@@ -459,7 +459,7 @@ router.post("/:id/generate-pdf", async (req: Request, res: Response) => {
       include: { items: { orderBy: { sort_order: "asc" } } },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:write"]))) return;
 
     const templateData = invoiceToTemplateData(invoice);
     const pdfBuffer = await generateInvoicePdf(templateData);
@@ -504,7 +504,7 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
       include: { items: { orderBy: { sort_order: "asc" } } },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:send"]))) return;
     if (!(await ensureInvoicesEnabled(invoice.organization_id))) return res.status(403).json({ error: "Invoices not enabled" });
 
     const org = await prisma.organization.findUnique({
@@ -632,7 +632,7 @@ router.post("/:id/send-whatsapp", async (req: Request, res: Response) => {
       include: { items: { orderBy: { sort_order: "asc" } } },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:send"]))) return;
     if (!(await ensureInvoicesEnabled(invoice.organization_id))) return res.status(403).json({ error: "Invoices not enabled" });
 
     const org = await prisma.organization.findUnique({
@@ -698,7 +698,7 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
       select: { organization_id: true, pdf_storage_key: true, invoice_number: true, document_type: true },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:read"]))) return;
 
     if (!invoice.pdf_storage_key) {
       return res.status(404).json({ error: "PDF not generated yet" });
@@ -730,7 +730,7 @@ router.post("/:id/status", async (req: Request, res: Response) => {
       select: { organization_id: true },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
-    if (!(await canAccessOrganization(invoice.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:write"]))) return;
 
     const updated = await prisma.invoice.update({
       where: { id },
@@ -753,7 +753,7 @@ router.post("/:id/convert-to-invoice", async (req: Request, res: Response) => {
       include: { items: { orderBy: { sort_order: "asc" } } },
     });
     if (!quote) return res.status(404).json({ error: "Quote not found" });
-    if (!(await canAccessOrganization(quote.organization_id, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(quote.organization_id, req.user, res, ["invoices:write"]))) return;
     if (quote.document_type !== "quote") return res.status(400).json({ error: "Only quotes can be converted to invoices" });
 
     const lastInvoice = await prisma.invoice.findFirst({

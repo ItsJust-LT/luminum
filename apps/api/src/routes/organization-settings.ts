@@ -17,14 +17,17 @@ import {
   parseMailboxSignaturesJson,
 } from "../lib/mail-organization-json.js";
 import type { Prisma } from "@luminum/database";
-
+import { hasOrgPermissions, requireOrgPermissions, tryResolveOrgAccess } from "../lib/org-permission-http.js";
 const router = Router();
 router.use(requireAuth);
 
 // GET /api/organization-settings/emails-enabled?organizationId=...
 router.get("/emails-enabled", async (req: Request, res: Response) => {
   try {
-    const org = await prisma.organization.findUnique({ where: { id: req.query.organizationId as string }, select: { emails_enabled: true } });
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.json({ enabled: false, systemEmailAvailable: false });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]))) return;
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { emails_enabled: true } });
     const sys = isEmailSystemEnabled();
     res.json({
       enabled: sys && (org?.emails_enabled || false),
@@ -38,7 +41,10 @@ router.get("/emails-enabled", async (req: Request, res: Response) => {
 // GET /api/organization-settings/whatsapp-enabled?organizationId=...
 router.get("/whatsapp-enabled", async (req: Request, res: Response) => {
   try {
-    const org = await prisma.organization.findUnique({ where: { id: req.query.organizationId as string }, select: { whatsapp_enabled: true } });
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.json({ enabled: false });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]))) return;
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { whatsapp_enabled: true } });
     res.json({ enabled: org?.whatsapp_enabled || false });
   } catch { res.json({ enabled: false }); }
 });
@@ -46,7 +52,10 @@ router.get("/whatsapp-enabled", async (req: Request, res: Response) => {
 // GET /api/organization-settings/analytics-enabled?organizationId=...
 router.get("/analytics-enabled", async (req: Request, res: Response) => {
   try {
-    const org = await prisma.organization.findUnique({ where: { id: req.query.organizationId as string }, select: { analytics_enabled: true } });
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.json({ enabled: false });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]))) return;
+    const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { analytics_enabled: true } });
     res.json({ enabled: org?.analytics_enabled || false });
   } catch { res.json({ enabled: false }); }
 });
@@ -54,8 +63,11 @@ router.get("/analytics-enabled", async (req: Request, res: Response) => {
 // GET /api/organization-settings/blogs-enabled?organizationId=...
 router.get("/blogs-enabled", async (req: Request, res: Response) => {
   try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.json({ enabled: false });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]))) return;
     const org = await prisma.organization.findUnique({
-      where: { id: req.query.organizationId as string },
+      where: { id: organizationId },
       select: { blogs_enabled: true },
     });
     res.json({ enabled: org?.blogs_enabled || false });
@@ -67,8 +79,11 @@ router.get("/blogs-enabled", async (req: Request, res: Response) => {
 // GET /api/organization-settings/invoices-enabled?organizationId=...
 router.get("/invoices-enabled", async (req: Request, res: Response) => {
   try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.json({ enabled: false });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]))) return;
     const org = await prisma.organization.findUnique({
-      where: { id: req.query.organizationId as string },
+      where: { id: organizationId },
       select: { invoices_enabled: true },
     });
     res.json({ enabled: org?.invoices_enabled || false });
@@ -83,8 +98,7 @@ router.get("/storage", async (req: Request, res: Response) => {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
 
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:storage:read"]))) return;
 
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
@@ -133,8 +147,16 @@ router.get("/email-composer", async (req: Request, res: Response) => {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
 
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    const access = await tryResolveOrgAccess(organizationId, req.user);
+    if (!access) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!hasOrgPermissions(access.effectivePermissions, ["email:settings:read"])) {
+      return res.status(403).json({
+        success: false,
+        code: "INSUFFICIENT_PERMISSIONS",
+        required: ["email:settings:read"],
+        error: "Insufficient permissions",
+      });
+    }
 
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
@@ -151,7 +173,7 @@ router.get("/email-composer", async (req: Request, res: Response) => {
     });
     if (!org) return res.status(404).json({ success: false, error: "Organization not found" });
 
-    const canEditOrganizationDefaults = member.role === "owner" || member.role === "admin";
+    const canEditOrganizationDefaults = hasOrgPermissions(access.effectivePermissions, ["email:settings:write"]);
     const memberRow = await prisma.member.findFirst({
       where: { organizationId, userId: req.user.id },
       select: { personalEmailSignatureHtml: true, personalEmailSignatureText: true },
@@ -188,8 +210,8 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
 
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    const access = await tryResolveOrgAccess(organizationId, req.user);
+    if (!access) return res.status(403).json({ success: false, error: "Access denied" });
 
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
@@ -241,10 +263,12 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
         orgPatch.signatureEnabled !== undefined ||
         orgPatch.defaultFromLocal !== undefined;
       if (hasOrgField) {
-        if (member.role !== "owner" && member.role !== "admin") {
+        if (!hasOrgPermissions(access.effectivePermissions, ["email:settings:write"])) {
           return res.status(403).json({
             success: false,
-            error: "Only owners and admins can update organization default mail settings",
+            code: "INSUFFICIENT_PERMISSIONS",
+            required: ["email:settings:write"],
+            error: "Insufficient permissions",
           });
         }
         const data: Record<string, unknown> = {};
@@ -280,6 +304,14 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
     }
 
     if (body.personal) {
+      if (!hasOrgPermissions(access.effectivePermissions, ["email:read"])) {
+        return res.status(403).json({
+          success: false,
+          code: "INSUFFICIENT_PERMISSIONS",
+          required: ["email:read"],
+          error: "Insufficient permissions",
+        });
+      }
       const row = await prisma.member.findFirst({
         where: { organizationId, userId: req.user.id },
         select: { id: true },
@@ -305,8 +337,13 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
     }
 
     if (body.mailboxSignatures !== undefined) {
-      if (member.role !== "owner" && member.role !== "admin") {
-        return res.status(403).json({ success: false, error: "Only owners and admins can edit mailbox signatures" });
+      if (!hasOrgPermissions(access.effectivePermissions, ["email:settings:write"])) {
+        return res.status(403).json({
+          success: false,
+          code: "INSUFFICIENT_PERMISSIONS",
+          required: ["email:settings:write"],
+          error: "Insufficient permissions",
+        });
       }
       const parsed = parseMailboxSignaturesJson(body.mailboxSignatures);
       const sanitized = parsed.map((r) => ({
@@ -324,8 +361,13 @@ router.patch("/email-composer", async (req: Request, res: Response) => {
     }
 
     if (body.forwardingRules !== undefined) {
-      if (member.role !== "owner" && member.role !== "admin") {
-        return res.status(403).json({ success: false, error: "Only owners and admins can edit forwarding rules" });
+      if (!hasOrgPermissions(access.effectivePermissions, ["email:settings:write"])) {
+        return res.status(403).json({
+          success: false,
+          code: "INSUFFICIENT_PERMISSIONS",
+          required: ["email:settings:write"],
+          error: "Insufficient permissions",
+        });
       }
       const parsed = parseForwardRulesJson(body.forwardingRules);
       await prisma.organization.update({
@@ -353,10 +395,12 @@ router.get("/", async (req: Request, res: Response) => {
     const organization = await prisma.organization.findUnique({ where: { id: organizationId } });
     if (!organization) return res.status(404).json({ success: false, error: "Organization not found" });
 
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member) return res.status(403).json({ success: false, error: "Access denied" });
+    const pr = await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]);
+    if (!pr) return;
 
-    const canEdit = member.role === "owner" || member.role === "admin";
+    const canEdit = hasOrgPermissions(pr.effective, ["org:settings:write"]);
+    const permissions = [...pr.effective];
+    const roleDisplay = pr.resolved.organizationRole;
     const maxStorage = organization.max_storage_bytes || BigInt(10737418240);
     const usedStorage = organization.used_storage_bytes || BigInt(0);
     const storageUsagePercent = Number((usedStorage * BigInt(100)) / maxStorage);
@@ -378,7 +422,10 @@ router.get("/", async (req: Request, res: Response) => {
         analytics: organization.analytics_enabled || false,
         emails: organization.emails_enabled || false,
         canEdit,
-        userRole: member.role,
+        userRole: pr.resolved.memberRoleString,
+        permissions,
+        organizationRoleId: roleDisplay?.id ?? null,
+        organizationRole: roleDisplay,
       },
     });
   } catch (error: any) {
@@ -390,10 +437,7 @@ router.get("/", async (req: Request, res: Response) => {
 router.patch("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (!member || (member.role !== "owner" && member.role !== "admin")) {
-      return res.status(403).json({ success: false, error: "Insufficient permissions" });
-    }
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:write"]))) return;
 
     const updates = req.body;
     if (updates.slug) {
@@ -425,14 +469,7 @@ router.patch("/", async (req: Request, res: Response) => {
 router.post("/upload-logo", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const isPlatformAdmin = req.user?.role === "admin";
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (
-      !isPlatformAdmin &&
-      (!member || (member.role !== "owner" && member.role !== "admin"))
-    ) {
-      return res.status(403).json({ success: false, error: "Insufficient permissions" });
-    }
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:write"]))) return;
 
     const organization = await prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } });
     if (!organization) return res.status(404).json({ success: false, error: "Organization not found" });
@@ -468,14 +505,7 @@ router.post("/upload-logo", async (req: Request, res: Response) => {
 router.delete("/logo", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const isPlatformAdmin = req.user?.role === "admin";
-    const member = await getMemberOrAdmin(organizationId, req.user);
-    if (
-      !isPlatformAdmin &&
-      (!member || (member.role !== "owner" && member.role !== "admin"))
-    ) {
-      return res.status(403).json({ success: false, error: "Insufficient permissions" });
-    }
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:write"]))) return;
 
     const organization = await prisma.organization.findUnique({ where: { id: organizationId }, select: { logo: true } });
     if (organization?.logo) {
@@ -575,8 +605,11 @@ router.delete("/resend-email", async (_req: Request, res: Response) => {
 // GET /api/organization-settings/branded-dashboard-enabled?organizationId=...
 router.get("/branded-dashboard-enabled", async (req: Request, res: Response) => {
   try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]))) return;
     const org = await prisma.organization.findUnique({
-      where: { id: req.query.organizationId as string },
+      where: { id: organizationId },
       select: {
         branded_dashboard_enabled: true,
         custom_domain: true,

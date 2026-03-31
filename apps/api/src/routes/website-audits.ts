@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { canAccessOrganization } from "../lib/access.js";
+import { requireOrgPermissions } from "../lib/org-permission-http.js";
 import { getQueryParam, getPathParam } from "../lib/req-params.js";
 import { rateLimitAudit, rateLimitAuditBootstrap } from "../middleware/rate-limit.js";
 import { createFullSiteScan } from "../site-audit/create-audit.js";
@@ -19,9 +19,7 @@ router.post("/bootstrap", rateLimitAuditBootstrap, async (req: Request, res: Res
       select: { id: true, domain: true, organization_id: true },
     });
     if (!website) return res.status(404).json({ data: null, error: "Website not found" });
-    if (!(await canAccessOrganization(website.organization_id, req.user))) {
-      return res.status(403).json({ data: null, error: "Access denied" });
-    }
+    if (!(await requireOrgPermissions(website.organization_id, req.user, res, ["audits:run"]))) return;
 
     const pending = await prisma.website_audit.findFirst({
       where: { website_id: websiteId, status: { in: ["queued", "running"] } },
@@ -62,9 +60,7 @@ router.post("/", rateLimitAudit, async (req: Request, res: Response) => {
       select: { id: true, domain: true, organization_id: true },
     });
     if (!website) return res.status(404).json({ data: null, error: "Website not found" });
-    if (!(await canAccessOrganization(website.organization_id, req.user))) {
-      return res.status(403).json({ data: null, error: "Access denied" });
-    }
+    if (!(await requireOrgPermissions(website.organization_id, req.user, res, ["audits:run"]))) return;
 
     const run = await createFullSiteScan(prisma, {
       websiteId,
@@ -94,18 +90,14 @@ router.get("/", async (req: Request, res: Response) => {
       return res.status(400).json({ data: [], error: "websiteId or organizationId is required" });
     }
 
-    if (organizationId && !(await canAccessOrganization(organizationId, req.user))) {
-      return res.status(403).json({ data: [], error: "Access denied" });
-    }
+    if (organizationId && !(await requireOrgPermissions(organizationId, req.user, res, ["audits:read"]))) return;
     if (websiteId) {
       const website = await prisma.websites.findUnique({
         where: { id: websiteId },
         select: { organization_id: true },
       });
       if (!website) return res.status(404).json({ data: [], error: "Website not found" });
-      if (!(await canAccessOrganization(website.organization_id, req.user))) {
-        return res.status(403).json({ data: [], error: "Access denied" });
-      }
+      if (!(await requireOrgPermissions(website.organization_id, req.user, res, ["audits:read"]))) return;
     }
 
     const where: Record<string, unknown> = {};
@@ -161,9 +153,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       include: { result: true },
     });
     if (!audit) return res.status(404).json({ data: null, error: "Audit not found" });
-    if (!(await canAccessOrganization(audit.organization_id, req.user))) {
-      return res.status(403).json({ data: null, error: "Access denied" });
-    }
+    if (!(await requireOrgPermissions(audit.organization_id, req.user, res, ["audits:read"]))) return;
 
     return res.json({
       data: {
@@ -198,9 +188,7 @@ router.post("/:id/retry", rateLimitAudit, async (req: Request, res: Response) =>
     const id = getPathParam(req, "id")!;
     const existing = await prisma.website_audit.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ data: null, error: "Audit not found" });
-    if (!(await canAccessOrganization(existing.organization_id, req.user))) {
-      return res.status(403).json({ data: null, error: "Access denied" });
-    }
+    if (!(await requireOrgPermissions(existing.organization_id, req.user, res, ["audits:run"]))) return;
 
     const website = await prisma.websites.findUnique({
       where: { id: existing.website_id },

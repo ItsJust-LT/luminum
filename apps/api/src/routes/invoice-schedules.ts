@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { Prisma } from "@luminum/database";
 import { requireAuth } from "../middleware/require-auth.js";
-import { canAccessOrganization } from "../lib/access.js";
+import { requireOrgPermissions } from "../lib/org-permission-http.js";
 import { prisma } from "../lib/prisma.js";
 import {
   computeInitialNextRunUtc,
@@ -34,7 +34,8 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoice_schedules:read", "invoices:read"])))
+      return;
     if (!(await ensureInvoicesEnabled(organizationId))) return res.status(403).json({ error: "Invoices not enabled" });
 
     const rows = await prisma.invoice_schedule.findMany({
@@ -67,7 +68,7 @@ router.post("/", async (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
     const organizationId = body.organizationId as string;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoice_schedules:manage"]))) return;
     if (!(await ensureInvoicesEnabled(organizationId))) return res.status(403).json({ error: "Invoices not enabled" });
 
     const templateInvoiceId = String(body.templateInvoiceId ?? "").trim();
@@ -186,7 +187,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
     });
     if (!existing) return res.status(404).json({ error: "Schedule not found" });
     const orgId = existing.organization_id;
-    if (!(await canAccessOrganization(orgId, req.user))) return res.status(403).json({ error: "Forbidden" });
+    if (!(await requireOrgPermissions(orgId, req.user, res, ["invoice_schedules:manage"]))) return;
     if (!(await ensureInvoicesEnabled(orgId))) return res.status(403).json({ error: "Invoices not enabled" });
 
     const body = req.body as Record<string, unknown>;
@@ -305,9 +306,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
       select: { organization_id: true },
     });
     if (!existing) return res.status(404).json({ error: "Schedule not found" });
-    if (!(await canAccessOrganization(existing.organization_id, req.user))) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
+    if (!(await requireOrgPermissions(existing.organization_id, req.user, res, ["invoice_schedules:manage"]))) return;
 
     await prisma.invoice_schedule.delete({ where: { id } });
     res.json({ success: true });

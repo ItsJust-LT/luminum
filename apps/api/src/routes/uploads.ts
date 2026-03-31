@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { requireOrgPermissions } from "../lib/org-permission-http.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import * as s3 from "../lib/storage/s3.js";
 import { orgImagesKey, orgAttachmentsSupportKey, supportKey } from "../lib/storage/keys.js";
@@ -24,6 +25,9 @@ router.post("/logo", async (req: Request, res: Response) => {
     }
 
     const ext = (fileName || "logo.png").split(".").pop() || "png";
+    if (organizationId && !(await requireOrgPermissions(organizationId, req.user!, res, ["org:settings:write"]))) {
+      return;
+    }
     const key = organizationId
       ? orgImagesKey(organizationId, ext)
       : `logos/${(organizationName || "logo").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}-${Date.now()}.${ext}`;
@@ -57,12 +61,35 @@ router.post("/file", async (req: Request, res: Response) => {
     }
 
     let organizationId: string | null = bodyOrgId || null;
-    if (!organizationId && ticketId) {
+    let ticketOrgId: string | null = null;
+    let ticketUserId: string | null = null;
+    if (ticketId) {
       const ticket = await prisma.support_tickets.findUnique({
         where: { id: ticketId },
-        select: { organization_id: true },
+        select: { organization_id: true, user_id: true },
       });
-      organizationId = ticket?.organization_id ?? null;
+      ticketOrgId = ticket?.organization_id ?? null;
+      ticketUserId = ticket?.user_id ?? null;
+      if (!organizationId) organizationId = ticketOrgId;
+    }
+
+    if (organizationId) {
+      if (ticketId && ticketUserId !== null) {
+        const isCreator = ticketUserId === req.user!.id;
+        const isPlatformAdmin = req.user!.role === "admin";
+        if (ticketOrgId) {
+          if (organizationId !== ticketOrgId) {
+            return res.status(400).json({ success: false, error: "organizationId does not match ticket" });
+          }
+          if (!isCreator && !isPlatformAdmin) {
+            if (!(await requireOrgPermissions(organizationId, req.user!, res, ["support:reply"]))) return;
+          }
+        } else if (!isCreator && !isPlatformAdmin) {
+          return res.status(403).json({ success: false, error: "Access denied" });
+        }
+      } else if (!(await requireOrgPermissions(organizationId, req.user!, res, ["support:create"]))) {
+        return;
+      }
     }
 
     const name = originalFilename || filename || "file";

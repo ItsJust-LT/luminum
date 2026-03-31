@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { canAccessOrganization } from "../lib/access.js";
+import { requireOrgPermissions } from "../lib/org-permission-http.js";
 import { getQueryParam, getPathParam } from "../lib/req-params.js";
 import { logger } from "../lib/logger.js";
 import {
@@ -90,10 +90,15 @@ function extractTitle(html: string): string | null {
 
 // ── Middleware: ensure whatsapp_enabled for the org ──────────────────────────
 
-async function requireWhatsappEnabled(req: Request, res: Response): Promise<string | null> {
+async function requireWhatsappEnabled(
+  req: Request,
+  res: Response,
+  extra: readonly string[] = [],
+): Promise<string | null> {
   const organizationId = getQueryParam(req, "organizationId") || req.body?.organizationId;
   if (!organizationId) { res.status(400).json({ error: "organizationId is required" }); return null; }
-  if (!(await canAccessOrganization(organizationId, req.user))) { res.status(403).json({ error: "Access denied" }); return null; }
+  const need = ["whatsapp:read", ...extra];
+  if (!(await requireOrgPermissions(organizationId, req.user, res, need))) return null;
   const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { whatsapp_enabled: true } });
   if (!org?.whatsapp_enabled) { res.status(403).json({ error: "WhatsApp feature is not enabled for this organization" }); return null; }
   return organizationId;
@@ -105,6 +110,7 @@ router.get("/enabled", async (req: Request, res: Response) => {
   try {
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:settings:read"]))) return;
     const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { whatsapp_enabled: true } });
     res.json({ success: true, enabled: org?.whatsapp_enabled || false });
   } catch (error: any) { res.json({ success: false, enabled: false, error: error.message }); }
@@ -183,7 +189,7 @@ router.get("/accounts/:id", async (req: Request, res: Response) => {
     if (!accountId) return res.status(400).json({ error: "Account ID required" });
     const account = await prisma.whatsapp_account.findUnique({ where: { id: accountId }, include: { organization: { select: { id: true, whatsapp_enabled: true } } } });
     if (!account) return res.status(404).json({ error: "Account not found" });
-    if (!(await canAccessOrganization(account.organization_id, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(account.organization_id, req.user, res, ["whatsapp:read"]))) return;
     const status = await getAccountStatus(account.organization_id);
     res.json({ success: true, account: status });
   } catch (error: any) {
@@ -201,7 +207,7 @@ router.delete("/accounts/:id", async (req: Request, res: Response) => {
     if (!accountId) return res.status(400).json({ error: "Account ID required" });
     const account = await prisma.whatsapp_account.findUnique({ where: { id: accountId }, select: { organization_id: true } });
     if (!account) return res.status(404).json({ error: "Account not found" });
-    if (!(await canAccessOrganization(account.organization_id, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(account.organization_id, req.user, res, ["whatsapp:read"]))) return;
     await removeAccount(account.organization_id);
     res.json({ success: true });
   } catch (error: any) {
@@ -345,7 +351,7 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
 
     const cid = contactId.toLowerCase();
     if (cid.endsWith("@lid") || cid.includes("status")) return res.status(404).json({ success: false, error: "Chat not found" });
@@ -407,7 +413,7 @@ router.get("/contacts/:chatId", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ success: false, error: "chatId required" });
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
 
     const chat = await getChatMeta(organizationId, contactId);
     const details = await getContactDetails(organizationId, contactId);
@@ -433,7 +439,7 @@ router.post("/contacts/:chatId/block", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ success: false, error: "chatId required" });
     const organizationId = req.body?.organizationId || getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await setContactBlocked(organizationId, contactId, true);
     if (result == null) return res.status(400).json({ success: false, error: "Block not supported for this contact" });
     res.json({ success: true, blocked: true });
@@ -451,7 +457,7 @@ router.post("/contacts/:chatId/unblock", async (req: Request, res: Response) => 
     if (!contactId) return res.status(400).json({ success: false, error: "chatId required" });
     const organizationId = req.body?.organizationId || getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await setContactBlocked(organizationId, contactId, false);
     if (result == null) return res.status(400).json({ success: false, error: "Unblock not supported for this contact" });
     res.json({ success: true, blocked: false });
@@ -471,7 +477,7 @@ router.post("/chats/:id/messages", async (req: Request, res: Response) => {
     const { body: messageBody, clientMessageId, organizationId, quotedMessageId } = req.body;
     if (!messageBody) return res.status(400).json({ error: "Message body required" });
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:send"]))) return;
     const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: { whatsapp_enabled: true } });
     if (!org?.whatsapp_enabled) return res.status(403).json({ error: "WhatsApp not enabled" });
     const message = await sendMessage({ organizationId, chatId: contactId, body: messageBody, quotedMessageId, clientMessageId });
@@ -491,7 +497,7 @@ router.post("/chats/:id/media", async (req: Request, res: Response) => {
     const { dataUrl, caption, clientMessageId, organizationId } = req.body;
     if (!dataUrl) return res.status(400).json({ error: "Image data required" });
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:send"]))) return;
     const message = await sendMediaMessage({ organizationId, chatId: contactId, dataUrl, caption, clientMessageId });
     res.json({ success: true, message });
   } catch (error: any) {
@@ -510,7 +516,7 @@ router.post("/messages/:id/forward", async (req: Request, res: Response) => {
     const { organizationId, targetChatIds } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!Array.isArray(targetChatIds) || targetChatIds.length === 0) return res.status(400).json({ error: "targetChatIds required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:send"]))) return;
     const results = await forwardMessage({ organizationId, waMessageId, targetChatIds });
     res.json({ success: true, results });
   } catch (error: any) {
@@ -526,7 +532,7 @@ router.post("/messages/:id/star", async (req: Request, res: Response) => {
     if (!waMessageId) return res.status(400).json({ error: "Message ID required" });
     const { organizationId, starred } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await starMessage({ organizationId, waMessageId, starred: starred !== false });
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -542,7 +548,7 @@ router.post("/messages/:id/delete", async (req: Request, res: Response) => {
     if (!waMessageId) return res.status(400).json({ error: "Message ID required" });
     const { organizationId, everyone } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await deleteMessage({ organizationId, waMessageId, everyone: everyone === true });
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -559,7 +565,7 @@ router.post("/messages/:id/react", async (req: Request, res: Response) => {
     const { organizationId, emoji } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (typeof emoji !== "string") return res.status(400).json({ error: "emoji required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await reactToMessage({ organizationId, waMessageId, emoji });
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -575,7 +581,7 @@ router.get("/messages/:id/info", async (req: Request, res: Response) => {
     if (!waMessageId) return res.status(400).json({ error: "Message ID required" });
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const info = await getMessageInfo({ organizationId, waMessageId });
     res.json({ success: true, info });
   } catch (error: any) {
@@ -593,7 +599,7 @@ router.post("/chats/:id/archive", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId, archive } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await archiveChat(organizationId, contactId, archive !== false);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -609,7 +615,7 @@ router.post("/chats/:id/pin", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId, pin } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await pinChat(organizationId, contactId, pin !== false);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -625,7 +631,7 @@ router.post("/chats/:id/mute", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId, mute, unmuteDate } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await muteChat(organizationId, contactId, mute !== false, unmuteDate ? new Date(unmuteDate) : undefined);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -641,7 +647,7 @@ router.post("/chats/:id/mark-unread", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await markChatUnread(organizationId, contactId);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -657,7 +663,7 @@ router.post("/chats/:id/send-seen", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await sendSeenForChat(organizationId, contactId);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -673,7 +679,7 @@ router.get("/chats/:id/labels", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const labels = await getChatLabels(organizationId, contactId);
     res.json({ success: true, labels });
   } catch (error: any) {
@@ -689,7 +695,7 @@ router.post("/chats/:id/labels", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId, labelIds } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await updateChatLabels(organizationId, contactId, labelIds || []);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -705,7 +711,7 @@ router.post("/chats/:id/note", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId, note } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await setChatNote(organizationId, contactId, note || "");
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -721,7 +727,7 @@ router.post("/chats/:id/typing", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId, typing } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await sendTypingState(organizationId, contactId, typing !== false);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -739,7 +745,7 @@ router.get("/groups/:id", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const metadata = await getGroupMetadata(organizationId, contactId);
     res.json({ success: true, group: metadata });
   } catch (error: any) {
@@ -756,7 +762,7 @@ router.post("/groups/:id/participants/add", async (req: Request, res: Response) 
     const { organizationId, participantIds } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!Array.isArray(participantIds)) return res.status(400).json({ error: "participantIds required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await addGroupParticipants(organizationId, contactId, participantIds);
     res.json({ success: true, result });
   } catch (error: any) {
@@ -773,7 +779,7 @@ router.post("/groups/:id/participants/remove", async (req: Request, res: Respons
     const { organizationId, participantIds } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!Array.isArray(participantIds)) return res.status(400).json({ error: "participantIds required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await removeGroupParticipants(organizationId, contactId, participantIds);
     res.json({ success: true, result });
   } catch (error: any) {
@@ -790,7 +796,7 @@ router.post("/groups/:id/participants/promote", async (req: Request, res: Respon
     const { organizationId, participantIds } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!Array.isArray(participantIds)) return res.status(400).json({ error: "participantIds required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await promoteGroupParticipants(organizationId, contactId, participantIds);
     res.json({ success: true, result });
   } catch (error: any) {
@@ -807,7 +813,7 @@ router.post("/groups/:id/participants/demote", async (req: Request, res: Respons
     const { organizationId, participantIds } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!Array.isArray(participantIds)) return res.status(400).json({ error: "participantIds required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await demoteGroupParticipants(organizationId, contactId, participantIds);
     res.json({ success: true, result });
   } catch (error: any) {
@@ -824,7 +830,7 @@ router.post("/groups/:id/subject", async (req: Request, res: Response) => {
     const { organizationId, subject } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (typeof subject !== "string") return res.status(400).json({ error: "subject required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await setGroupSubject(organizationId, contactId, subject);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -841,7 +847,7 @@ router.post("/groups/:id/description", async (req: Request, res: Response) => {
     const { organizationId, description } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (typeof description !== "string") return res.status(400).json({ error: "description required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await setGroupDescription(organizationId, contactId, description);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -857,7 +863,7 @@ router.post("/groups/:id/settings", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId, ...settings } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await setGroupSettings(organizationId, contactId, settings);
     res.json({ success: true, settings: result });
   } catch (error: any) {
@@ -873,7 +879,7 @@ router.get("/groups/:id/invite", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await getGroupInviteCode(organizationId, contactId);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -889,7 +895,7 @@ router.post("/groups/:id/invite/revoke", async (req: Request, res: Response) => 
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await revokeGroupInvite(organizationId, contactId);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -905,7 +911,7 @@ router.get("/groups/:id/membership-requests", async (req: Request, res: Response
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const requests = await getGroupMembershipRequests(organizationId, contactId);
     res.json({ success: true, requests });
   } catch (error: any) {
@@ -922,7 +928,7 @@ router.post("/groups/:id/membership-requests/approve", async (req: Request, res:
     const { organizationId, requesterId } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!requesterId) return res.status(400).json({ error: "requesterId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await approveGroupMembershipRequests(organizationId, contactId, requesterId);
     res.json({ success: true, result });
   } catch (error: any) {
@@ -939,7 +945,7 @@ router.post("/groups/:id/membership-requests/reject", async (req: Request, res: 
     const { organizationId, requesterId } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!requesterId) return res.status(400).json({ error: "requesterId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await rejectGroupMembershipRequests(organizationId, contactId, requesterId);
     res.json({ success: true, result });
   } catch (error: any) {
@@ -955,7 +961,7 @@ router.post("/groups/:id/leave", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const { organizationId } = req.body;
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const result = await leaveGroup(organizationId, contactId);
     res.json({ success: true, ...result });
   } catch (error: any) {
@@ -973,7 +979,7 @@ router.post("/chats/:id/read", async (req: Request, res: Response) => {
     if (!contactId) return res.status(400).json({ error: "Chat ID required" });
     const organizationId = req.body?.organizationId || getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     await setChatUnread(organizationId, contactId, 0);
     res.json({ success: true });
   } catch (error: any) {
@@ -989,7 +995,7 @@ router.get("/unread-count", async (req: Request, res: Response) => {
   try {
     const organizationId = getQueryParam(req, "organizationId");
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
-    if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ error: "Access denied" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
     const count = await getTotalUnread(organizationId).catch(() => 0);
     res.json({ success: true, count });
   } catch (error: any) { res.json({ success: false, count: 0, error: error.message }); }

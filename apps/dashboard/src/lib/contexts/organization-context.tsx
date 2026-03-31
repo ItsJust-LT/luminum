@@ -1,8 +1,19 @@
 "use client"
 
-import { createContext, useContext, type ReactNode, useState, useEffect, useCallback } from "react"
+import { createContext, useContext, type ReactNode, useState, useEffect, useCallback, useMemo } from "react"
+import { isInsufficientPermissionsError } from "@luminum/api-client"
+import { hasAllPermissions } from "@luminum/org-permissions"
+import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { SubscriptionData, PaymentData } from "@/lib/types/subscription"
+
+export type OrganizationRoleDisplay = {
+  id: string
+  name: string
+  color: string
+  iconKey: string
+  kind: string
+}
 
 interface Organization {
   id: string
@@ -46,6 +57,13 @@ interface OrganizationContextType {
   userRole: string | null
   loading: boolean
   error: string | null
+  /** Effective permission ids for the current user in this org (expanded server-side). */
+  permissionSet: Set<string>
+  /** False until member access has been loaded for this org. */
+  permissionsReady: boolean
+  organizationRole: OrganizationRoleDisplay | null
+  organizationRoleId: string | null
+  hasAllPermissions: (required: readonly string[]) => boolean
 
   // Subscription data
   subscriptions: SubscriptionInfo[]
@@ -66,6 +84,8 @@ interface OrganizationContextType {
 }
 
 const OrganizationContext = createContext<OrganizationContextType | null>(null)
+
+const EMPTY_PERMISSION_SET = new Set<string>()
 
 export const useOrganization = () => {
   const context = useContext(OrganizationContext)
@@ -98,6 +118,10 @@ interface OrganizationProviderProps {
   loading?: boolean
   error?: string | null
   onRefresh?: () => Promise<void>
+  permissionSet?: Set<string>
+  permissionsReady?: boolean
+  organizationRole?: OrganizationRoleDisplay | null
+  organizationRoleId?: string | null
 }
 
 export const OrganizationProvider = ({
@@ -107,7 +131,12 @@ export const OrganizationProvider = ({
   loading = false,
   error = null,
   onRefresh,
+  permissionSet: permissionSetProp,
+  permissionsReady = false,
+  organizationRole = null,
+  organizationRoleId = null,
 }: OrganizationProviderProps) => {
+  const permissionSet = permissionSetProp ?? EMPTY_PERMISSION_SET
   const [subscriptions, setSubscriptions] = useState<SubscriptionInfo[]>([])
   const [primarySubscription, setPrimarySubscription] = useState<SubscriptionInfo | null>(null)
   const [subscriptionsLoading, setSubscriptionsLoading] = useState(false)
@@ -254,6 +283,18 @@ export const OrganizationProvider = ({
   }, [organization?.id, subscriptions])
 
   useEffect(() => {
+    const onRejection = (e: PromiseRejectionEvent) => {
+      if (isInsufficientPermissionsError(e.reason)) {
+        e.preventDefault()
+        const req = e.reason.required.length ? e.reason.required.join(", ") : "additional access"
+        toast.error(`You need: ${req}`)
+      }
+    }
+    window.addEventListener("unhandledrejection", onRejection)
+    return () => window.removeEventListener("unhandledrejection", onRejection)
+  }, [])
+
+  useEffect(() => {
     loadSubscriptions()
   }, [loadSubscriptions])
 
@@ -276,6 +317,11 @@ export const OrganizationProvider = ({
     await loadBillingInfo()
   }, [loadBillingInfo])
 
+  const checkPermissions = useMemo(
+    () => (required: readonly string[]) => hasAllPermissions(permissionSet, required),
+    [permissionSet],
+  )
+
   const syncSubscriptionWithProvider = useCallback(
     async (subscriptionId: string) => {
       // This would call the sync function from subscription-management.ts
@@ -296,6 +342,11 @@ export const OrganizationProvider = ({
     userRole,
     loading,
     error,
+    permissionSet,
+    permissionsReady,
+    organizationRole: organizationRole ?? null,
+    organizationRoleId: organizationRoleId ?? null,
+    hasAllPermissions: checkPermissions,
 
     // Subscription data
     subscriptions,

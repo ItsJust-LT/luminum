@@ -1,0 +1,235 @@
+import { Router, Request, Response } from "express";
+import { requireAuth } from "../middleware/require-auth.js";
+import { prisma } from "../lib/prisma.js";
+import { requireOrgPermissions, hasOrgPermissions } from "../lib/org-permission-http.js";
+import {
+  ORG_ROLE_KIND,
+  PERMISSIONS,
+  ROLE_TEMPLATES,
+  validatePermissionSelection,
+  expandPermissionSet,
+} from "@luminum/org-permissions";
+import { ensureBuiltinRolesForOrganization } from "../lib/org-roles-seed.js";
+
+const router = Router();
+router.use(requireAuth);
+
+// GET /api/organization-roles/catalog — permission definitions + role templates (any authenticated user)
+router.get("/catalog", (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    permissions: PERMISSIONS,
+    roleTemplates: ROLE_TEMPLATES,
+  });
+});
+
+// GET /api/organization-roles?organizationId=...
+router.get("/", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    const pr = await requireOrgPermissions(organizationId, req.user, res, ["team:read"]);
+    if (!pr) return;
+
+    await ensureBuiltinRolesForOrganization(prisma, organizationId);
+    const roles = await prisma.organization_role.findMany({
+      where: { organizationId },
+      include: { permissions: true },
+      orderBy: [{ kind: "asc" }, { name: "asc" }],
+    });
+
+    const canSeePerms = hasOrgPermissions(pr.effective, ["team:roles:manage"]);
+    res.json({
+      success: true,
+      roles: roles.map((r) => ({
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        color: r.color,
+        iconKey: r.iconKey,
+        kind: r.kind,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+        permissions: canSeePerms ? r.permissions.map((p) => p.permission) : undefined,
+        permissionCount: r.permissions.length,
+      })),
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.json({ success: false, error: msg });
+  }
+});
+
+// POST /api/organization-roles?organizationId=...
+router.post("/", async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req.query.organizationId as string) || (req.body?.organizationId as string);
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:roles:manage"]))) return;
+
+    const body = req.body as {
+      name?: string;
+      color?: string;
+      iconKey?: string;
+      permissionIds?: string[];
+      templateId?: string;
+    };
+
+    let permissionIds = body.permissionIds ?? [];
+    if (body.templateId) {
+      const t = ROLE_TEMPLATES.find((x) => x.id === body.templateId);
+      if (!t) return res.status(400).json({ success: false, error: "Unknown template" });
+      permissionIds = [...t.permissionIds];
+    }
+
+    const name = (body.name || "Custom role").trim().slice(0, 120);
+    const color = (body.color || "#64748b").trim().slice(0, 32);
+    const iconKey = (body.iconKey || "User").trim().slice(0, 64);
+
+    const v = validatePermissionSelection([...permissionIds]);
+    if (!v.ok) return res.status(400).json({ success: false, error: v.error });
+
+    const now = new Date();
+    const roleId = crypto.randomUUID();
+    await prisma.organization_role.create({
+      data: {
+        id: roleId,
+        organizationId,
+        name,
+        slug: null,
+        color,
+        iconKey,
+        kind: ORG_ROLE_KIND.custom,
+        createdAt: now,
+        updatedAt: now,
+        permissions: {
+          create: [...expandPermissionSet(permissionIds)].map((permission) => ({
+            id: crypto.randomUUID(),
+            permission,
+          })),
+        },
+      },
+    });
+
+    const created = await prisma.organization_role.findUnique({
+      where: { id: roleId },
+      include: { permissions: true },
+    });
+    res.json({ success: true, role: created });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.json({ success: false, error: msg });
+  }
+});
+
+// PATCH /api/organization-roles/assign-member/membership?organizationId=... (before /:id)
+router.patch("/assign-member/membership", async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req.query.organizationId as string) || (req.body?.organizationId as string);
+    const memberRowId = req.body?.memberRowId as string | undefined;
+    const organizationRoleId = req.body?.organizationRoleId as string | undefined;
+    if (!organizationId || !memberRowId || !organizationRoleId) {
+      return res.status(400).json({ success: false, error: "organizationId, memberRowId, and organizationRoleId required" });
+    }
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:roles:assign"]))) return;
+
+    const targetRole = await prisma.organization_role.findFirst({
+      where: { id: organizationRoleId, organizationId },
+    });
+    if (!targetRole) return res.status(404).json({ success: false, error: "Role not found" });
+    if (targetRole.kind === ORG_ROLE_KIND.owner) {
+      return res.status(400).json({ success: false, error: "Use ownership transfer to assign an owner" });
+    }
+
+    const row = await prisma.member.findFirst({ where: { id: memberRowId, organizationId } });
+    if (!row) return res.status(404).json({ success: false, error: "Member not found" });
+
+    let newRoleStr = "member";
+    if (targetRole.kind === ORG_ROLE_KIND.admin) newRoleStr = "admin";
+    else newRoleStr = "member";
+
+    await prisma.member.update({
+      where: { id: memberRowId },
+      data: { role: newRoleStr, organizationRoleId: targetRole.id },
+    });
+
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.json({ success: false, error: msg });
+  }
+});
+
+// PATCH /api/organization-roles/:id?organizationId=...
+router.patch("/:id", async (req: Request, res: Response) => {
+  try {
+    const roleId = req.params.id as string;
+    const organizationId = (req.query.organizationId as string) || (req.body?.organizationId as string);
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:roles:manage"]))) return;
+
+    const existing = await prisma.organization_role.findFirst({
+      where: { id: roleId, organizationId },
+      include: { permissions: true },
+    });
+    if (!existing) return res.status(404).json({ success: false, error: "Role not found" });
+    if (existing.kind !== ORG_ROLE_KIND.custom && existing.kind !== ORG_ROLE_KIND.member_template) {
+      return res.status(400).json({ success: false, error: "Only custom or member template roles can be edited here" });
+    }
+
+    const body = req.body as { name?: string; color?: string; iconKey?: string; permissionIds?: string[] };
+    const data: { name?: string; color?: string; iconKey?: string; updatedAt?: Date } = { updatedAt: new Date() };
+    if (body.name !== undefined) data.name = body.name.trim().slice(0, 120);
+    if (body.color !== undefined) data.color = body.color.trim().slice(0, 32);
+    if (body.iconKey !== undefined) data.iconKey = body.iconKey.trim().slice(0, 64);
+
+    if (body.permissionIds !== undefined) {
+      const v = validatePermissionSelection([...body.permissionIds]);
+      if (!v.ok) return res.status(400).json({ success: false, error: v.error });
+      const expanded = expandPermissionSet(body.permissionIds);
+      await prisma.organization_role_permission.deleteMany({ where: { roleId } });
+      await prisma.organization_role_permission.createMany({
+        data: [...expanded].map((permission) => ({ id: crypto.randomUUID(), roleId, permission })),
+      });
+    }
+
+    await prisma.organization_role.update({ where: { id: roleId }, data });
+    const updated = await prisma.organization_role.findUnique({
+      where: { id: roleId },
+      include: { permissions: true },
+    });
+    res.json({ success: true, role: updated });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.json({ success: false, error: msg });
+  }
+});
+
+// DELETE /api/organization-roles/:id?organizationId=...
+router.delete("/:id", async (req: Request, res: Response) => {
+  try {
+    const roleId = req.params.id as string;
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:roles:manage"]))) return;
+
+    const existing = await prisma.organization_role.findFirst({ where: { id: roleId, organizationId } });
+    if (!existing) return res.status(404).json({ success: false, error: "Role not found" });
+    if (existing.kind !== ORG_ROLE_KIND.custom) {
+      return res.status(400).json({ success: false, error: "Only custom roles can be deleted" });
+    }
+
+    const inUse = await prisma.member.count({ where: { organizationRoleId: roleId } });
+    if (inUse > 0) {
+      return res.status(400).json({ success: false, error: "Role is assigned to members; reassign them first" });
+    }
+
+    await prisma.organization_role.delete({ where: { id: roleId } });
+    res.json({ success: true });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.json({ success: false, error: msg });
+  }
+});
+
+export { router as organizationRolesRouter };

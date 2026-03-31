@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
-import { authClient } from "@/lib/auth/client"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -31,6 +30,7 @@ interface OrganizationMember {
   role: "owner" | "admin" | "member" | string
   userId: string
   user?: MemberUser
+  organization_role?: { id: string; name: string; color: string; iconKey: string; kind: string } | null
 }
 
 interface OrganizationInvitation {
@@ -47,7 +47,9 @@ interface OrganizationInvitation {
 export default function TeamPage() {
   const router = useRouter()
   const { data: session } = useSession()
-  const { organization, userRole, loading: orgLoading, error: orgError } = useOrganization()
+  const { organization, userRole, loading: orgLoading, error: orgError, hasAllPermissions } = useOrganization()
+  const canInvite = hasAllPermissions(["team:invite"])
+  const canRemove = hasAllPermissions(["team:remove"])
   const isPlatformAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
   const canTransferOwnership = userRole === "owner" || isPlatformAdmin
   const { onlineUsers } = useRealtime()
@@ -70,17 +72,9 @@ export default function TeamPage() {
     if (!organization) return
     try {
       setLoading(true)
-      const result = await (authClient as unknown as { organization: { getFullOrganization: (opts?: { query?: { organizationId?: string; membersLimit?: number } }) => Promise<unknown> } }).organization.getFullOrganization({
-        query: {
-          organizationId: organization.id,
-          membersLimit: 200,
-        },
-      })
-      const typedResult = result as { error?: { message?: string }; data?: { members?: unknown[] } }
-      if (typedResult.error) throw new Error(typedResult.error.message)
-
-      const data = typedResult.data as any
-      setMembers((data?.members || []) as OrganizationMember[])
+      const listRes = (await api.members.list(organization.id)) as { data?: OrganizationMember[]; error?: string | null }
+      if (listRes.error) throw new Error(String(listRes.error))
+      setMembers(listRes.data || [])
     } catch (error) {
       console.error("Failed to load members:", error)
     } finally {
@@ -130,14 +124,15 @@ export default function TeamPage() {
     fetchInvitations() // Refresh the invitations list
   }
 
-  const getRoleBadge = (role: string) => {
-    switch (role) {
+  const getRoleBadge = (m: OrganizationMember) => {
+    const label = (m.organization_role?.name || m.role || "member").toLowerCase()
+    switch (m.role) {
       case "owner":
-        return <Badge className="bg-violet-500/15 text-violet-600 dark:text-violet-300 border border-violet-500/30" variant="secondary">owner</Badge>
+        return <Badge className="bg-violet-500/15 text-violet-600 dark:text-violet-300 border border-violet-500/30" variant="secondary">{label}</Badge>
       case "admin":
-        return <Badge className="bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/30" variant="secondary">admin</Badge>
+        return <Badge className="bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/30" variant="secondary">{label}</Badge>
       default:
-        return <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30" variant="secondary">member</Badge>
+        return <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30" variant="secondary">{label}</Badge>
     }
   }
 
@@ -199,7 +194,7 @@ export default function TeamPage() {
               }}
             />
           )}
-          {(userRole === "owner" || userRole === "admin") && (
+          {canInvite && (
             <OrganizationInviteDialog
               organizationId={organization.id}
               organizationName={organization.name}
@@ -244,9 +239,8 @@ export default function TeamPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    {getRoleBadge(m.role)}
-                    {/* Only show remove button for admins/owners, and don't allow removing owners */}
-                    {(userRole === "owner" || userRole === "admin") && m.role !== "owner" && (
+                    {getRoleBadge(m)}
+                    {canRemove && m.role !== "owner" && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -266,7 +260,7 @@ export default function TeamPage() {
       </Card>
 
       {/* Pending Invitations Card */}
-      {(userRole === "owner" || userRole === "admin") && (
+      {canInvite && (
         <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
           <CardHeader className="px-4 sm:px-6">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -307,7 +301,7 @@ export default function TeamPage() {
                           Ownership transfer
                         </Badge>
                       ) : (
-                        getRoleBadge(invitation.role)
+                        getRoleBadge({ id: "", role: invitation.role, userId: "" })
                       )}
                       <Button
                         variant="ghost"

@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import { LayoutDashboard, Mail, FileText, HelpCircle, MoreHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orgNavPath } from '@/lib/org-nav-path'
+import { hasAllPermissions } from '@luminum/org-permissions'
 import {
   mobileManagementNavItems,
   mobilePrimaryNavItems,
@@ -23,6 +24,7 @@ interface AppTabBarProps {
   invoicesEnabled?: boolean
   organizationName: string
   organizationLogo?: string | null
+  permissionSet?: Set<string>
 }
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -35,12 +37,13 @@ const tabs: {
   section: string
   icon: typeof LayoutDashboard
   emailsOnly?: boolean
+  required: readonly string[]
 }[] = [
-  { id: 'dashboard', label: 'Home', section: 'dashboard', icon: LayoutDashboard },
-  { id: 'emails', label: 'Inbox', section: 'emails', icon: Mail, emailsOnly: true },
-  { id: 'forms', label: 'Forms', section: 'forms', icon: FileText },
-  { id: 'support', label: 'Help', section: 'support', icon: HelpCircle },
-  { id: 'more', label: 'More', section: 'settings', icon: MoreHorizontal },
+  { id: 'dashboard', label: 'Home', section: 'dashboard', icon: LayoutDashboard, required: ['dashboard:view'] },
+  { id: 'emails', label: 'Inbox', section: 'emails', icon: Mail, emailsOnly: true, required: ['email:read'] },
+  { id: 'forms', label: 'Forms', section: 'forms', icon: FileText, required: ['forms:read'] },
+  { id: 'support', label: 'Help', section: 'support', icon: HelpCircle, required: ['support:read'] },
+  { id: 'more', label: 'More', section: 'settings', icon: MoreHorizontal, required: ['org:settings:read'] },
 ]
 
 function pathMatches(pathname: string, base: string) {
@@ -57,6 +60,7 @@ export function AppTabBar({
   invoicesEnabled = false,
   organizationName,
   organizationLogo,
+  permissionSet,
 }: AppTabBarProps) {
   const pathname = usePathname() ?? ''
   const router = useRouter()
@@ -74,10 +78,23 @@ export function AppTabBar({
     [analyticsEnabled, blogsEnabled, emailsEnabled, whatsappEnabled, invoicesEnabled],
   )
 
-  const primaryNav = useMemo(() => mobilePrimaryNavItems(slug, flatRoutes, orgFlags), [slug, flatRoutes, orgFlags])
-  const managementNav = useMemo(() => mobileManagementNavItems(slug, flatRoutes), [slug, flatRoutes])
+  const primaryNav = useMemo(
+    () => mobilePrimaryNavItems(slug, flatRoutes, orgFlags, permissionSet),
+    [slug, flatRoutes, orgFlags, permissionSet],
+  )
+  const managementNav = useMemo(
+    () => mobileManagementNavItems(slug, flatRoutes, permissionSet),
+    [slug, flatRoutes, permissionSet],
+  )
 
-  const visibleTabs = tabs.filter((t) => !t.emailsOnly || emailsEnabled)
+  let visibleTabs = tabs.filter((t) => {
+    if (t.emailsOnly && !emailsEnabled) return false
+    if (permissionSet === undefined) return true
+    return hasAllPermissions(permissionSet, t.required)
+  })
+  if (visibleTabs.length === 0) {
+    visibleTabs = [tabs[0]!]
+  }
 
   const dashHref = hrefFor('dashboard')
   const emailsHref = hrefFor('emails')

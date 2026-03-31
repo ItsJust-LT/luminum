@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
-import { canAccessOrganization } from "../lib/access.js";
+import { requireOrgPermissions } from "../lib/org-permission-http.js";
 import { pathParam, queryParam } from "../lib/req-params.js";
 
 const router = Router();
@@ -27,7 +27,7 @@ router.post("/", async (req: Request, res: Response) => {
   try {
     const { name, domain, organization_id, analytics } = req.body;
     if (!organization_id || !domain.includes(".")) return res.status(400).json({ data: null, error: "organization_id and domain required" });
-    if (!(await canAccessOrganization(organization_id, req.user))) return res.status(403).json({ data: null, error: "Access denied" });
+    if (!(await requireOrgPermissions(organization_id, req.user, res, ["org:websites:write"]))) return;
     const website = await prisma.websites.create({ data: { name, domain, organization_id, analytics: analytics || false } });
     res.json({ data: formatWebsite(website), error: null });
   } catch (error: any) { res.json({ data: null, error: error.message }); }
@@ -38,7 +38,7 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const organizationId = queryParam(req, "organizationId");
     if (organizationId) {
-      if (!(await canAccessOrganization(organizationId, req.user))) return res.status(403).json({ data: [], error: "Access denied" });
+      if (!(await requireOrgPermissions(organizationId, req.user, res, ["org:websites:read"]))) return;
       const websites = await prisma.websites.findMany({ where: { organization_id: organizationId }, orderBy: { created_at: "desc" } });
       return res.json({ data: websites.map(formatWebsite), error: null });
     }
@@ -52,7 +52,8 @@ router.patch("/:id", async (req: Request, res: Response) => {
   try {
     const id = pathParam(req, "id")!;
     const existing = await prisma.websites.findUnique({ where: { id }, select: { organization_id: true } });
-    if (!existing || !(await canAccessOrganization(existing.organization_id, req.user))) return res.status(403).json({ data: null, error: "Access denied" });
+    if (!existing || !(await requireOrgPermissions(existing.organization_id, req.user, res, ["org:websites:write"])))
+      return;
     const data = req.body;
     if (data.domain && !data.domain.includes(".")) return res.status(400).json({ data: null, error: "Domain must include TLD" });
     const website = await prisma.websites.update({ where: { id }, data: { ...data, updated_at: new Date() } });
@@ -65,7 +66,8 @@ router.delete("/:id", async (req: Request, res: Response) => {
   try {
     const id = pathParam(req, "id")!;
     const existing = await prisma.websites.findUnique({ where: { id }, select: { organization_id: true } });
-    if (!existing || !(await canAccessOrganization(existing.organization_id, req.user))) return res.status(403).json({ success: false, error: "Access denied" });
+    if (!existing || !(await requireOrgPermissions(existing.organization_id, req.user, res, ["org:websites:delete"])))
+      return;
     await prisma.websites.delete({ where: { id } });
     res.json({ success: true, error: null });
   } catch (error: any) { res.json({ success: false, error: error.message }); }

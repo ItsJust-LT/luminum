@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, Mail, MessageCircle, Gauge, Receipt, CalendarClock } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
+import { NAV_ITEM_REQUIRED_PERMISSIONS, hasAllPermissions } from "@luminum/org-permissions"
 import { orgNavPath } from "@/lib/org-nav-path"
 import { orgLogoOrBrandProxy } from "@/lib/org-display-logo"
 
@@ -44,6 +45,7 @@ export function OrganizationSidebar({
   initialAnalyticsEnabled = false,
   initialBlogsEnabled = false,
   initialInvoicesEnabled = false,
+  permissionSet,
   isLoading: externalIsLoading = false,
 }: {
   workspaceSlug: string
@@ -60,6 +62,7 @@ export function OrganizationSidebar({
   initialAnalyticsEnabled?: boolean
   initialBlogsEnabled?: boolean
   initialInvoicesEnabled?: boolean
+  permissionSet?: Set<string>
   isLoading?: boolean
 }) {
   const pathname = usePathname()
@@ -88,44 +91,54 @@ export function OrganizationSidebar({
     setIsLoading(externalIsLoading)
   }, [initialUnseenFormsCount, initialUnreadEmailsCount, initialUnreadWhatsappCount, initialEmailsEnabled, initialWhatsappEnabled, initialAnalyticsEnabled, initialBlogsEnabled, initialInvoicesEnabled, externalIsLoading])
 
-  const sidebarItems = [
-    { title: "Dashboard", icon: LayoutDashboard, href: nav("dashboard") },
-    ...(analyticsEnabled ? [{ title: "Analytics", icon: Globe, href: nav("analytics") }] : []),
-    { title: "Site Audits", icon: Gauge, href: nav("audits") },
-    { 
-      title: "Forms", 
-      icon: FileText, 
+  const navOk = (key: string) => {
+    if (permissionSet === undefined) return true
+    const req = NAV_ITEM_REQUIRED_PERMISSIONS[key]
+    if (!req) return true
+    return hasAllPermissions(permissionSet, req)
+  }
+
+  type SidebarEntry = { title: string; icon: typeof LayoutDashboard; href: string; badge?: number }
+  const sidebarItems: SidebarEntry[] = []
+  if (navOk("dashboard")) sidebarItems.push({ title: "Dashboard", icon: LayoutDashboard, href: nav("dashboard") })
+  if (analyticsEnabled && navOk("analytics")) sidebarItems.push({ title: "Analytics", icon: Globe, href: nav("analytics") })
+  if (navOk("audits")) sidebarItems.push({ title: "Site Audits", icon: Gauge, href: nav("audits") })
+  if (navOk("forms")) {
+    sidebarItems.push({
+      title: "Forms",
+      icon: FileText,
       href: nav("forms"),
-      badge: unseenFormsCount > 0 ? unseenFormsCount : undefined
-    },
-    ...(blogsEnabled ? [{ title: "Blog", icon: BookOpen, href: nav("blogs") }] : []),
-    ...(emailsEnabled ? [{
+      badge: unseenFormsCount > 0 ? unseenFormsCount : undefined,
+    })
+  }
+  if (blogsEnabled && navOk("blogs")) sidebarItems.push({ title: "Blog", icon: BookOpen, href: nav("blogs") })
+  if (emailsEnabled && navOk("emails")) {
+    sidebarItems.push({
       title: "Emails",
       icon: Mail,
       href: nav("emails"),
-      badge: unreadEmailsCount > 0 ? unreadEmailsCount : undefined
-    }] : []),
-    ...(whatsappEnabled ? [{
+      badge: unreadEmailsCount > 0 ? unreadEmailsCount : undefined,
+    })
+  }
+  if (whatsappEnabled && navOk("whatsapp")) {
+    sidebarItems.push({
       title: "WhatsApp",
       icon: MessageCircle,
       href: nav("whatsapp"),
-      badge: unreadWhatsappCount > 0 ? unreadWhatsappCount : undefined
-    }] : []),
-    ...(invoicesEnabled
-      ? [
-          { title: "Invoices", icon: Receipt, href: nav("invoices") },
-          { title: "Recurring", icon: CalendarClock, href: nav("invoices/schedules") },
-        ]
-      : []),
-    { title: "Team", icon: Users, href: nav("team") },
-    { title: "Settings", icon: Settings, href: nav("settings") },
-  ]
+      badge: unreadWhatsappCount > 0 ? unreadWhatsappCount : undefined,
+    })
+  }
+  if (invoicesEnabled) {
+    if (navOk("invoices")) sidebarItems.push({ title: "Invoices", icon: Receipt, href: nav("invoices") })
+    if (navOk("invoices/schedules")) sidebarItems.push({ title: "Recurring", icon: CalendarClock, href: nav("invoices/schedules") })
+  }
+  if (navOk("team")) sidebarItems.push({ title: "Team", icon: Users, href: nav("team") })
+  if (navOk("settings")) sidebarItems.push({ title: "Settings", icon: Settings, href: nav("settings") })
 
-  const managementItems = [
-    { title: "Billing", icon: CreditCard, href: nav("billing") },
-    { title: "Reports", icon: FileText, href: nav("reports") },
-    { title: "Support", icon: HelpCircle, href: nav("support") },
-  ]
+  const managementItems: { title: string; icon: typeof CreditCard; href: string }[] = []
+  if (navOk("billing")) managementItems.push({ title: "Billing", icon: CreditCard, href: nav("billing") })
+  if (navOk("reports")) managementItems.push({ title: "Reports", icon: FileText, href: nav("reports") })
+  if (navOk("support")) managementItems.push({ title: "Support", icon: HelpCircle, href: nav("support") })
 
   const isActive = (href: string) => pathname?.startsWith(href)
 

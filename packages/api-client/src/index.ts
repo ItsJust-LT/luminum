@@ -4,8 +4,23 @@ import type {
   NotificationPreferencesData,
   AvatarResult,
 } from "@luminum/database/types";
+import { INSUFFICIENT_PERMISSIONS_CODE } from "@luminum/org-permissions";
 
 type FetchOptions = RequestInit & { baseUrl?: string };
+
+export class InsufficientPermissionsError extends Error {
+  readonly code = INSUFFICIENT_PERMISSIONS_CODE;
+  readonly required: string[];
+  constructor(required: string[], message?: string) {
+    super(message || "Insufficient permissions");
+    this.name = "InsufficientPermissionsError";
+    this.required = required;
+  }
+}
+
+export function isInsufficientPermissionsError(e: unknown): e is InsufficientPermissionsError {
+  return e instanceof InsufficientPermissionsError;
+}
 
 function createApiClient(baseUrl: string = "") {
   async function request<T = any>(
@@ -23,7 +38,17 @@ function createApiClient(baseUrl: string = "") {
       ...fetchOpts,
     });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
+      const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
+        error?: string;
+        code?: string;
+        required?: string[];
+      };
+      if (res.status === 403 && body?.code === INSUFFICIENT_PERMISSIONS_CODE) {
+        throw new InsufficientPermissionsError(
+          Array.isArray(body.required) ? body.required : [],
+          body.error || "Insufficient permissions",
+        );
+      }
       throw new Error(body.error || `API error: ${res.status}`);
     }
     return res.json();
@@ -241,6 +266,7 @@ function createApiClient(baseUrl: string = "") {
       role: "admin" | "member";
       organizationId: string;
       organizationName: string;
+      organizationRoleId?: string;
     }) => post("/api/organization-actions/send-invitation", data),
     requestOwnershipTransfer: (data: { organizationId: string; email: string }) =>
       post("/api/organization-actions/request-ownership-transfer", data),
@@ -274,8 +300,9 @@ function createApiClient(baseUrl: string = "") {
     }) => post("/api/organization-actions/add-member", data),
     updateRole: (data: {
       memberId: string;
-      newRole: "admin" | "member";
+      newRole?: "admin" | "member";
       organizationId: string;
+      organizationRoleId?: string;
     }) => patch("/api/organization-actions/update-role", data),
   };
 
@@ -668,6 +695,42 @@ function createApiClient(baseUrl: string = "") {
   const members = {
     list: (organizationId: string) =>
       get("/api/members", { organizationId }),
+    getAccess: (organizationId: string) =>
+      get("/api/members/access", { organizationId }),
+  };
+
+  const organizationRoles = {
+    catalog: () => get("/api/organization-roles/catalog"),
+    list: (organizationId: string) => get("/api/organization-roles", { organizationId }),
+    create: (
+      organizationId: string,
+      body: {
+        name?: string;
+        color?: string;
+        iconKey?: string;
+        permissionIds?: string[];
+        templateId?: string;
+      },
+    ) => post(`/api/organization-roles?organizationId=${encodeURIComponent(organizationId)}`, { ...body, organizationId }),
+    update: (
+      organizationId: string,
+      roleId: string,
+      body: { name?: string; color?: string; iconKey?: string; permissionIds?: string[] },
+    ) =>
+      patch(
+        `/api/organization-roles/${encodeURIComponent(roleId)}?organizationId=${encodeURIComponent(organizationId)}`,
+        body,
+      ),
+    delete: (organizationId: string, roleId: string) =>
+      del(`/api/organization-roles/${encodeURIComponent(roleId)}?organizationId=${encodeURIComponent(organizationId)}`),
+    assignMember: (
+      organizationId: string,
+      body: { memberRowId: string; organizationRoleId: string },
+    ) =>
+      patch(
+        `/api/organization-roles/assign-member/membership?organizationId=${encodeURIComponent(organizationId)}`,
+        body,
+      ),
   };
 
   // ─── Subscriptions ────────────────────────────────────────
@@ -912,6 +975,7 @@ function createApiClient(baseUrl: string = "") {
     avatar,
     websites,
     members,
+    organizationRoles,
     subscriptions,
     userManagement,
     whatsapp,

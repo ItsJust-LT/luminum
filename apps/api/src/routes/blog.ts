@@ -4,8 +4,9 @@
 
 import { Router, type Request, type Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/require-auth.js";
-import { canAccessOrganization } from "../lib/access.js";
 import { prisma } from "../lib/prisma.js";
+import { hasOrgPermissions, requireOrgPermissions } from "../lib/org-permission-http.js";
+import { resolveOrgMemberPermissions } from "../lib/org-permissions-resolve.js";
 import * as s3 from "../lib/storage/s3.js";
 import { orgBlogAssetKey, isOrgBlogKey, getOrganizationIdFromKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
@@ -88,6 +89,16 @@ async function ensureBlogsEnabled(organizationId: string): Promise<boolean> {
   return !!org?.blogs_enabled;
 }
 
+async function blogCan(
+  user: { id: string; role?: string } | undefined,
+  organizationId: string,
+  permissions: string[],
+): Promise<boolean> {
+  if (!user) return false;
+  const r = await resolveOrgMemberPermissions(prisma, organizationId, user);
+  return !!(r && hasOrgPermissions(r.effectivePermissions, permissions));
+}
+
 /** GET /api/blog/asset?key= — stream org blog asset for authenticated members (drafts + published). */
 router.get("/asset", requireAuth, async (req: Request, res: Response) => {
   const keyRaw = req.query.key;
@@ -113,10 +124,7 @@ router.get("/asset", requireAuth, async (req: Request, res: Response) => {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  if (!(await canAccessOrganization(orgId, req.user!))) {
-    res.status(403).json({ error: "Access denied" });
-    return;
-  }
+  if (!(await requireOrgPermissions(orgId, req.user!, res, ["blog:read"]))) return;
   if (!(await ensureBlogsEnabled(orgId))) {
     res.status(404).json({ error: "Not found" });
     return;
@@ -184,8 +192,7 @@ router.get("/posts", optionalAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  const member =
-    req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
+  const member = await blogCan(req.user, organizationId, ["blog:read"]);
 
   if (!(await ensureBlogsEnabled(organizationId))) {
     res.status(404).json({ error: "Not found" });
@@ -252,10 +259,11 @@ router.get("/posts", optionalAuth, async (req: Request, res: Response) => {
 router.get("/posts/id/:postId", requireAuth, async (req: Request, res: Response) => {
   const postId = one(req.params.postId);
   const post = await prisma.blog_post.findUnique({ where: { id: postId } });
-  if (!post || !(await canAccessOrganization(post.organization_id, req.user!))) {
+  if (!post) {
     res.status(404).json({ error: "Not found" });
     return;
   }
+  if (!(await requireOrgPermissions(post.organization_id, req.user!, res, ["blog:read"]))) return;
   if (!(await ensureBlogsEnabled(post.organization_id))) {
     res.status(404).json({ error: "Not found" });
     return;
@@ -280,8 +288,7 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
     return;
   }
 
-  const member =
-    req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
+  const member = await blogCan(req.user, organizationId, ["blog:read"]);
 
   const previewPayload =
     !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
@@ -461,7 +468,7 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
     return;
   }
 
-  const member = req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
+  const member = await blogCan(req.user, organizationId, ["blog:read"]);
   const previewPayload =
     !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
   const isPreview =
@@ -604,7 +611,7 @@ router.get("/categories", optionalAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  const member = req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
+  const member = await blogCan(req.user, organizationId, ["blog:read"]);
   const previewPayload =
     !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
   const isPreview =
@@ -683,7 +690,7 @@ router.get("/posts/by-category", optionalAuth, async (req: Request, res: Respons
     return;
   }
 
-  const member = req.user && (await canAccessOrganization(organizationId, req.user)) ? true : false;
+  const member = await blogCan(req.user, organizationId, ["blog:read"]);
   const previewPayload =
     !member && previewToken ? await validatePreviewTokenPayload(previewToken) : null;
   const isPreview =
@@ -765,10 +772,11 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
       contentType?: string;
       originalFilename?: string;
     };
-    if (!organizationId || !(await canAccessOrganization(organizationId, req.user!))) {
-      res.status(403).json({ error: "Access denied" });
+    if (!organizationId) {
+      res.status(400).json({ error: "organizationId required" });
       return;
     }
+    if (!(await requireOrgPermissions(organizationId, req.user!, res, ["blog:assets:write"]))) return;
     if (!(await ensureBlogsEnabled(organizationId))) {
       res.status(404).json({ error: "Not found" });
       return;
@@ -826,10 +834,11 @@ router.post("/posts", requireAuth, async (req: Request, res: Response) => {
     cover_image_key?: string;
     categories?: string[];
   };
-  if (!organizationId || !(await canAccessOrganization(organizationId, req.user!))) {
-    res.status(403).json({ error: "Access denied" });
+  if (!organizationId) {
+    res.status(400).json({ error: "organizationId required" });
     return;
   }
+  if (!(await requireOrgPermissions(organizationId, req.user!, res, ["blog:write"]))) return;
   if (!(await ensureBlogsEnabled(organizationId))) {
     res.status(404).json({ error: "Not found" });
     return;
@@ -865,11 +874,13 @@ router.post("/posts", requireAuth, async (req: Request, res: Response) => {
 router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
   const id = one(req.params.id);
   const existing = await prisma.blog_post.findUnique({ where: { id } });
-  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+  if (!existing) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  if (!(await ensureBlogsEnabled(existing.organization_id))) {
+  const orgId = existing.organization_id;
+  if (!(await requireOrgPermissions(orgId, req.user!, res, ["blog:write"]))) return;
+  if (!(await ensureBlogsEnabled(orgId))) {
     res.status(404).json({ error: "Not found" });
     return;
   }
@@ -885,6 +896,11 @@ router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
     scheduled_publish_at?: string | null;
     categories?: string[];
   };
+
+  const needsPublishPerm =
+    body.status === "scheduled" ||
+    (body.status === "draft" && (existing.status === "published" || existing.status === "scheduled"));
+  if (needsPublishPerm && !(await requireOrgPermissions(orgId, req.user!, res, ["blog:publish"]))) return;
 
   const data: Record<string, unknown> = {};
 
@@ -961,10 +977,11 @@ router.patch("/posts/:id", requireAuth, async (req: Request, res: Response) => {
 router.post("/posts/:id/preview-spec", requireAuth, async (req: Request, res: Response) => {
   const id = one(req.params.id);
   const existing = await prisma.blog_post.findUnique({ where: { id } });
-  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+  if (!existing) {
     res.status(404).json({ error: "Not found" });
     return;
   }
+  if (!(await requireOrgPermissions(existing.organization_id, req.user!, res, ["blog:write"]))) return;
   if (!(await ensureBlogsEnabled(existing.organization_id))) {
     res.status(404).json({ error: "Not found" });
     return;
@@ -984,10 +1001,11 @@ router.post("/posts/:id/preview-spec", requireAuth, async (req: Request, res: Re
 router.post("/posts/:id/validate-content", requireAuth, async (req: Request, res: Response) => {
   const id = one(req.params.id);
   const existing = await prisma.blog_post.findUnique({ where: { id } });
-  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+  if (!existing) {
     res.status(404).json({ error: "Not found" });
     return;
   }
+  if (!(await requireOrgPermissions(existing.organization_id, req.user!, res, ["blog:write"]))) return;
   if (!(await ensureBlogsEnabled(existing.organization_id))) {
     res.status(404).json({ error: "Not found" });
     return;
@@ -1007,10 +1025,11 @@ router.post("/posts/:id/validate-content", requireAuth, async (req: Request, res
 router.post("/posts/:id/publish", requireAuth, async (req: Request, res: Response) => {
   const id = one(req.params.id);
   const existing = await prisma.blog_post.findUnique({ where: { id } });
-  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+  if (!existing) {
     res.status(404).json({ error: "Not found" });
     return;
   }
+  if (!(await requireOrgPermissions(existing.organization_id, req.user!, res, ["blog:publish"]))) return;
   if (!(await ensureBlogsEnabled(existing.organization_id))) {
     res.status(404).json({ error: "Not found" });
     return;
@@ -1093,10 +1112,11 @@ router.post("/posts/:id/publish", requireAuth, async (req: Request, res: Respons
 router.delete("/posts/:id", requireAuth, async (req: Request, res: Response) => {
   const id = one(req.params.id);
   const existing = await prisma.blog_post.findUnique({ where: { id } });
-  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+  if (!existing) {
     res.status(404).json({ error: "Not found" });
     return;
   }
+  if (!(await requireOrgPermissions(existing.organization_id, req.user!, res, ["blog:delete"]))) return;
   if (!(await ensureBlogsEnabled(existing.organization_id))) {
     res.status(404).json({ error: "Not found" });
     return;
@@ -1114,10 +1134,11 @@ router.delete("/posts/:id", requireAuth, async (req: Request, res: Response) => 
 router.post("/posts/:id/preview-token", requireAuth, async (req: Request, res: Response) => {
   const id = one(req.params.id);
   const existing = await prisma.blog_post.findUnique({ where: { id } });
-  if (!existing || !(await canAccessOrganization(existing.organization_id, req.user!))) {
+  if (!existing) {
     res.status(404).json({ error: "Not found" });
     return;
   }
+  if (!(await requireOrgPermissions(existing.organization_id, req.user!, res, ["blog:read"]))) return;
   if (!(await ensureBlogsEnabled(existing.organization_id))) {
     res.status(404).json({ error: "Not found" });
     return;

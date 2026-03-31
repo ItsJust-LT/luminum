@@ -2,6 +2,9 @@ import { Router, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { getMemberOrAdmin } from "../lib/access.js";
+import { requireOrgPermissions } from "../lib/org-permission-http.js";
+import { ensureBuiltinRolesForOrganization } from "../lib/org-roles-seed.js";
+import { ORG_ROLE_KIND } from "@luminum/org-permissions";
 import { sendOrganizationInvitationEmail, sendMemberRemovalEmail } from "../lib/email.js";
 import { notifyMemberJoined, notifyMemberLeft, notifyMemberInvited, notifyInvitationAccepted } from "../lib/notifications/helpers.js";
 import { auth } from "../auth/config.js";
@@ -241,13 +244,33 @@ router.post("/request-ownership-transfer", async (req: Request, res: Response) =
 // POST /api/organization-actions/send-invitation
 router.post("/send-invitation", async (req: Request, res: Response) => {
   try {
-    const { email, role, organizationId, organizationName } = req.body;
-    const membership = await getMemberOrAdmin(organizationId, req.user);
-    if (!membership || !["admin", "owner"].includes(membership.role)) {
-      return res.status(403).json({ success: false, error: "Insufficient permissions" });
-    }
+    const { email, role, organizationId, organizationName, organizationRoleId: bodyOrgRoleId } = req.body as {
+      email?: string;
+      role?: string;
+      organizationId?: string;
+      organizationName?: string;
+      organizationRoleId?: string;
+    };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId is required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:invite"]))) return;
 
-    const r = (role || "member").toLowerCase();
+    await ensureBuiltinRolesForOrganization(prisma, organizationId);
+
+    let r = (role || "member").toLowerCase();
+    let organizationRoleId: string | null = typeof bodyOrgRoleId === "string" ? bodyOrgRoleId : null;
+    if (organizationRoleId) {
+      const orole = await prisma.organization_role.findFirst({
+        where: { id: organizationRoleId, organizationId },
+      });
+      if (!orole) return res.status(400).json({ success: false, error: "Invalid organization role" });
+      if (orole.kind === ORG_ROLE_KIND.owner) {
+        return res.status(400).json({
+          success: false,
+          error: "To change organization owner, use Transfer ownership instead of a normal invite.",
+        });
+      }
+      r = orole.kind === ORG_ROLE_KIND.admin ? "admin" : "member";
+    }
     if (r === "owner") {
       return res.status(400).json({
         success: false,
@@ -260,6 +283,12 @@ router.post("/send-invitation", async (req: Request, res: Response) => {
 
     const userCheck = await prisma.user.findUnique({ where: { email: normalized }, select: { id: true } });
 
+    if (!organizationRoleId) {
+      const kind = r === "admin" ? ORG_ROLE_KIND.admin : ORG_ROLE_KIND.member_template;
+      const orow = await prisma.organization_role.findFirst({ where: { organizationId, kind } });
+      organizationRoleId = orow?.id ?? null;
+    }
+
     const invitation = await prisma.invitation.create({
       data: {
         id: crypto.randomUUID(),
@@ -271,18 +300,20 @@ router.post("/send-invitation", async (req: Request, res: Response) => {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         ownership_transfer: false,
+        organizationRoleId,
       },
     });
 
     const APP_URL = process.env.APP_URL || "http://localhost:3000";
     const inviteLink = `${APP_URL}/accept-org-invitation/${invitation.id}`;
+    const inviteRole = r === "admin" ? ("admin" as const) : ("member" as const);
     await sendOrganizationInvitationEmail({
       email: normalized,
-      role: r || "member",
-      organizationName,
+      role: inviteRole,
+      organizationName: organizationName || "Organization",
       inviteLink,
       invitedByUsername: req.user.name || "Someone",
-      invitedByEmail: req.user.email,
+      invitedByEmail: req.user.email || "",
       userExists: !!userCheck,
     });
     await notifyMemberInvited(organizationId, normalized, r, req.user.name || "Someone");
@@ -297,8 +328,7 @@ router.post("/send-invitation", async (req: Request, res: Response) => {
 router.post("/remove-member", async (req: Request, res: Response) => {
   try {
     const { memberId, memberEmail, memberName, organizationName, organizationId } = req.body;
-    const membership = await getMemberOrAdmin(organizationId, req.user);
-    if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:remove"]))) return;
 
     await prisma.member.deleteMany({ where: { userId: memberId, organizationId } });
     const currentUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { name: true } });
@@ -315,8 +345,7 @@ router.post("/remove-member", async (req: Request, res: Response) => {
 router.get("/invitations", async (req: Request, res: Response) => {
   try {
     const organizationId = req.query.organizationId as string;
-    const membership = await getMemberOrAdmin(organizationId, req.user);
-    if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:read"]))) return;
 
     const invitations = await prisma.invitation.findMany({
       where: { organizationId, status: "pending" },
@@ -329,6 +358,8 @@ router.get("/invitations", async (req: Request, res: Response) => {
         expiresAt: true,
         inviterId: true,
         ownership_transfer: true,
+        organizationRoleId: true,
+        organization_role: { select: { id: true, name: true, color: true, iconKey: true, kind: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -357,8 +388,7 @@ router.post("/cancel-invitation", async (req: Request, res: Response) => {
     });
     if (!invitation) return res.status(404).json({ success: false, error: "Invitation not found" });
 
-    const membership = await getMemberOrAdmin(invitation.organizationId, req.user);
-    if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
+    if (!(await requireOrgPermissions(invitation.organizationId, req.user, res, ["team:invite"]))) return;
 
     await prisma.invitation.update({ where: { id: invitationId }, data: { status: "cancelled" } });
     res.json({ success: true });
@@ -370,11 +400,32 @@ router.post("/cancel-invitation", async (req: Request, res: Response) => {
 // POST /api/organization-actions/add-member
 router.post("/add-member", async (req: Request, res: Response) => {
   try {
-    const { email, role, organizationId } = req.body;
-    const membership = await getMemberOrAdmin(organizationId, req.user);
-    if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
+    const { email, role, organizationId, organizationRoleId: bodyOrgRoleId } = req.body as {
+      email?: string;
+      role?: string;
+      organizationId?: string;
+      organizationRoleId?: string;
+    };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId is required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:invite"]))) return;
 
-    const r = (role || "member").toLowerCase();
+    await ensureBuiltinRolesForOrganization(prisma, organizationId);
+
+    let r = (role || "member").toLowerCase();
+    let organizationRoleId: string | null = typeof bodyOrgRoleId === "string" ? bodyOrgRoleId : null;
+    if (organizationRoleId) {
+      const orole = await prisma.organization_role.findFirst({
+        where: { id: organizationRoleId, organizationId },
+      });
+      if (!orole) return res.status(400).json({ success: false, error: "Invalid organization role" });
+      if (orole.kind === ORG_ROLE_KIND.owner) {
+        return res.status(400).json({
+          success: false,
+          error: "Use Transfer ownership to assign a new owner by email.",
+        });
+      }
+      r = orole.kind === ORG_ROLE_KIND.admin ? "admin" : "member";
+    }
     if (r === "owner") {
       return res.status(400).json({
         success: false,
@@ -388,8 +439,24 @@ router.post("/add-member", async (req: Request, res: Response) => {
     const existingMember = await prisma.member.findFirst({ where: { userId: user.id, organizationId } });
     if (existingMember) return res.status(400).json({ success: false, error: "User is already a member" });
 
-    await prisma.member.create({ data: { id: crypto.randomUUID(), userId: user.id, organizationId, role: r, createdAt: new Date() } });
-    await notifyMemberJoined(organizationId, user.name, email, r);
+    if (!organizationRoleId) {
+      const kind = r === "admin" ? ORG_ROLE_KIND.admin : ORG_ROLE_KIND.member_template;
+      const orow = await prisma.organization_role.findFirst({ where: { organizationId, kind } });
+      organizationRoleId = orow?.id ?? null;
+    }
+
+    const memberRole = r === "admin" ? ("admin" as const) : ("member" as const);
+    await prisma.member.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId: user.id,
+        organizationId,
+        role: memberRole,
+        createdAt: new Date(),
+        organizationRoleId,
+      },
+    });
+    await notifyMemberJoined(organizationId, user.name, email ?? "", r);
 
     res.json({ success: true });
   } catch (error: any) {
@@ -400,11 +467,42 @@ router.post("/add-member", async (req: Request, res: Response) => {
 // PATCH /api/organization-actions/update-role
 router.patch("/update-role", async (req: Request, res: Response) => {
   try {
-    const { memberId, newRole, organizationId } = req.body;
-    const membership = await getMemberOrAdmin(organizationId, req.user);
-    if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
+    const { memberId, newRole, organizationId, organizationRoleId: bodyOrgRoleId } = req.body as {
+      memberId?: string;
+      newRole?: string;
+      organizationId?: string;
+      organizationRoleId?: string;
+    };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId is required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:roles:assign"]))) return;
 
-    await prisma.member.update({ where: { id: memberId }, data: { role: newRole } });
+    await ensureBuiltinRolesForOrganization(prisma, organizationId);
+
+    const row = await prisma.member.findFirst({ where: { id: memberId, organizationId } });
+    if (!row) return res.status(404).json({ success: false, error: "Member not found" });
+
+    if (typeof bodyOrgRoleId === "string" && bodyOrgRoleId) {
+      const orole = await prisma.organization_role.findFirst({
+        where: { id: bodyOrgRoleId, organizationId },
+      });
+      if (!orole) return res.status(400).json({ success: false, error: "Invalid organization role" });
+      if (orole.kind === ORG_ROLE_KIND.owner) {
+        return res.status(400).json({ success: false, error: "Use ownership transfer to assign an owner" });
+      }
+      const r = orole.kind === ORG_ROLE_KIND.admin ? "admin" : "member";
+      await prisma.member.update({ where: { id: memberId }, data: { role: r, organizationRoleId: orole.id } });
+      res.json({ success: true });
+      return;
+    }
+
+    const nr = (newRole || "member").toLowerCase();
+    if (nr === "owner") return res.status(400).json({ success: false, error: "Use ownership transfer to assign an owner" });
+    const kind = nr === "admin" ? ORG_ROLE_KIND.admin : ORG_ROLE_KIND.member_template;
+    const orow = await prisma.organization_role.findFirst({ where: { organizationId, kind } });
+    await prisma.member.update({
+      where: { id: memberId },
+      data: { role: nr, organizationRoleId: orow?.id ?? row.organizationRoleId },
+    });
     res.json({ success: true });
   } catch (error: any) {
     res.json({ success: false, error: error.message });

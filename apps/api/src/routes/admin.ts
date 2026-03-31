@@ -15,6 +15,7 @@ import {
   notifyAdminsOrganizationDeleted,
 } from "../lib/notifications/helpers.js";
 import { permanentlyDeleteOrganization } from "../lib/delete-organization.js";
+import { resolveBuiltinRoleRowId } from "../lib/org-roles-seed.js";
 import { checkDomainMx, checkDomainSpf } from "../lib/email-dns.js";
 import { getAdminSystemEnvironmentSnapshot } from "../lib/system-environment.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
@@ -319,12 +320,22 @@ router.post("/organizations/:id/invite", adminOnly, async (req: Request, res: Re
     });
     if (pending) return res.status(400).json({ success: false, error: "A pending invitation already exists for this email" });
 
+    const organizationRoleId = await resolveBuiltinRoleRowId(
+      prisma,
+      organizationId,
+      r === "admin" ? "admin" : "member",
+    );
+    if (!organizationRoleId) {
+      return res.status(500).json({ success: false, error: "Organization roles not initialized" });
+    }
+
     const invitation = await prisma.invitation.create({
       data: {
         id: crypto.randomUUID(),
         email: normalized,
         role: r,
         organizationId,
+        organizationRoleId,
         inviterId: req.user.id,
         status: "pending",
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
@@ -394,8 +405,24 @@ router.post("/organizations/:id/members", adminOnly, async (req: Request, res: R
     const existingMember = await prisma.member.findFirst({ where: { userId: user.id, organizationId } });
     if (existingMember) return res.status(400).json({ success: false, error: "User is already a member" });
 
+    const organizationRoleId = await resolveBuiltinRoleRowId(
+      prisma,
+      organizationId,
+      r === "admin" ? "admin" : "member",
+    );
+    if (!organizationRoleId) {
+      return res.status(500).json({ success: false, error: "Organization roles not initialized" });
+    }
+
     await prisma.member.create({
-      data: { id: crypto.randomUUID(), userId: user.id, organizationId, role: r, createdAt: new Date() },
+      data: {
+        id: crypto.randomUUID(),
+        userId: user.id,
+        organizationId,
+        role: r,
+        organizationRoleId,
+        createdAt: new Date(),
+      },
     });
     await notifyMemberJoined(organizationId, user.name || user.email, user.email, r);
 
@@ -509,15 +536,33 @@ router.post("/create-organization", adminOnly, async (req: Request, res: Respons
 
     const APP_URL = process.env.APP_URL || "http://localhost:3000";
     if (ownerAssignment.type === "existing_user" && ownerAssignment.userId) {
-      await prisma.member.create({ data: { id: crypto.randomUUID(), userId: ownerAssignment.userId, organizationId: org.id, role: "owner", createdAt: new Date() } });
+      const organizationRoleId = await resolveBuiltinRoleRowId(prisma, org.id, "owner");
+      if (!organizationRoleId) {
+        return res.status(500).json({ success: false, error: "Organization roles not initialized" });
+      }
+      await prisma.member.create({
+        data: {
+          id: crypto.randomUUID(),
+          userId: ownerAssignment.userId,
+          organizationId: org.id,
+          role: "owner",
+          organizationRoleId,
+          createdAt: new Date(),
+        },
+      });
     } else if (ownerAssignment.type === "invitation" && ownerAssignment.email) {
       const invitationId = crypto.randomUUID();
+      const organizationRoleId = await resolveBuiltinRoleRowId(prisma, org.id, "owner");
+      if (!organizationRoleId) {
+        return res.status(500).json({ success: false, error: "Organization roles not initialized" });
+      }
       await prisma.invitation.create({
         data: {
           id: invitationId,
           email: ownerAssignment.email,
           role: "owner",
           organizationId: org.id,
+          organizationRoleId,
           inviterId: req.user.id,
           status: "pending",
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),

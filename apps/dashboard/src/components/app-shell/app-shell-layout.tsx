@@ -46,6 +46,7 @@ export interface AppShellLayoutProps {
   whatsappEnabled?: boolean
   invoicesEnabled?: boolean
   userRole: string
+  permissionSet?: Set<string>
   sessionUser: { name?: string | null; image?: string | null; email?: string | null }
   onSignOut: () => void | Promise<void>
   children: React.ReactNode
@@ -62,6 +63,7 @@ export function AppShellLayout({
   whatsappEnabled = false,
   invoicesEnabled = false,
   userRole,
+  permissionSet,
   sessionUser,
   onSignOut,
   children,
@@ -165,6 +167,7 @@ export function AppShellLayout({
         invoicesEnabled={invoicesEnabled}
         organizationName={organizationName}
         organizationLogo={organizationLogo}
+        permissionSet={permissionSet}
       />
     </div>
   )

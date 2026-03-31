@@ -9,7 +9,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@luminum/database": "workspace:*"
+    "@luminum/database": "workspace:*",
+    "@luminum/org-permissions": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5"

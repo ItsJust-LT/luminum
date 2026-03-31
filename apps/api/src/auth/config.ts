@@ -140,12 +140,47 @@ export const auth = betterAuth({
                 const { notifyMemberJoined } = await import(
                   "../lib/notifications/helpers.js"
                 );
+                const roleLabel =
+                  typeof ctx.data?.invitation?.role === "string" ? ctx.data.invitation.role : "member";
                 await notifyMemberJoined(
                   ctx.data.organization.id,
                   ctx.data.user.name || "Unknown",
                   ctx.data.user.email,
-                  "member"
+                  roleLabel
                 );
+                try {
+                  const { prisma } = await import("../lib/prisma.js");
+                  const { ensureBuiltinRolesForOrganization } = await import("../lib/org-roles-seed.js");
+                  const { ORG_ROLE_KIND } = await import("@luminum/org-permissions");
+                  const orgId = ctx.data.organization.id as string;
+                  const userId = ctx.data.user.id as string;
+                  const email = String(ctx.data.user.email || "")
+                    .trim()
+                    .toLowerCase();
+                  await ensureBuiltinRolesForOrganization(prisma, orgId);
+                  const inv = await prisma.invitation.findFirst({
+                    where: { organizationId: orgId, email, status: "accepted" },
+                    orderBy: { createdAt: "desc" },
+                    select: { organizationRoleId: true, role: true },
+                  });
+                  let roleId = inv?.organizationRoleId ?? null;
+                  if (!roleId) {
+                    const r = (inv?.role || "member").toLowerCase();
+                    const kind = r === "admin" ? ORG_ROLE_KIND.admin : ORG_ROLE_KIND.member_template;
+                    const orow = await prisma.organization_role.findFirst({
+                      where: { organizationId: orgId, kind },
+                    });
+                    roleId = orow?.id ?? null;
+                  }
+                  if (roleId) {
+                    await prisma.member.updateMany({
+                      where: { organizationId: orgId, userId },
+                      data: { organizationRoleId: roleId },
+                    });
+                  }
+                } catch (e) {
+                  console.error("Failed to sync organizationRoleId after invite accept:", e);
+                }
               }
             },
           },
