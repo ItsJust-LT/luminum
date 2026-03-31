@@ -164,7 +164,40 @@ jobs:
             echo "SITE_AUDITS_PERIODIC_CHECK_MS=${{ vars.PROD_SITE_AUDITS_PERIODIC_CHECK_MS || '86400000' }}"
           } > .env
 
-      - name: Copy .env, docker-compose.prod.yml and Caddyfile to server
+      - name: Copy .env, docker-compose.prod.yml and Caddyfile to server (attempt 1)
+        id: copy_files_1
+        continue-on-error: true
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          source: ".env,docker-compose.prod.yml,deploy/caddy/Caddyfile"
+          target: ${{ vars.DEPLOY_PATH || '~/luminum' }}
+
+      - name: Wait before retrying SCP
+        if: steps.copy_files_1.outcome == 'failure'
+        run: sleep 8
+
+      - name: Copy .env, docker-compose.prod.yml and Caddyfile to server (attempt 2)
+        id: copy_files_2
+        if: steps.copy_files_1.outcome == 'failure'
+        continue-on-error: true
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          source: ".env,docker-compose.prod.yml,deploy/caddy/Caddyfile"
+          target: ${{ vars.DEPLOY_PATH || '~/luminum' }}
+
+      - name: Wait before final SCP retry
+        if: steps.copy_files_1.outcome == 'failure' && steps.copy_files_2.outcome == 'failure'
+        run: sleep 15
+
+      - name: Copy .env, docker-compose.prod.yml and Caddyfile to server (attempt 3)
+        id: copy_files_3
+        if: steps.copy_files_1.outcome == 'failure' && steps.copy_files_2.outcome == 'failure'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.PROD_SERVER_HOST }}
