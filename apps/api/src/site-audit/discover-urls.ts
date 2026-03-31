@@ -1,5 +1,6 @@
 /**
  * Discover URL paths to audit (same host only) via sitemap.xml / sitemap index, with HTML link fallback.
+ * Only HTML-style routes are kept (no static bundles, images, fonts, JSON, etc.).
  */
 
 function normalizeDomain(domain: string): string {
@@ -17,6 +18,34 @@ function toPath(locUrl: URL, baseDomain: string): string | null {
   const q = locUrl.search;
   const path = p + (q && q !== "?" ? q : "");
   return path.length > 2048 ? null : path;
+}
+
+/** Pathname without query string (for extension / prefix checks). */
+function pathnameOnly(pathWithQuery: string): string {
+  const i = pathWithQuery.indexOf("?");
+  return (i >= 0 ? pathWithQuery.slice(0, i) : pathWithQuery) || "/";
+}
+
+/**
+ * Lighthouse is for HTML documents. Sitemaps and <a href> sometimes list JS/CSS, images, fonts, etc.
+ * Only keep routes that are typically served as pages.
+ */
+export function isHtmlAuditPath(path: string): boolean {
+  const pathOnly = pathnameOnly(path);
+
+  if (pathOnly.startsWith("/_next/") || pathOnly === "/_next") return false;
+  if (pathOnly.startsWith("/api/") || pathOnly === "/api") return false;
+
+  const segments = pathOnly.split("/").filter(Boolean);
+  const last = segments[segments.length - 1] ?? "";
+  const dot = last.lastIndexOf(".");
+  if (dot <= 0) return true;
+
+  const ext = last.slice(dot + 1).toLowerCase();
+  if (!ext) return true;
+
+  const htmlLike = new Set(["html", "htm", "xhtml", "php", "asp", "aspx", "jsp"]);
+  return htmlLike.has(ext);
 }
 
 const MAX_SITEMAPS = 12;
@@ -101,7 +130,7 @@ export async function discoverPathsForDomain(domain: string): Promise<string[]> 
       try {
         const u = new URL(raw);
         const p = toPath(u, base);
-        if (p) paths.add(p);
+        if (p && isHtmlAuditPath(p)) paths.add(p);
       } catch {
         /* invalid */
       }
@@ -125,7 +154,7 @@ export async function discoverPathsForDomain(domain: string): Promise<string[]> 
     await crawlHomepageLinks(domain, base, paths, max);
   }
 
-  const list = Array.from(paths);
+  const list = Array.from(paths).filter(isHtmlAuditPath);
   list.sort((a, b) => {
     if (a === "/") return -1;
     if (b === "/") return 1;
@@ -153,7 +182,7 @@ async function crawlHomepageLinks(
       const u = new URL(raw, home);
       if (!hostMatchesPage(u.hostname, base)) continue;
       const p = toPath(u, base);
-      if (p) paths.add(p);
+      if (p && isHtmlAuditPath(p)) paths.add(p);
     } catch {
       /* ignore */
     }
