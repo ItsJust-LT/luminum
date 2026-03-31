@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button"
 import { Users, Shield, User2, UserMinus, Mail, X } from "lucide-react"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { OrganizationInviteDialog } from "@/components/dashboard/organization-invite-dialog"
+import { TransferOwnershipDialog } from "@/components/dashboard/transfer-ownership-dialog"
+import { useSession } from "@/lib/auth/client"
 import { RemoveMemberDialog } from "@/components/dashboard/remove-member-dialog"
 import { CancelInvitationDialog } from "@/components/dashboard/cancel-invitation-dialog"
 import { api } from "@/lib/api"
@@ -39,11 +41,15 @@ interface OrganizationInvitation {
   createdAt: string
   expiresAt: string
   inviterId?: string | null
+  ownershipTransfer?: boolean
 }
 
 export default function TeamPage() {
   const router = useRouter()
+  const { data: session } = useSession()
   const { organization, userRole, loading: orgLoading, error: orgError } = useOrganization()
+  const isPlatformAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
+  const canTransferOwnership = userRole === "owner" || isPlatformAdmin
   const { onlineUsers } = useRealtime()
   const [members, setMembers] = useState<OrganizationMember[]>([])
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>([])
@@ -182,16 +188,28 @@ export default function TeamPage() {
             <p className="text-muted-foreground text-sm truncate">Members of {organization.name}</p>
           </div>
         </div>
-        {(userRole === "owner" || userRole === "admin") && (
-          <OrganizationInviteDialog
-            organizationId={organization.id}
-            organizationName={organization.name}
-            onInvitationSent={() => {
-              fetchMembers()
-              fetchInvitations()
-            }}
-          />
-        )}
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          {canTransferOwnership && (
+            <TransferOwnershipDialog
+              organizationId={organization.id}
+              organizationName={organization.name}
+              onSent={() => {
+                fetchInvitations()
+                fetchMembers()
+              }}
+            />
+          )}
+          {(userRole === "owner" || userRole === "admin") && (
+            <OrganizationInviteDialog
+              organizationId={organization.id}
+              organizationName={organization.name}
+              onInvitationSent={() => {
+                fetchMembers()
+                fetchInvitations()
+              }}
+            />
+          )}
+        </div>
       </div>
 
       <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
@@ -283,8 +301,14 @@ export default function TeamPage() {
                         <p>Expires: {formatDate(invitation.expiresAt)}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {getRoleBadge(invitation.role)}
+                    <div className="flex items-center gap-3 flex-wrap justify-end">
+                      {invitation.ownershipTransfer ? (
+                        <Badge className="bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/30">
+                          Ownership transfer
+                        </Badge>
+                      ) : (
+                        getRoleBadge(invitation.role)
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

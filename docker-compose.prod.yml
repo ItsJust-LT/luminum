@@ -69,6 +69,8 @@ services:
       MAIL_SEND_IP: ${MAIL_SEND_IP:-}
       EMAIL_SYSTEM_ENABLED: ${EMAIL_SYSTEM_ENABLED:-true}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # 64 hex chars (openssl rand -hex 32); required to encrypt per-org Resend keys at rest
+      LUMINUM_EMAIL_SECRETS_KEY: ${LUMINUM_EMAIL_SECRETS_KEY:-}
       PAYSTACK_SECRET: ${PAYSTACK_SECRET:-}
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-luminum}

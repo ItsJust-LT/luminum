@@ -135,6 +135,28 @@ export async function sendOwnerInvitationEmail({
   return result;
 }
 
+/** Email for transferring ownership of an existing organization (recipient accepts to become owner). */
+export async function sendOwnershipTransferInvitationEmail({
+  email,
+  organizationName,
+  invitationLink,
+  invitedBy,
+}: {
+  email: string;
+  organizationName: string;
+  invitationLink: string;
+  invitedBy: string;
+}) {
+  const { data: result, error } = await resend.emails.send({
+    from: "Luminum Agency <noreply@luminum.agency>",
+    to: [email],
+    subject: `Ownership of ${organizationName} is being transferred to you`,
+    html: `<p>Hi,</p><p>${invitedBy} has started a transfer of <strong>${organizationName}</strong> to you. When you accept, you will become the organization owner and the current owner will become an admin.</p><p><a href="${invitationLink}">Review and accept ownership</a></p><p>If you did not expect this, you can ignore this email.</p>`,
+  });
+  if (error) throw new Error("Failed to send ownership transfer email");
+  return result;
+}
+
 export async function sendMemberRemovalEmail(data: MemberRemovalData) {
   const dashboardLink = `${APP_URL}/dashboard`;
   const { data: result, error } = await resend.emails.send({

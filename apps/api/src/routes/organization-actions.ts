@@ -1,10 +1,11 @@
 import { Router, Request, Response } from "express";
-import { requireAuth } from "../middleware/require-auth.js";
+import { requireAuth, optionalAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { getMemberOrAdmin } from "../lib/access.js";
 import { sendOrganizationInvitationEmail, sendMemberRemovalEmail } from "../lib/email.js";
 import { notifyMemberJoined, notifyMemberLeft, notifyMemberInvited, notifyInvitationAccepted } from "../lib/notifications/helpers.js";
 import { auth } from "../auth/config.js";
+import { createOwnershipTransferInvitation } from "../lib/ownership-transfer-invite.js";
 
 const router = Router();
 
@@ -12,17 +13,25 @@ const router = Router();
 router.get("/invitation/:id", async (req: Request, res: Response) => {
   try {
     const id = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
-    const invitation = await prisma.invitation.findUnique({
+    const invitation = await prisma.invitation.findFirst({
       where: { id, status: "pending" },
-      include: { organization: { select: { id: true, name: true } } },
+      include: { organization: { select: { id: true, name: true, slug: true } } },
     });
     if (!invitation) return res.status(404).json({ success: false, error: "Invitation not found or expired" });
-    const inv = invitation as typeof invitation & { organization?: { name?: string } };
+    const inv = invitation as typeof invitation & { organization?: { name?: string; slug?: string } };
     if (new Date(invitation.expiresAt) < new Date()) return res.status(400).json({ success: false, error: "Invitation expired" });
 
     res.json({
       success: true,
-      invitation: { ...invitation, role: invitation.role || "member", expiresAt: invitation.expiresAt.toISOString(), createdAt: invitation.createdAt.toISOString(), organizationName: inv.organization?.name || "the organization" },
+      invitation: {
+        ...invitation,
+        role: invitation.role || "member",
+        expiresAt: invitation.expiresAt.toISOString(),
+        createdAt: invitation.createdAt.toISOString(),
+        organizationName: inv.organization?.name || "the organization",
+        organizationSlug: inv.organization?.slug || "",
+        ownershipTransfer: !!invitation.ownership_transfer,
+      },
     });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
@@ -32,9 +41,158 @@ router.get("/invitation/:id", async (req: Request, res: Response) => {
 // POST /api/organization-actions/check-user
 router.post("/check-user", async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, name: true } });
+    const raw = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const user = raw
+      ? await prisma.user.findUnique({ where: { email: raw }, select: { id: true, email: true, name: true } })
+      : null;
     res.json({ success: true, exists: !!user, user: user || null });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * Complete ownership transfer (pending invitation with ownership_transfer).
+ * Optional session: if logged in, session email must match the invitation (e.g. Google callback).
+ * Otherwise name + email + password for new accounts; existing accounts matched by email without extra verification (same as accept-invitation).
+ */
+router.post("/accept-ownership-transfer", optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const { invitationId, name, email, password } = req.body as {
+      invitationId?: string;
+      name?: string;
+      email?: string;
+      password?: string;
+    };
+    if (!invitationId || typeof invitationId !== "string") {
+      return res.status(400).json({ success: false, error: "invitationId is required" });
+    }
+
+    const invitation = await prisma.invitation.findFirst({
+      where: { id: invitationId, status: "pending", ownership_transfer: true },
+      include: { organization: { select: { slug: true, name: true } } },
+    });
+    if (!invitation) {
+      return res.status(404).json({ success: false, error: "Transfer invitation not found or already used" });
+    }
+    if (new Date(invitation.expiresAt) < new Date()) {
+      return res.status(400).json({ success: false, error: "Invitation expired" });
+    }
+
+    const invEmail = invitation.email.trim().toLowerCase();
+    let userId: string;
+    let userName = typeof name === "string" ? name.trim() : "";
+    const userEmail = invEmail;
+
+    if (req.user?.id) {
+      const sessionEmail = (req.user.email || "").trim().toLowerCase();
+      if (sessionEmail !== invEmail) {
+        return res.status(403).json({ success: false, error: "Sign in with the email address this invitation was sent to" });
+      }
+      userId = req.user.id;
+      userName = userName || (req.user.name as string) || "User";
+    } else {
+      const bodyEmail = (email || "").trim().toLowerCase();
+      if (!bodyEmail || bodyEmail !== invEmail) {
+        return res.status(400).json({ success: false, error: "Email must match the invitation" });
+      }
+      const existingUser = await prisma.user.findUnique({ where: { email: invEmail }, select: { id: true, name: true } });
+      if (existingUser) {
+        userId = existingUser.id;
+        userName = userName || existingUser.name || "User";
+      } else {
+        if (!password || typeof password !== "string") {
+          return res.status(400).json({ success: false, error: "Password is required to create your account" });
+        }
+        if (!userName) return res.status(400).json({ success: false, error: "Name is required" });
+        const result = await auth.api.signUpEmail({ body: { name: userName, email: invEmail, password } });
+        if (!result?.user) return res.status(400).json({ success: false, error: "Failed to create user" });
+        userId = result.user.id;
+      }
+    }
+
+    const orgId = invitation.organizationId;
+    const slug = invitation.organization?.slug || "";
+
+    await prisma.$transaction(async (tx) => {
+      await tx.invitation.update({
+        where: { id: invitationId },
+        data: { status: "accepted" },
+      });
+      await tx.member.updateMany({
+        where: { organizationId: orgId, role: "owner" },
+        data: { role: "admin" },
+      });
+      const existingMember = await tx.member.findFirst({
+        where: { organizationId: orgId, userId },
+      });
+      if (existingMember) {
+        await tx.member.update({
+          where: { id: existingMember.id },
+          data: { role: "owner" },
+        });
+      } else {
+        await tx.member.create({
+          data: {
+            id: crypto.randomUUID(),
+            organizationId: orgId,
+            userId,
+            role: "owner",
+            createdAt: new Date(),
+          },
+        });
+      }
+    });
+
+    await notifyInvitationAccepted(orgId, userName, userEmail);
+
+    res.json({
+      success: true,
+      user: { id: userId, email: userEmail, name: userName },
+      organizationSlug: slug,
+      ownershipTransferCompleted: true,
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/organization-actions/accept-invitation (no auth; used before user may have org session)
+router.post("/accept-invitation", async (req: Request, res: Response) => {
+  try {
+    const { invitationId, name, email, password } = req.body;
+    const invitation = await prisma.invitation.findFirst({ where: { id: invitationId, status: "pending" } });
+    if (!invitation) return res.status(404).json({ success: false, error: "Invitation not found" });
+    if (invitation.ownership_transfer) {
+      return res.status(400).json({
+        success: false,
+        error: "This is an ownership transfer. Use the ownership transfer acceptance flow.",
+      });
+    }
+    if (new Date(invitation.expiresAt) < new Date()) return res.status(400).json({ success: false, error: "Invitation expired" });
+
+    const invEmail = invitation.email.trim().toLowerCase();
+    const bodyEmail = (email || "").trim().toLowerCase();
+    if (!bodyEmail || bodyEmail !== invEmail) {
+      return res.status(400).json({ success: false, error: "Email must match the invitation" });
+    }
+
+    const existingUser = await prisma.user.findUnique({ where: { email: invEmail }, select: { id: true } });
+    let userId: string;
+    if (existingUser) {
+      userId = existingUser.id;
+    } else {
+      const result = await auth.api.signUpEmail({ body: { name, email: invEmail, password } });
+      if (!result?.user) return res.status(400).json({ success: false, error: "Failed to create user" });
+      userId = result.user.id;
+    }
+
+    try {
+      await prisma.invitation.update({ where: { id: invitationId }, data: { status: "accepted" } });
+    } catch {}
+    await notifyInvitationAccepted(invitation.organizationId, name, invEmail);
+
+    res.json({ success: true, user: { id: userId, email: invEmail, name }, existingUser: !!existingUser });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
@@ -43,56 +201,93 @@ router.post("/check-user", async (req: Request, res: Response) => {
 // Remaining routes require auth
 router.use(requireAuth);
 
-// POST /api/organization-actions/send-invitation
-router.post("/send-invitation", async (req: Request, res: Response) => {
+// POST /api/organization-actions/request-ownership-transfer
+router.post("/request-ownership-transfer", async (req: Request, res: Response) => {
   try {
-    const { email, role, organizationId, organizationName } = req.body;
-    const membership = await getMemberOrAdmin(organizationId, req.user);
-    if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
+    const { organizationId, email } = req.body as { organizationId?: string; email?: string };
+    if (!organizationId || !email) {
+      return res.status(400).json({ success: false, error: "organizationId and email are required" });
+    }
 
-    const userCheck = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-
-    const invitation = await prisma.invitation.create({
-      data: {
-        id: crypto.randomUUID(), email, role: role || "member", organizationId,
-        inviterId: req.user.id, status: "pending",
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), createdAt: new Date(),
-      },
+    const orgOwner = await prisma.member.findFirst({
+      where: { organizationId, userId: req.user.id, role: "owner" },
     });
+    const isPlatformAdmin = req.user.role === "admin";
+    if (!orgOwner && !isPlatformAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: "Only the organization owner or a platform admin can transfer ownership",
+      });
+    }
 
-    const APP_URL = process.env.APP_URL || "http://localhost:3000";
-    const inviteLink = `${APP_URL}/accept-org-invitation/${invitation.id}`;
-    await sendOrganizationInvitationEmail({ email, role: role || "member", organizationName, inviteLink, invitedByUsername: req.user.name || "Someone", invitedByEmail: req.user.email, userExists: !!userCheck });
-    await notifyMemberInvited(organizationId, email, role, req.user.name || "Someone");
+    const created = await createOwnershipTransferInvitation({
+      organizationId,
+      emailRaw: email,
+      inviterId: req.user.id,
+      inviterName: req.user.name || req.user.email || "Administrator",
+    });
+    if (!created.ok) {
+      return res.status(created.status).json({ success: false, error: created.error });
+    }
 
-    res.json({ success: true, invitation });
+    await notifyMemberInvited(organizationId, email.trim().toLowerCase(), "owner (transfer)", req.user.name || "Someone");
+
+    res.json({ success: true, invitationId: created.invitationId });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
 });
 
-// POST /api/organization-actions/accept-invitation
-router.post("/accept-invitation", async (req: Request, res: Response) => {
+// POST /api/organization-actions/send-invitation
+router.post("/send-invitation", async (req: Request, res: Response) => {
   try {
-    const { invitationId, name, email, password } = req.body;
-    const invitation = await prisma.invitation.findUnique({ where: { id: invitationId, status: "pending" } });
-    if (!invitation) return res.status(404).json({ success: false, error: "Invitation not found" });
-    if (new Date(invitation.expiresAt) < new Date()) return res.status(400).json({ success: false, error: "Invitation expired" });
-
-    const existingUser = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    let userId: string;
-    if (existingUser) {
-      userId = existingUser.id;
-    } else {
-      const result = await auth.api.signUpEmail({ body: { name, email, password } });
-      if (!result?.user) return res.status(400).json({ success: false, error: "Failed to create user" });
-      userId = result.user.id;
+    const { email, role, organizationId, organizationName } = req.body;
+    const membership = await getMemberOrAdmin(organizationId, req.user);
+    if (!membership || !["admin", "owner"].includes(membership.role)) {
+      return res.status(403).json({ success: false, error: "Insufficient permissions" });
     }
 
-    try { await prisma.invitation.update({ where: { id: invitationId }, data: { status: "accepted" } }); } catch {}
-    await notifyInvitationAccepted(invitation.organizationId, name, email);
+    const r = (role || "member").toLowerCase();
+    if (r === "owner") {
+      return res.status(400).json({
+        success: false,
+        error: "To change organization owner, use Transfer ownership instead of a normal invite.",
+      });
+    }
 
-    res.json({ success: true, user: { id: userId, email, name } });
+    const normalized = (email || "").trim().toLowerCase();
+    if (!normalized) return res.status(400).json({ success: false, error: "Email is required" });
+
+    const userCheck = await prisma.user.findUnique({ where: { email: normalized }, select: { id: true } });
+
+    const invitation = await prisma.invitation.create({
+      data: {
+        id: crypto.randomUUID(),
+        email: normalized,
+        role: r || "member",
+        organizationId,
+        inviterId: req.user.id,
+        status: "pending",
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        ownership_transfer: false,
+      },
+    });
+
+    const APP_URL = process.env.APP_URL || "http://localhost:3000";
+    const inviteLink = `${APP_URL}/accept-org-invitation/${invitation.id}`;
+    await sendOrganizationInvitationEmail({
+      email: normalized,
+      role: r || "member",
+      organizationName,
+      inviteLink,
+      invitedByUsername: req.user.name || "Someone",
+      invitedByEmail: req.user.email,
+      userExists: !!userCheck,
+    });
+    await notifyMemberInvited(organizationId, normalized, r, req.user.name || "Someone");
+
+    res.json({ success: true, invitation });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
@@ -125,10 +320,28 @@ router.get("/invitations", async (req: Request, res: Response) => {
 
     const invitations = await prisma.invitation.findMany({
       where: { organizationId, status: "pending" },
-      select: { id: true, email: true, role: true, status: true, createdAt: true, expiresAt: true, inviterId: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        expiresAt: true,
+        inviterId: true,
+        ownership_transfer: true,
+      },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ success: true, invitations: invitations.map(i => ({ ...i, role: i.role || "member", createdAt: i.createdAt.toISOString(), expiresAt: i.expiresAt.toISOString() })) });
+    res.json({
+      success: true,
+      invitations: invitations.map((i) => ({
+        ...i,
+        role: i.role || "member",
+        ownershipTransfer: !!i.ownership_transfer,
+        createdAt: i.createdAt.toISOString(),
+        expiresAt: i.expiresAt.toISOString(),
+      })),
+    });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
   }
@@ -138,7 +351,10 @@ router.get("/invitations", async (req: Request, res: Response) => {
 router.post("/cancel-invitation", async (req: Request, res: Response) => {
   try {
     const { invitationId } = req.body;
-    const invitation = await prisma.invitation.findUnique({ where: { id: invitationId, status: "pending" }, select: { id: true, organizationId: true } });
+    const invitation = await prisma.invitation.findFirst({
+      where: { id: invitationId, status: "pending" },
+      select: { id: true, organizationId: true },
+    });
     if (!invitation) return res.status(404).json({ success: false, error: "Invitation not found" });
 
     const membership = await getMemberOrAdmin(invitation.organizationId, req.user);
@@ -158,14 +374,22 @@ router.post("/add-member", async (req: Request, res: Response) => {
     const membership = await getMemberOrAdmin(organizationId, req.user);
     if (!membership || !["admin", "owner"].includes(membership.role)) return res.status(403).json({ success: false, error: "Insufficient permissions" });
 
+    const r = (role || "member").toLowerCase();
+    if (r === "owner") {
+      return res.status(400).json({
+        success: false,
+        error: "Use Transfer ownership to assign a new owner by email.",
+      });
+    }
+
     const user = await prisma.user.findUnique({ where: { email }, select: { id: true, name: true } });
     if (!user) return res.status(404).json({ success: false, error: "User not found" });
 
     const existingMember = await prisma.member.findFirst({ where: { userId: user.id, organizationId } });
     if (existingMember) return res.status(400).json({ success: false, error: "User is already a member" });
 
-    await prisma.member.create({ data: { id: crypto.randomUUID(), userId: user.id, organizationId, role, createdAt: new Date() } });
-    await notifyMemberJoined(organizationId, user.name, email, role);
+    await prisma.member.create({ data: { id: crypto.randomUUID(), userId: user.id, organizationId, role: r, createdAt: new Date() } });
+    await notifyMemberJoined(organizationId, user.name, email, r);
 
     res.json({ success: true });
   } catch (error: any) {

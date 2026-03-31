@@ -6,7 +6,12 @@ import * as s3 from "../lib/storage/s3.js";
 import { orgImagesKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import { isEmailSystemEnabled } from "../lib/email-system.js";
-import { decryptEmailSecret, encryptEmailSecret, isEmailSecretsKeyConfigured } from "../lib/email-secrets.js";
+import {
+  decryptEmailSecret,
+  encryptEmailSecret,
+  getEmailSecretsKeyIssue,
+  isEmailSecretsKeyConfigured,
+} from "../lib/email-secrets.js";
 import {
   getOrgWithResendFields,
   maskResendApiKey,
@@ -306,9 +311,11 @@ router.get("/resend-email", async (req: Request, res: Response) => {
     }
     const hasWebhook = Boolean(org.resend_webhook_secret_ciphertext);
     const secretsReady = isEmailSecretsKeyConfigured();
+    const secretsIssue = getEmailSecretsKeyIssue();
     res.json({
       success: true,
       secretsKeyConfigured: secretsReady,
+      secretsKeyIssue: secretsReady ? undefined : secretsIssue,
       hasApiKey: Boolean(org.resend_api_key_ciphertext),
       hasWebhookSecret: hasWebhook,
       maskedApiKey: maskedKey,
@@ -336,12 +343,6 @@ router.put("/resend-email", async (req: Request, res: Response) => {
     const member = await getMemberOrAdmin(organizationId, req.user);
     if (!member || !canManageResendCredentials(member.role)) {
       return res.status(403).json({ success: false, error: "Only owners and admins can update Resend credentials" });
-    }
-    if (!isEmailSecretsKeyConfigured()) {
-      return res.status(503).json({
-        success: false,
-        error: "Server is not configured for encrypted email secrets (set LUMINUM_EMAIL_SECRETS_KEY).",
-      });
     }
     const key = typeof apiKey === "string" ? apiKey.trim() : "";
     const wh = typeof webhookSecret === "string" ? webhookSecret.trim() : "";
@@ -379,7 +380,14 @@ router.put("/resend-email", async (req: Request, res: Response) => {
         email_dns_last_error: null,
       },
     });
-    res.json({ success: true, message: "Resend credentials saved. Add the inbound webhook URL in Resend (email.received)." });
+    const encrypted = isEmailSecretsKeyConfigured();
+    res.json({
+      success: true,
+      message: encrypted
+        ? "Resend credentials saved. Add the inbound webhook URL in Resend (email.received)."
+        : "Resend credentials saved (stored without AES — set LUMINUM_EMAIL_SECRETS_KEY on the API for encrypted storage). Add the inbound webhook URL in Resend (email.received).",
+      storedEncrypted: encrypted,
+    });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed";
     res.status(400).json({ success: false, error: msg });

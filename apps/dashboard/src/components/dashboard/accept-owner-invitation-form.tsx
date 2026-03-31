@@ -20,7 +20,9 @@ interface AcceptOwnerInvitationFormProps {
     email: string
     organizationId: string
     organizationName?: string
+    organizationSlug?: string
     expiresAt: string
+    ownershipTransfer?: boolean
   }
 }
 
@@ -88,21 +90,33 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
 
     setLoading(true)
     try {
-      const result = await api.organizationActions.acceptInvitation({
-        invitationId: invitation.id,
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-      })
+      const result = invitation.ownershipTransfer
+        ? await api.organizationActions.acceptOwnershipTransfer({
+            invitationId: invitation.id,
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+          })
+        : await api.organizationActions.acceptInvitation({
+            invitationId: invitation.id,
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+          })
 
       if (result.success) {
         setSuccess(true)
-        toast.success("🎉 Welcome! Your account has been created and you are now the owner of the organization.")
+        toast.success(
+          invitation.ownershipTransfer
+            ? "🎉 You are now the organization owner. Previous owners are now admins."
+            : "🎉 Welcome! Your account has been created and you are now the owner of the organization.",
+        )
 
-        // Redirect to dashboard after a short delay
+        const slug =
+          (result as { organizationSlug?: string }).organizationSlug || invitation.organizationSlug
         setTimeout(() => {
-          window.location.href = "/dashboard"
-        }, 3000)
+          window.location.href = slug ? `/${slug}/dashboard` : "/dashboard"
+        }, 2500)
       } else {
         const errorMessage = result.error || "Failed to accept invitation"
         toast.error(errorMessage)
@@ -159,8 +173,11 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
             🎉 Welcome, Owner!
           </CardTitle>
           <CardDescription className="text-gray-600 dark:text-gray-300 text-lg">
-            Your account has been created successfully and you are now the owner of{" "}
+            {invitation.ownershipTransfer
+              ? "You’ve accepted ownership of "
+              : "Your account has been created successfully and you are now the owner of "}
             <span className="font-semibold text-gray-900 dark:text-gray-100">{invitation.organizationName || "the organization"}</span>
+            {invitation.ownershipTransfer ? ". Former owners are now admins." : ""}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-8 pb-8">
@@ -204,8 +221,11 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
           Complete Your Setup
         </CardTitle>
         <CardDescription className="text-gray-600 dark:text-gray-300 text-base">
-          Create your account to become the owner of{" "}
+          {invitation.ownershipTransfer
+            ? "Accept the transfer to become owner of "
+            : "Create your account to become the owner of "}
           <span className="font-semibold text-gray-900 dark:text-gray-100">{invitation.organizationName || "the organization"}</span>
+          {invitation.ownershipTransfer ? ". Current owners will become admins after you accept." : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="px-8 pb-8">
@@ -394,6 +414,8 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 Creating Account...
               </div>
+            ) : invitation.ownershipTransfer ? (
+              "Accept ownership transfer"
             ) : (
               "Accept Ownership & Create Account"
             )}

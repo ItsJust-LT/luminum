@@ -38,22 +38,34 @@ function OwnerInvitationCallbackContent() {
 
         setLoadingMessage("Accepting invitation...")
 
-        // Accept the owner invitation with the Google user data
-        const result = await api.organizationActions.acceptInvitation({
-          invitationId,
-          name: session.user.name || "User",
-          email: session.user.email,
-          password: "", // No password needed for Google auth
-        })
+        const invRes = (await api.organizationActions.getInvitation(invitationId)) as {
+          success?: boolean
+          invitation?: { ownershipTransfer?: boolean }
+        }
+        const isTransfer = !!invRes.success && !!invRes.invitation?.ownershipTransfer
+
+        const result = isTransfer
+          ? await api.organizationActions.acceptOwnershipTransfer({ invitationId })
+          : await api.organizationActions.acceptInvitation({
+              invitationId,
+              name: session.user.name || "User",
+              email: session.user.email || "",
+              password: "",
+            })
 
         if (result.success) {
           localStorage.removeItem("pendingOwnerInvitationId")
           setStatus("success")
-          toast.success("🎉 Welcome! Your account has been created and you are now the owner of the organization.")
+          toast.success(
+            isTransfer
+              ? "🎉 You are now the organization owner."
+              : "🎉 Welcome! Your account has been created and you are now the owner of the organization.",
+          )
 
+          const slug = (result as { organizationSlug?: string }).organizationSlug
           setTimeout(() => {
-            window.location.href = "/dashboard"
-          }, 3000)
+            window.location.href = slug ? `/${slug}/dashboard` : "/dashboard"
+          }, 2500)
         } else {
           throw new Error(result.error || "Failed to accept invitation")
         }

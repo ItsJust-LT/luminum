@@ -831,8 +831,20 @@ export default function EmailsPage() {
                       </p>
                     )}
                     {!setupStatus.resend?.secretsKeyConfigured && (
-                      <p className="text-xs text-destructive">
-                        Server operator must set <code className="text-xs">LUMINUM_EMAIL_SECRETS_KEY</code> before keys can be stored.
+                      <p className="text-xs text-amber-800 dark:text-amber-200/90 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                        {setupStatus.resend?.secretsKeyIssue === "invalid_format" ? (
+                          <>
+                            <code className="text-xs">LUMINUM_EMAIL_SECRETS_KEY</code> is set but invalid (need 64 hex chars, e.g.{" "}
+                            <code className="text-xs">openssl rand -hex 32</code>). You can still save credentials below; fix the key to
+                            enable AES encryption at rest.
+                          </>
+                        ) : (
+                          <>
+                            <strong>Optional:</strong> set <code className="text-xs">LUMINUM_EMAIL_SECRETS_KEY</code> (64 hex chars) on the
+                            API for encrypted storage. You can save Resend credentials without it — they are stored in a prefixed encoding
+                            instead.
+                          </>
+                        )}
                       </p>
                     )}
                     <div className="space-y-1.5">
@@ -863,7 +875,7 @@ export default function EmailsPage() {
                       type="button"
                       size="sm"
                       className="rounded-lg"
-                      disabled={savingResendCreds || !setupStatus.resend?.secretsKeyConfigured}
+                      disabled={savingResendCreds}
                       onClick={handleSaveResendCredentials}
                     >
                       {savingResendCreds ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}

@@ -9,7 +9,7 @@ import { pathParam, queryParam } from "../lib/req-params.js";
 import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
 import { logger } from "../lib/logger.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "../lib/email-system.js";
-import { decryptEmailSecret, isEmailSecretsKeyConfigured } from "../lib/email-secrets.js";
+import { decryptEmailSecret, getEmailSecretsKeyIssue, isEmailSecretsKeyConfigured } from "../lib/email-secrets.js";
 import { getOrgWithResendFields, validateOrgResendDomain } from "../lib/resend-org.js";
 import { mailboxOrderBy, mailboxWhere, parseMailbox } from "../lib/email-mailbox.js";
 import {
@@ -145,6 +145,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
     const hasWebhookSecret = Boolean(org.resend_webhook_secret_ciphertext);
     const dnsVerified = Boolean(org.email_dns_verified_at);
     const secretsKeyConfigured = isEmailSecretsKeyConfigured();
+    const secretsKeyIssue = getEmailSecretsKeyIssue();
     const inboundPipeline = {
       resendInboundReady: hasApiKey && hasWebhookSecret && dnsVerified,
     };
@@ -182,7 +183,11 @@ router.get("/setup-status", async (req: Request, res: Response) => {
           `Webhook URL (paste in Resend → Webhooks, event email.received): ${config.apiUrl}/api/webhook/resend-inbound`,
           "Owners/admins must save the Resend API key and webhook signing secret under organization email settings.",
           ...(!secretsKeyConfigured
-            ? ["Server operator: set LUMINUM_EMAIL_SECRETS_KEY (64 hex chars) so API keys can be stored encrypted."]
+            ? [
+                secretsKeyIssue === "invalid_format"
+                  ? "LUMINUM_EMAIL_SECRETS_KEY is set but invalid: use exactly 64 hexadecimal characters (32 bytes), e.g. openssl rand -hex 32. Until fixed, Resend credentials are stored in a prefixed encoding without AES."
+                  : "Optional: set LUMINUM_EMAIL_SECRETS_KEY (64 hex chars) on the API so Resend keys are AES-encrypted at rest. You can still save credentials without it.",
+              ]
             : []),
           ...(!hasApiKey || !hasWebhookSecret
             ? ["Email is being set up until both the Resend API key and webhook signing secret are saved."]
@@ -231,6 +236,7 @@ router.get("/setup-status", async (req: Request, res: Response) => {
         lastError: org.resend_last_error ?? null,
         hasWebhookSecret,
         secretsKeyConfigured,
+        secretsKeyIssue: secretsKeyConfigured ? undefined : secretsKeyIssue,
         inboundWebhookUrl: `${config.apiUrl}/api/webhook/resend-inbound`,
         live: resendLive,
       },

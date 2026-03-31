@@ -65,7 +65,9 @@ export default function AcceptOwnerInvitationPage() {
             email: invitation.email,
             organizationId: invitation.organizationId,
             organizationName: invitation.organizationName,
+            organizationSlug: invitation.organizationSlug,
             expiresAt: invitation.expiresAt,
+            ownershipTransfer: !!invitation.ownershipTransfer,
           }}
         />
 

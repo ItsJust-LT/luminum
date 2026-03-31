@@ -33,6 +33,8 @@ export interface EmailSetupStatus {
     lastError: string | null
     hasWebhookSecret: boolean
     secretsKeyConfigured: boolean
+    /** When secretsKeyConfigured is false: unset = missing on API; invalid_format = wrong length or non-hex */
+    secretsKeyIssue?: "unset" | "invalid_format"
     inboundWebhookUrl: string
   }
   inboundPipeline?: { resendInboundReady: boolean }
