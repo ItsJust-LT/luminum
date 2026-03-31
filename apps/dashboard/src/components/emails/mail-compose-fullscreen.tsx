@@ -26,6 +26,9 @@ import type { MailboxId } from "@/components/emails/mailbox-sidebar"
 import { MailRichEditor } from "@/components/emails/mail-rich-editor"
 import { OUTBOUND_MAX_ATTACHMENT_BYTES } from "@/lib/email-compose-constants"
 
+/** Matches API: scheduled send must be at least this far in the future. */
+const SCHEDULE_MIN_LEAD_MS = 60_000
+
 function pad2(n: number) {
   return String(n).padStart(2, "0")
 }
@@ -133,17 +136,28 @@ export function MailComposeFullscreen(props: {
         const r = (await api.organizationSettings.getEmailComposer(organizationId)) as {
           success?: boolean
           data?: {
-            defaultFromLocal?: string
-            signatureEnabled?: boolean
-            signatureHtml?: string
-            signatureText?: string
+            organizationDefault?: {
+              defaultFromLocal?: string
+              signatureEnabled?: boolean
+              signatureHtml?: string
+              signatureText?: string
+            }
+            personal?: { signatureHtml?: string; signatureText?: string }
           }
         }
         if (r?.success && r.data) {
-          const d = r.data.defaultFromLocal?.trim()
+          const d = r.data.organizationDefault?.defaultFromLocal?.trim()
           setComposeFromLocal(d || "noreply")
-          if (r.data.signatureEnabled && (r.data.signatureHtml?.trim() || r.data.signatureText?.trim())) {
-            setSignatureHint("Your organization signature will be appended when the message is sent.")
+          const org = r.data.organizationDefault
+          const personalHas =
+            Boolean(r.data.personal?.signatureHtml?.trim()) || Boolean(r.data.personal?.signatureText?.trim())
+          const orgAllows = org?.signatureEnabled !== false
+          const orgHas =
+            Boolean(org?.signatureHtml?.trim()) || Boolean(org?.signatureText?.trim())
+          if (orgAllows && personalHas) {
+            setSignatureHint("Your personal signature will be appended when the message is sent (over the organization default).")
+          } else if (orgAllows && orgHas) {
+            setSignatureHint("The organization default signature will be appended when the message is sent.")
           }
         } else {
           setComposeFromLocal("noreply")
@@ -323,8 +337,8 @@ export function MailComposeFullscreen(props: {
       toast.error("Fill all fields and pick a valid date and time.")
       return
     }
-    if (when.getTime() <= Date.now()) {
-      toast.error("Choose a time in the future.")
+    if (when.getTime() < Date.now() + SCHEDULE_MIN_LEAD_MS) {
+      toast.error("Choose a date and time at least one minute from now.")
       return
     }
     setSendingCompose(true)
@@ -676,7 +690,8 @@ export function MailComposeFullscreen(props: {
                           className={cn(
                             "mt-4 rounded-xl border px-4 py-3 text-sm",
                             combineLocalDateTime(scheduleDate, scheduleTime) &&
-                              combineLocalDateTime(scheduleDate, scheduleTime)!.getTime() <= Date.now()
+                              combineLocalDateTime(scheduleDate, scheduleTime)!.getTime() <
+                                Date.now() + SCHEDULE_MIN_LEAD_MS
                               ? "border-amber-500/40 bg-amber-500/5 text-amber-950 dark:text-amber-100"
                               : "border-primary/20 bg-primary/5 text-foreground"
                           )}
@@ -684,8 +699,9 @@ export function MailComposeFullscreen(props: {
                           <span className="font-medium">Sends: </span>
                           {schedulePreview}
                           {combineLocalDateTime(scheduleDate, scheduleTime) &&
-                          combineLocalDateTime(scheduleDate, scheduleTime)!.getTime() <= Date.now() ? (
-                            <span className="mt-1 block text-xs">Pick a future time to schedule.</span>
+                          combineLocalDateTime(scheduleDate, scheduleTime)!.getTime() <
+                            Date.now() + SCHEDULE_MIN_LEAD_MS ? (
+                            <span className="mt-1 block text-xs">Pick a time at least one minute from now.</span>
                           ) : null}
                         </div>
                       ) : null}
@@ -704,7 +720,8 @@ export function MailComposeFullscreen(props: {
                           !hasBody ||
                           !scheduleDate ||
                           !scheduleTime ||
-                          (combineLocalDateTime(scheduleDate, scheduleTime)?.getTime() ?? 0) <= Date.now()
+                          (combineLocalDateTime(scheduleDate, scheduleTime)?.getTime() ?? 0) <
+                          Date.now() + SCHEDULE_MIN_LEAD_MS
                         }
                       >
                         {sendingCompose ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Clock className="mr-2 h-4 w-4" />}

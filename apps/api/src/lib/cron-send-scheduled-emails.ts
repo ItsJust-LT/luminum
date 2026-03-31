@@ -37,6 +37,7 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
       in_reply_to: true,
       references: true,
       outbound_pending_attachments: true,
+      outbound_scheduled_by_user_id: true,
     },
   });
 
@@ -71,10 +72,14 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
     }
 
     try {
-      const merged = await mergeOutboundWithSignature(organizationId, {
-        text: row.text || "",
-        html: row.html,
-      });
+      const merged = await mergeOutboundWithSignature(
+        organizationId,
+        {
+          text: row.text || "",
+          html: row.html,
+        },
+        { actorUserId: row.outbound_scheduled_by_user_id ?? null }
+      );
       const pending = parsePendingAttachmentsFromDb(row.outbound_pending_attachments);
 
       const sendResult = await sendOutboundViaResend(organizationId, {
@@ -84,7 +89,7 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
         subject: row.subject,
         text: merged.text,
         html: merged.html,
-        attachments: pending?.length ? pending : undefined,
+        attachments: pending.length ? pending : undefined,
         messageId,
         inReplyTo: row.in_reply_to || undefined,
         references: row.references || undefined,

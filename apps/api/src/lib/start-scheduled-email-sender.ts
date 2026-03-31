@@ -1,16 +1,24 @@
 import { logger } from "./logger.js";
 import { runScheduledEmailOutbox } from "./cron-send-scheduled-emails.js";
 
+const DEFAULT_POLL_MS = 60_000;
+
 /**
- * Poll for due scheduled outbound emails. Set SCHEDULED_EMAIL_POLL_MS (e.g. 60000). Omit or 0 to disable in-process polling
- * (you can still use POST /api/cron/send-scheduled-emails from an external scheduler).
+ * Poll for due scheduled outbound emails.
+ * Defaults to 60s when SCHEDULED_EMAIL_POLL_MS is unset (set to 0 to disable in-process polling only).
+ * You can still use POST /api/cron/send-scheduled-emails from an external scheduler.
  */
 export function startScheduledEmailPoller(): void {
   const raw = (process.env.SCHEDULED_EMAIL_POLL_MS || "").trim();
-  const ms = parseInt(raw, 10);
-  if (!Number.isFinite(ms) || ms < 10_000) {
-    return;
+  let ms: number;
+  if (raw === "") {
+    ms = DEFAULT_POLL_MS;
+  } else {
+    const parsed = parseInt(raw, 10);
+    if (raw === "0" || parsed === 0) return;
+    ms = parsed;
   }
+  if (!Number.isFinite(ms) || ms < 10_000) return;
 
   const tick = () => {
     runScheduledEmailOutbox()

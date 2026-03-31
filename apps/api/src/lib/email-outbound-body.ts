@@ -87,12 +87,13 @@ export function sanitizeComposeHtml(raw: string): string {
 }
 
 /**
- * Append organization signature to user body. User HTML is sanitized.
- * Stored/sent rows should use the merged result; drafts keep raw user content without signature.
+ * Append signature to user body (personal member signature when set, else organization default).
+ * User HTML is sanitized. Stored/sent rows should use the merged result; drafts keep raw user content without signature.
  */
 export async function mergeOutboundWithSignature(
   organizationId: string,
-  body: { text: string; html?: string | null }
+  body: { text: string; html?: string | null },
+  options?: { actorUserId?: string | null }
 ): Promise<{ text: string; html: string | undefined }> {
   const mainText =
     (body.text?.trim() ? body.text : body.html?.trim() ? stripHtmlToPlain(body.html) : "") || "";
@@ -116,8 +117,24 @@ export async function mergeOutboundWithSignature(
     };
   }
 
-  const sigHtmlStored = org.email_signature_html?.trim() || "";
-  const sigTextStored = org.email_signature_text?.trim() || "";
+  let sigHtmlStored = "";
+  let sigTextStored = "";
+  if (options?.actorUserId) {
+    const member = await prisma.member.findFirst({
+      where: { organizationId, userId: options.actorUserId },
+      select: { personalEmailSignatureHtml: true, personalEmailSignatureText: true },
+    });
+    const pHtml = member?.personalEmailSignatureHtml?.trim() ?? "";
+    const pText = member?.personalEmailSignatureText?.trim() ?? "";
+    if (pHtml || pText) {
+      sigHtmlStored = pHtml;
+      sigTextStored = pText;
+    }
+  }
+  if (!sigHtmlStored && !sigTextStored) {
+    sigHtmlStored = org.email_signature_html?.trim() || "";
+    sigTextStored = org.email_signature_text?.trim() || "";
+  }
   if (!sigHtmlStored && !sigTextStored) {
     return {
       text: mainText,

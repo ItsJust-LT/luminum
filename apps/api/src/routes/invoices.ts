@@ -624,7 +624,11 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
       `<p style="margin:0 0 18px;color:#374151;">${escapeHtml(text).replace(/\n/g, "<br/>")}</p>` +
       `<p style="margin:0;font-size:14px;color:#6b7280;">${escapeHtml(invoice.company_name)}</p></div>`;
 
-    const merged = await mergeOutboundWithSignature(invoice.organization_id, { text, html: invoiceBodyHtml });
+    const merged = await mergeOutboundWithSignature(
+      invoice.organization_id,
+      { text, html: invoiceBodyHtml },
+      { actorUserId: req.user?.id ?? null }
+    );
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
     const prefix = isQuote ? "quote" : "invoice";

@@ -201,6 +201,13 @@ function createApiClient(baseUrl: string = "") {
     patchEmailComposer: (
       organizationId: string,
       body: {
+        organizationDefault?: {
+          signatureHtml?: string;
+          signatureText?: string;
+          signatureEnabled?: boolean;
+          defaultFromLocal?: string | null;
+        };
+        personal?: { signatureHtml?: string; signatureText?: string };
         signatureHtml?: string;
         signatureText?: string;
         signatureEnabled?: boolean;

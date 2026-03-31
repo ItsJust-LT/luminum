@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { Prisma } from "@luminum/database";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
 import { canAccessOrganization, getMemberOrAdmin } from "../lib/access.js";
@@ -458,10 +459,14 @@ router.post("/send", async (req: Request, res: Response) => {
     if (toList.length === 0) return res.status(400).json({ success: false, error: "At least one recipient required" });
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
     const attachments = normalizeAttachmentsFromRequest(attachmentsInput);
-    const merged = await mergeOutboundWithSignature(organizationId, {
-      text: text?.trim() || "",
-      html: html?.trim() || null,
-    });
+    const merged = await mergeOutboundWithSignature(
+      organizationId,
+      {
+        text: text?.trim() || "",
+        html: html?.trim() || null,
+      },
+      { actorUserId: req.user.id }
+    );
     const sendResult = await sendOutboundViaResend(organizationId, {
       from, replyTo, to: toList, subject,
       text: merged.text,
@@ -654,7 +659,10 @@ router.post("/schedule", async (req: Request, res: Response) => {
 
     const when = new Date(scheduledSendAt);
     if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() + 60_000) {
-      return res.status(400).json({ success: false, error: "Schedule at least 1 minute in the future" });
+      return res.status(400).json({
+        success: false,
+        error: "Choose a date and time at least one minute from now (in your local time).",
+      });
     }
 
     const toList = Array.isArray(toInput) ? toInput : toInput ? [toInput] : [];
@@ -680,7 +688,9 @@ router.post("/schedule", async (req: Request, res: Response) => {
         subject,
         text: text?.trim() || null,
         html: html?.trim() ? sanitizeComposeHtml(html) : null,
-        outbound_pending_attachments: attachments.length ? (attachments as object[]) : undefined,
+        outbound_pending_attachments:
+          attachments.length > 0 ? (attachments as unknown as Prisma.InputJsonValue) : undefined,
+        outbound_scheduled_by_user_id: req.user.id,
         direction: "outbound",
         messageId,
         scheduled_send_at: when,
@@ -992,10 +1002,14 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
     const bodyText = text?.trim() || "";
     const bodyHtmlRaw = html?.trim() || null;
-    const merged = await mergeOutboundWithSignature(original.organization_id, {
-      text: bodyText,
-      html: bodyHtmlRaw,
-    });
+    const merged = await mergeOutboundWithSignature(
+      original.organization_id,
+      {
+        text: bodyText,
+        html: bodyHtmlRaw,
+      },
+      { actorUserId: req.user.id }
+    );
     const attachments = normalizeAttachmentsFromRequest(attachmentsInput);
     const sendResult = await sendOutboundViaResend(original.organization_id, {
       from, replyTo, to: [toAddr], subject: reSubject,

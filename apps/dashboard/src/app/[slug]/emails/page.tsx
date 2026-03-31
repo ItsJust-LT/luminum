@@ -44,6 +44,21 @@ import { MailProvisioningView } from "@/components/emails/mail-provisioning-view
 import { MailComposeFullscreen } from "@/components/emails/mail-compose-fullscreen"
 import { MailEmailSettingsSheet } from "@/components/emails/mail-email-settings-sheet"
 
+function formatScheduledSendInLocalTime(iso: Date | string): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(d)
+  } catch {
+    return d.toLocaleString()
+  }
+}
+
 function smartDate(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : new Date(date)
   const now = new Date()
@@ -65,7 +80,7 @@ function smartDate(date: Date | string): string {
 }
 
 export default function EmailsPage() {
-  const { organization, userRole } = useOrganization()
+  const { organization } = useOrganization()
   const ctx = useEmailsContext()
   const {
     emails,
@@ -111,10 +126,11 @@ export default function EmailsPage() {
   })
   const [composeOpen, setComposeOpen] = useState(false)
   const [mailSettingsOpen, setMailSettingsOpen] = useState(false)
-  const canEditMailSettings = userRole === "owner" || userRole === "admin"
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const listContainerRef = useRef<HTMLDivElement>(null)
   const lastPrefetchedIdRef = useRef<string | null>(null)
+  const prevMailWsConnectedRef = useRef(false)
+  const lastPolledInboxUnreadRef = useRef<number | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 400)
@@ -362,7 +378,7 @@ export default function EmailsPage() {
     return () => clearTimeout(id)
   }, [scrollPosition, clearScrollPosition])
 
-  useOrganizationChannel(
+  const { connected: mailWsConnected } = useOrganizationChannel(
     organization?.id || null,
     useCallback(
       (eventType: string, data: any) => {
@@ -412,6 +428,44 @@ export default function EmailsPage() {
       [fetchEmails, setEmails, setPage, setUnreadCountFromApi, setTotalCount, refreshFolderCounts],
     ),
   )
+
+  useEffect(() => {
+    if (!organization?.id || !shouldFetchInbox) return
+    if (mailWsConnected && !prevMailWsConnectedRef.current) {
+      setPage(1)
+      void fetchEmails(1, true)
+      void refreshFolderCounts()
+    }
+    prevMailWsConnectedRef.current = mailWsConnected
+  }, [mailWsConnected, organization?.id, shouldFetchInbox, fetchEmails, refreshFolderCounts, setPage])
+
+  useEffect(() => {
+    if (!organization?.id || !shouldFetchInbox) return
+    const tick = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+      void (async () => {
+        try {
+          const r = (await api.emails.folderCounts(organization.id)) as {
+            success?: boolean
+            data?: FolderCounts
+          }
+          if (!r?.success || !r.data) return
+          setFolderCounts(r.data)
+          if (mailbox === "inbox") {
+            const prev = lastPolledInboxUnreadRef.current
+            lastPolledInboxUnreadRef.current = r.data.inboxUnread
+            if (prev != null && r.data.inboxUnread > prev) {
+              setPage(1)
+              await fetchEmails(1, true)
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      })()
+    }, 12_000)
+    return () => window.clearInterval(tick)
+  }, [organization?.id, shouldFetchInbox, mailbox, fetchEmails, setPage])
 
   // Infinite scroll: load more when sentinel enters viewport (must run before any conditional return to satisfy Rules of Hooks)
   useEffect(() => {
@@ -633,9 +687,7 @@ export default function EmailsPage() {
                   onClick={() => setMailSettingsOpen(true)}
                 >
                   <Settings2 className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">
-                    {canEditMailSettings ? "Email settings" : "Email signature"}
-                  </span>
+                  <span className="hidden sm:inline">Mail settings</span>
                 </Button>
                 <Button
                   type="button"
@@ -844,7 +896,7 @@ export default function EmailsPage() {
                         </span>
                         <span className="text-[11px] sm:text-xs text-muted-foreground whitespace-nowrap shrink-0 tabular-nums">
                           {email.scheduled_send_at && !email.sent_at
-                            ? smartDate(email.scheduled_send_at)
+                            ? formatScheduledSendInLocalTime(email.scheduled_send_at)
                             : smartDate(email.date)}
                         </span>
                       </div>

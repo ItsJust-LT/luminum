@@ -33,24 +33,24 @@ export function normalizeAttachmentsFromRequest(
   return out;
 }
 
-/** Parse pending attachments stored on a scheduled email row. */
-export function parsePendingAttachmentsFromDb(value: unknown): OutboundAttachment[] | null {
-  if (value == null) return null;
-  if (!Array.isArray(value)) return null;
+/** Parse pending attachments stored on a scheduled email row (skips invalid entries). */
+export function parsePendingAttachmentsFromDb(value: unknown): OutboundAttachment[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) return [];
   const out: OutboundAttachment[] = [];
   for (const raw of value.slice(0, MAX_ATTACHMENTS)) {
-    if (!isPlainObject(raw)) return null;
+    if (!isPlainObject(raw)) continue;
     const filename = typeof raw.filename === "string" ? raw.filename.trim() : "";
     const contentType = typeof raw.contentType === "string" ? raw.contentType.trim() : "";
     const contentBase64 = typeof raw.contentBase64 === "string" ? raw.contentBase64.trim() : "";
-    if (!filename || !contentType || !contentBase64) return null;
+    if (!filename || !contentType || !contentBase64) continue;
     let buf: Buffer;
     try {
       buf = Buffer.from(contentBase64, "base64");
     } catch {
-      return null;
+      continue;
     }
-    if (!buf.length || buf.length > OUTBOUND_MAX_ATTACHMENT_BYTES) return null;
+    if (!buf.length || buf.length > OUTBOUND_MAX_ATTACHMENT_BYTES) continue;
     out.push({ filename, contentType, contentBase64 });
   }
   return out;
