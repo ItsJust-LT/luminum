@@ -297,6 +297,7 @@ model organization {
   blog_assets                                                       blog_asset[]
   blog_preview_tokens                                               blog_preview_token[]
   invoices                                                          invoice[]
+  invoice_schedules                                                 invoice_schedule[]
 
   @@index([payment_provider], map: "idx_organization_payment_provider")
   @@index([email_domain_id], map: "idx_organization_email_domain_id")
@@ -781,11 +782,45 @@ model invoice {
   updated_at         DateTime       @updatedAt @db.Timestamptz(6)
 
   items              invoice_item[]
+  schedules_as_template invoice_schedule[] @relation("InvoiceScheduleTemplate")
 
   @@index([organization_id])
   @@index([status])
   @@index([invoice_number, organization_id])
   @@index([document_type])
+}
+
+/// Recurring invoice: clones template invoice on each run, generates PDF, sends via email and/or WhatsApp.
+model invoice_schedule {
+  id                       String       @id @default(cuid())
+  organization_id          String
+  organization             organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  name                     String?      @db.VarChar(200)
+  template_invoice_id      String
+  template_invoice         invoice      @relation("InvoiceScheduleTemplate", fields: [template_invoice_id], references: [id], onDelete: Restrict)
+  /// daily | weekly | biweekly | monthly | quarterly | yearly
+  frequency                String       @db.VarChar(16)
+  /// Local send time 24h, e.g. 09:00
+  time_local               String       @db.VarChar(5)
+  /// IANA timezone, e.g. Africa/Johannesburg
+  timezone                 String       @default("UTC") @db.VarChar(64)
+  due_days_after_issue     Int          @default(14)
+  send_email               Boolean      @default(false)
+  send_whatsapp            Boolean      @default(false)
+  email_to_override        String?      @db.VarChar(255)
+  whatsapp_phone_override  String?      @db.VarChar(32)
+  email_from_local_part    String?      @db.VarChar(64)
+  email_message            String?      @db.Text
+  whatsapp_message         String?      @db.Text
+  active                   Boolean      @default(true)
+  next_run_at              DateTime     @db.Timestamptz(6)
+  last_run_at              DateTime?    @db.Timestamptz(6)
+  last_error               String?      @db.Text
+  created_at               DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime     @updatedAt @db.Timestamptz(6)
+
+  @@index([organization_id])
+  @@index([next_run_at])
 }
 
 model invoice_item {

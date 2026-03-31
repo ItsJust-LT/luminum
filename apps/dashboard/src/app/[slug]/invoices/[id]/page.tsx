@@ -227,9 +227,8 @@ export default function InvoiceViewPage() {
   const hasPdf = !!invoice.pdf_storage_key;
   const invoicesFeatureOn = organization?.invoices_enabled === true;
   const whatsappFeatureOn = organization?.whatsapp_enabled === true;
-  const invoiceChannelsUnlocked = invoicesFeatureOn && whatsappFeatureOn;
-  const canSendOrgEmail = invoiceChannelsUnlocked && !!organization?.emails_enabled;
-  const canSendWhatsapp = invoiceChannelsUnlocked;
+  const canSendOrgEmail = invoicesFeatureOn && !!organization?.emails_enabled;
+  const canSendWhatsapp = invoicesFeatureOn && whatsappFeatureOn;
 
   return (
     <div className="min-h-screen pb-8">
@@ -279,9 +278,11 @@ export default function InvoiceViewPage() {
                 disabled={!canSendWhatsapp}
                 onClick={() => setSendWaOpen(true)}
                 title={
-                  !invoiceChannelsUnlocked
-                    ? "Enable Invoices and WhatsApp for this workspace to send on WhatsApp."
-                    : "Send the PDF to the client on WhatsApp (connected number in workspace)."
+                  !invoicesFeatureOn
+                    ? "Enable Invoices for this workspace."
+                    : !whatsappFeatureOn
+                      ? "Connect WhatsApp for this workspace to send on WhatsApp."
+                      : "Send the PDF to the client on WhatsApp (connected number in workspace)."
                 }
               >
                 <MessageCircle className="h-4 w-4" />
@@ -303,8 +304,8 @@ export default function InvoiceViewPage() {
               disabled={!canSendOrgEmail}
               onClick={() => setSendEmailOpen(true)}
               title={
-                !invoiceChannelsUnlocked
-                  ? "Enable Invoices and WhatsApp for this workspace to send by email."
+                !invoicesFeatureOn
+                  ? "Enable Invoices for this workspace to send by email."
                   : !organization?.emails_enabled
                     ? "Enable organization email and complete domain setup to send from the dashboard."
                     : `Email this ${docLabel.toLowerCase()} with PDF attached`
@@ -447,7 +448,7 @@ export default function InvoiceViewPage() {
                     <p className="text-xs text-muted-foreground leading-snug">
                       {canSendWhatsapp
                         ? "Sends the PDF as a document from your connected WhatsApp Business number. A PDF is created automatically if needed. Use the client phone on this document or enter one below."
-                        : "Enable Invoices and WhatsApp for this workspace (platform admin), then connect WhatsApp in the workspace."}
+                        : "Enable Invoices and connect WhatsApp for this workspace."}
                     </p>
                   </div>
                 </div>
@@ -472,8 +473,8 @@ export default function InvoiceViewPage() {
                   <div className="min-w-0 space-y-1">
                     <p className="text-sm font-medium leading-tight">Email</p>
                     <p className="text-xs text-muted-foreground leading-snug">
-                      {!invoiceChannelsUnlocked
-                        ? "Invoices by email are available when both Invoices and WhatsApp are enabled for this workspace."
+                      {!invoicesFeatureOn
+                        ? "Enable Invoices for this workspace to send by email."
                         : canSendOrgEmail
                           ? "Delivers the PDF by email from your verified domain. A PDF is created automatically if needed."
                           : "Turn on mail for this organization and finish domain verification in Settings."}

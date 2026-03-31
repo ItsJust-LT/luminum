@@ -48,6 +48,7 @@ import { whatsappRouter } from "./routes/whatsapp.js";
 import { blogPublicAssetsRouter } from "./routes/blog-public-assets.js";
 import { blogRouter } from "./routes/blog.js";
 import { invoicesRouter } from "./routes/invoices.js";
+import { invoiceSchedulesRouter } from "./routes/invoice-schedules.js";
 import { adminInvoicesRouter } from "./routes/admin-invoices.js";
 import { websiteAuditsRouter } from "./routes/website-audits.js";
 import { domainLookupRouter } from "./routes/domain-lookup.js";
@@ -58,6 +59,7 @@ import { startEmailDnsPeriodicScheduler } from "./lib/start-email-dns-scheduler.
 import { startScheduledEmailPoller } from "./lib/start-scheduled-email-sender.js";
 import { startBlogScheduledPublisher } from "./lib/start-blog-scheduled-publisher.js";
 import { startSiteAuditsPeriodicScheduler } from "./lib/start-site-audits-scheduler.js";
+import { startInvoiceSchedulePoller } from "./lib/start-invoice-schedule-poller.js";
 
 const app = express();
 
@@ -159,6 +161,7 @@ app.use("/api/analytics", analyticsRouter);
 app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/blog", blogRouter);
 app.use("/api/invoices", invoicesRouter);
+app.use("/api/invoice-schedules", invoiceSchedulesRouter);
 app.use("/api/website-audits", websiteAuditsRouter);
 
 // ─── Global error handler (must be last) ───────────────────────────────────
@@ -201,6 +204,7 @@ httpServer.listen(config.port, () => {
   startSiteAuditsPeriodicScheduler();
   startScheduledEmailPoller();
   startBlogScheduledPublisher();
+  startInvoiceSchedulePoller();
 
   // Redis fan-out so org-scoped WS events (WhatsApp, inbound email, etc.) reach every API instance
   const broadcastToOrgForWhatsapp = createWhatsAppOrgFanout(broadcastToOrg);

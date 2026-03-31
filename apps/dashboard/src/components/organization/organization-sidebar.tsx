@@ -15,7 +15,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
+import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, Mail, MessageCircle, Gauge, Receipt, CalendarClock } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { orgNavPath } from "@/lib/org-nav-path"
@@ -111,7 +111,12 @@ export function OrganizationSidebar({
       href: nav("whatsapp"),
       badge: unreadWhatsappCount > 0 ? unreadWhatsappCount : undefined
     }] : []),
-    ...(invoicesEnabled ? [{ title: "Invoices", icon: Receipt, href: nav("invoices") }] : []),
+    ...(invoicesEnabled
+      ? [
+          { title: "Invoices", icon: Receipt, href: nav("invoices") },
+          { title: "Recurring", icon: CalendarClock, href: nav("invoices/schedules") },
+        ]
+      : []),
     { title: "Team", icon: Users, href: nav("team") },
     { title: "Settings", icon: Settings, href: nav("settings") },
   ]

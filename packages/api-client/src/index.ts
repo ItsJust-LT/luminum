@@ -874,6 +874,13 @@ function createApiClient(baseUrl: string = "") {
     ) => post(`/api/invoices/${id}/send-whatsapp`, body ?? {}),
   };
 
+  const invoiceSchedules = {
+    list: (organizationId: string) => get("/api/invoice-schedules", { organizationId }),
+    create: (body: Record<string, unknown>) => post("/api/invoice-schedules", body),
+    update: (id: string, body: Record<string, unknown>) => patch(`/api/invoice-schedules/${id}`, body),
+    delete: (id: string) => del(`/api/invoice-schedules/${id}`),
+  };
+
   // ─── Website Audits ──────────────────────────────────────
   const websiteAudits = {
     create: (websiteId: string) =>
@@ -908,6 +915,7 @@ function createApiClient(baseUrl: string = "") {
     whatsapp,
     blog,
     invoices,
+    invoiceSchedules,
     websiteAudits,
     /** Low-level API methods for endpoints not covered by the above. Use in client components. */
     get: <T = any>(path: string, params?: Record<string, any>) => get<T>(path, params),

@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from "express";
-import { buffer as streamToBuffer } from "node:stream/consumers";
 import { Prisma } from "@luminum/database";
 import { requireAuth } from "../middleware/require-auth.js";
 import { canAccessOrganization } from "../lib/access.js";
@@ -9,7 +8,11 @@ import { orgInvoiceKey } from "../lib/storage/keys.js";
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import { calculateTotals, type InvoiceItem, type CustomAdjustment } from "../lib/invoice/calculations.js";
 import { generateInvoicePdf } from "../lib/invoice/pdf-generator.js";
-import type { InvoiceTemplateData } from "../lib/invoice/html-template.js";
+import {
+  ensureInvoicePdfBuffer,
+  invoiceToTemplateData,
+  type InvoiceWithItems,
+} from "../lib/invoice-pdf-helpers.js";
 import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js";
 import { mergeOutboundWithSignature } from "../lib/email-outbound-body.js";
 import { broadcastOrgEmailOutboundSent } from "../lib/org-ws-broadcast.js";
@@ -37,76 +40,6 @@ function phoneToWhatsappJid(raw: string): string | null {
   const digits = normalizePhoneDigitsForWhatsApp(raw);
   if (!digits) return null;
   return `${digits}@c.us`;
-}
-
-type InvoiceWithItems = Prisma.invoiceGetPayload<{ include: { items: true } }>;
-
-function invoiceToTemplateData(invoice: InvoiceWithItems): InvoiceTemplateData {
-  return {
-    documentType: invoice.document_type === "quote" ? "quote" : "invoice",
-    company: {
-      name: invoice.company_name,
-      email: invoice.company_email || undefined,
-      phone: invoice.company_phone || undefined,
-      vat: invoice.company_vat || undefined,
-      logo: invoice.company_logo || undefined,
-      address: invoice.company_address as any,
-    },
-    client: {
-      name: invoice.client_name,
-      email: invoice.client_email || undefined,
-      phone: invoice.client_phone || undefined,
-      address: invoice.client_address as any,
-    },
-    invoiceNumber: invoice.invoice_number,
-    date: invoice.date.toISOString().split("T")[0]!,
-    dueDate: invoice.due_date?.toISOString().split("T")[0],
-    currency: invoice.currency,
-    language: invoice.language,
-    items: invoice.items.map((it) => ({
-      description: it.description,
-      quantity: it.quantity,
-      unit_price: Number(it.unit_price),
-      tax_percent: it.tax_percent ?? undefined,
-      tax_exempt: it.tax_exempt,
-      special_tax_rate: it.special_tax_rate ?? undefined,
-      sort_order: it.sort_order,
-    })),
-    subtotal: Number(invoice.subtotal),
-    totalTax: Number(invoice.total_tax),
-    discount: Number(invoice.discount_amount),
-    shipping: Number(invoice.shipping_amount),
-    grandTotal: Number(invoice.grand_total),
-    taxInclusive: invoice.tax_inclusive,
-    globalTaxPercent: invoice.global_tax_percent ?? undefined,
-    customAdjustments: (invoice.custom_adjustments as unknown as CustomAdjustment[] | null) ?? undefined,
-    notes: invoice.notes || undefined,
-    terms: invoice.terms || undefined,
-  };
-}
-
-async function ensureInvoicePdfBuffer(invoice: InvoiceWithItems): Promise<Buffer> {
-  if (invoice.pdf_storage_key) {
-    const obj = await s3.getObject(invoice.pdf_storage_key);
-    if (!obj?.stream) throw new Error("PDF file missing in storage");
-    return streamToBuffer(obj.stream);
-  }
-
-  const templateData = invoiceToTemplateData(invoice);
-  const pdfBuffer = await generateInvoicePdf(templateData);
-  const oldSize = 0;
-  const storageKey = orgInvoiceKey(invoice.organization_id, invoice.id);
-
-  await s3.upload(pdfBuffer, storageKey, { contentType: "application/pdf" });
-
-  await prisma.invoice.update({
-    where: { id: invoice.id },
-    data: { pdf_storage_key: storageKey, pdf_generated_at: new Date() },
-  });
-
-  await updateOrganizationStorage(invoice.organization_id, pdfBuffer.length - oldSize);
-
-  return pdfBuffer;
 }
 
 // GET /api/invoices?organizationId=&status=&search=&page=&limit=&document_type=
@@ -576,14 +509,8 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
 
     const org = await prisma.organization.findUnique({
       where: { id: invoice.organization_id },
-      select: { emails_enabled: true, whatsapp_enabled: true },
+      select: { emails_enabled: true },
     });
-    if (!org?.whatsapp_enabled) {
-      return res.status(400).json({
-        error:
-          "Sending invoices by email is available when both Invoices and WhatsApp are enabled for this organization.",
-      });
-    }
     if (!org?.emails_enabled) {
       return res.status(400).json({
         error:

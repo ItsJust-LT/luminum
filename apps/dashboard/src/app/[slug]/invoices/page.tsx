@@ -27,8 +27,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Receipt, Loader2, MoreHorizontal, Plus, Search, Trash2,
   FileDown, Eye, Pencil, Send, CheckCircle, Clock, FileText,
-  AlertCircle, TrendingUp, DollarSign, ArrowUpRight,
-  ChevronDown, FileCheck, ArrowRightLeft,
+  AlertCircle, TrendingUp, DollarSign,
+  ChevronDown, FileCheck, ArrowRightLeft, CalendarClock, Sparkles,
 } from "lucide-react";
 
 type InvoiceRow = {
@@ -199,32 +199,51 @@ export default function OrgInvoicesListPage() {
       ];
 
   return (
-    <div className="flex flex-col gap-5 sm:gap-6 max-w-7xl mx-auto w-full">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Invoices & Quotes</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Create, manage, and track your invoices and quotes</p>
+    <div className="flex flex-col gap-6 sm:gap-8 max-w-7xl mx-auto w-full pb-4">
+      <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-primary/[0.06] via-background to-background shadow-sm">
+        <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/[0.07] blur-3xl pointer-events-none" aria-hidden />
+        <div className="relative px-5 py-6 sm:px-8 sm:py-8">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
+            <div className="space-y-2 max-w-xl">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/80 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur-sm">
+                <Sparkles className="h-3 w-3 text-primary" />
+                Billing workspace
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+                Invoices & quotes
+              </h1>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Issue documents, track status, share PDFs, and automate recurring invoices on your schedule.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row flex-wrap gap-2 shrink-0">
+              <Button variant="outline" size="sm" className="bg-background/80 shadow-sm" asChild>
+                <Link href={`/${slug}/invoices/schedules`}>
+                  <CalendarClock className="h-4 w-4 mr-2" /> Recurring
+                </Link>
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="shadow-sm">
+                    <Plus className="h-4 w-4 mr-2" /> Create <ChevronDown className="h-4 w-4 ml-1.5 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=invoice`)}>
+                    <Receipt className="h-4 w-4 mr-2" /> New invoice
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=quote`)}>
+                    <FileText className="h-4 w-4 mr-2" /> New quote
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button size="sm" className="w-full sm:w-auto">
-              <Plus className="h-4 w-4 mr-2" /> Create New <ChevronDown className="h-4 w-4 ml-2" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=invoice`)}>
-              <Receipt className="h-4 w-4 mr-2" /> New Invoice
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=quote`)}>
-              <FileText className="h-4 w-4 mr-2" /> New Quote
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       {/* Document type tabs */}
-      <div className="flex gap-1 bg-muted/50 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 bg-muted/40 rounded-xl p-1 w-fit border border-border/50">
         {(["all", "invoice", "quote"] as const).map((t) => (
           <Button
             key={t}
@@ -241,62 +260,64 @@ export default function OrgInvoicesListPage() {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          <Card>
+          <Card className="border-border/70 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Total</p>
-                  <p className="text-2xl font-bold mt-0.5 tabular-nums">{stats.total}</p>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Total</p>
+                  <p className="text-2xl font-bold mt-0.5 tabular-nums tracking-tight">{stats.total}</p>
                 </div>
-                <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                <div className="h-10 w-10 rounded-xl bg-primary/12 flex items-center justify-center shrink-0 ring-1 ring-primary/10">
                   <Receipt className="h-4 w-4 text-primary" />
                 </div>
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="border-border/70 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium">Revenue</p>
-                  <p className="text-xl sm:text-2xl font-bold mt-0.5 tabular-nums truncate">{formatMoney(stats.totalRevenue, currency)}</p>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Volume</p>
+                  <p className="text-lg sm:text-xl font-bold mt-0.5 tabular-nums truncate tracking-tight">
+                    {formatMoney(stats.totalRevenue, currency)}
+                  </p>
                 </div>
-                <div className="h-9 w-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <TrendingUp className="h-4 w-4 text-blue-500" />
+                <div className="h-10 w-10 rounded-xl bg-sky-500/12 flex items-center justify-center shrink-0 ring-1 ring-sky-500/15">
+                  <TrendingUp className="h-4 w-4 text-sky-600 dark:text-sky-400" />
                 </div>
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="border-border/70 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3 text-green-500" /> Paid
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3 text-emerald-500" /> Paid
                   </p>
-                  <p className="text-xl sm:text-2xl font-bold mt-0.5 text-green-600 tabular-nums truncate">
+                  <p className="text-lg sm:text-xl font-bold mt-0.5 text-emerald-600 dark:text-emerald-400 tabular-nums truncate tracking-tight">
                     {formatMoney(stats.paidRevenue, currency)}
                   </p>
                 </div>
-                <div className="h-9 w-9 rounded-lg bg-green-500/10 flex items-center justify-center shrink-0">
-                  <DollarSign className="h-4 w-4 text-green-500" />
+                <div className="h-10 w-10 rounded-xl bg-emerald-500/12 flex items-center justify-center shrink-0 ring-1 ring-emerald-500/15">
+                  <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 </div>
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="border-border/70 shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium flex items-center gap-1">
-                    <Clock className="h-3 w-3 text-amber-500" /> Outstanding
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+                    <Clock className="h-3 w-3 text-amber-500" /> Open
                   </p>
-                  <p className="text-xl sm:text-2xl font-bold mt-0.5 text-amber-600 tabular-nums truncate">
+                  <p className="text-lg sm:text-xl font-bold mt-0.5 text-amber-600 dark:text-amber-400 tabular-nums truncate tracking-tight">
                     {formatMoney(stats.outstandingRevenue, currency)}
                   </p>
                 </div>
-                <div className="h-9 w-9 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                <div className="h-10 w-10 rounded-xl bg-amber-500/12 flex items-center justify-center shrink-0 ring-1 ring-amber-500/15">
+                  <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 </div>
               </div>
             </CardContent>
@@ -306,13 +327,13 @@ export default function OrgInvoicesListPage() {
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-        <div className="relative flex-1 w-full sm:max-w-sm">
+        <div className="relative flex-1 w-full sm:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={`Search ${docTypeFilter === "all" ? "invoices & quotes" : docTypeFilter + "s"}...`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
+            className="pl-9 h-10 rounded-xl border-border/80 bg-background/80"
           />
         </div>
         <div className="flex gap-1 flex-wrap w-full sm:w-auto overflow-x-auto pb-0.5">
@@ -370,7 +391,7 @@ export default function OrgInvoicesListPage() {
       ) : (
         <>
           {/* Desktop table */}
-          <Card className="hidden sm:block">
+          <Card className="hidden sm:block border-border/70 shadow-sm overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
