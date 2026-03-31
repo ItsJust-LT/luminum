@@ -26,6 +26,10 @@ import {
   recordWhatsAppClientEvent,
   WhatsAppNotReadyError,
 } from "./whatsapp-client-events.js";
+import {
+  markInvoiceWhatsappPdfSeen,
+  parseInvoiceIdFromWaClientMessageId,
+} from "../lib/invoice-whatsapp-read-receipt.js";
 
 const { Client, RemoteAuth, MessageMedia } = whatsappWeb;
 
@@ -1381,6 +1385,14 @@ async function handleAckUpdate(managed: ManagedClient, msg: WAWebJS.Message, ack
       type: "whatsapp:message",
       data: { chatId: updated.chat_id, messageId: updated.id, ack, ack_updated_at: now },
     });
+    if (ack >= 3 && updated.from_me) {
+      const invoiceId = parseInvoiceIdFromWaClientMessageId(updated.client_message_id);
+      if (invoiceId) {
+        markInvoiceWhatsappPdfSeen(invoiceId, new Date(now)).catch((err) =>
+          logger.warn("markInvoiceWhatsappPdfSeen failed", { err, invoiceId }),
+        );
+      }
+    }
   }
 }
 

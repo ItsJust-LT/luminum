@@ -14,6 +14,8 @@ import { getOrgReplyAddress, sendOutboundViaResend } from "../lib/email-send.js"
 import { mergeOutboundWithSignature } from "../lib/email-outbound-body.js";
 import { broadcastOrgEmailOutboundSent } from "../lib/org-ws-broadcast.js";
 import { sendDocumentMessage } from "../whatsapp/manager.js";
+import { normalizePhoneDigitsForWhatsApp } from "../lib/phone-whatsapp-normalize.js";
+import { invoiceWhatsAppClientMessageId } from "../lib/invoice-whatsapp-read-receipt.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -30,10 +32,10 @@ async function ensureInvoicesEnabled(organizationId: string): Promise<boolean> {
   return org?.invoices_enabled === true;
 }
 
-/** WhatsApp JID from stored phone (digits only, with country code, no +). */
+/** WhatsApp JID from user input (normalizes SA numbers: leading 0 → +27, etc.). */
 function phoneToWhatsappJid(raw: string): string | null {
-  const digits = String(raw || "").replace(/\D/g, "");
-  if (digits.length < 10 || digits.length > 15) return null;
+  const digits = normalizePhoneDigitsForWhatsApp(raw);
+  if (!digits) return null;
   return `${digits}@c.us`;
 }
 
@@ -613,7 +615,16 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
     const text =
       (message && String(message).trim()) ||
       `Please find your ${docWord.toLowerCase()} attached.\n\nThank you.`;
-    const merged = await mergeOutboundWithSignature(invoice.organization_id, { text, html: null });
+
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const invoiceBodyHtml =
+      `<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.55;color:#111827;max-width:560px;">` +
+      `<p style="margin:0 0 10px;font-size:17px;font-weight:600;color:#111827;">${escapeHtml(docWord)} ${escapeHtml(invoice.invoice_number)}</p>` +
+      `<p style="margin:0 0 18px;color:#374151;">${escapeHtml(text).replace(/\n/g, "<br/>")}</p>` +
+      `<p style="margin:0;font-size:14px;color:#6b7280;">${escapeHtml(invoice.company_name)}</p></div>`;
+
+    const merged = await mergeOutboundWithSignature(invoice.organization_id, { text, html: invoiceBodyHtml });
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
     const prefix = isQuote ? "quote" : "invoice";
@@ -707,7 +718,8 @@ router.post("/:id/send-whatsapp", async (req: Request, res: Response) => {
     const jid = phoneToWhatsappJid(rawPhone);
     if (!jid) {
       return res.status(400).json({
-        error: 'A valid client phone number with country code is required. Add a phone on the invoice or pass "phone".',
+        error:
+          'A valid phone number is required (10–15 digits). South African numbers can be entered as 0662236440 or 662236440 — we add +27 automatically. Add a phone on the invoice or pass "phone".',
       });
     }
 
@@ -721,7 +733,7 @@ router.post("/:id/send-whatsapp", async (req: Request, res: Response) => {
       (message && String(message).trim()) ||
       `Here is your ${docWord.toLowerCase()} ${invoice.invoice_number} from ${invoice.company_name}.`;
 
-    const clientMessageId = `inv-wa-${invoice.id}-${Date.now()}`;
+    const clientMessageId = invoiceWhatsAppClientMessageId(invoice.id);
     await sendDocumentMessage({
       organizationId: invoice.organization_id,
       chatId: jid,

@@ -762,6 +762,8 @@ model invoice {
 
   pdf_storage_key    String?
   pdf_generated_at   DateTime?      @db.Timestamptz(6)
+  /// When the recipient read the invoice PDF on WhatsApp (read receipt), if available.
+  whatsapp_pdf_seen_at DateTime?    @db.Timestamptz(6)
 
   created_at         DateTime       @default(now()) @db.Timestamptz(6)
   updated_at         DateTime       @updatedAt @db.Timestamptz(6)

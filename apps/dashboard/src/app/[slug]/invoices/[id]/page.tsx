@@ -24,7 +24,7 @@ import {
   ArrowLeft, FileDown, Pencil, Trash2, Loader2, Send,
   CheckCircle, MoreHorizontal, RefreshCw, FileText, Clock,
   AlertCircle, Building2, User, Calendar, Receipt, ExternalLink,
-  ArrowRightLeft, FileCheck, Mail, MessageCircle,
+  ArrowRightLeft, FileCheck, Mail, MessageCircle, Eye,
 } from "lucide-react";
 import { InvoicePdfPreview } from "./invoice-pdf-preview";
 import {
@@ -146,7 +146,7 @@ export default function InvoiceViewPage() {
   async function handleSendByWhatsApp() {
     const phone = sendWaPhone.trim();
     if (!phone.replace(/\D/g, "").length) {
-      toast.error("Enter a phone number with country code.");
+      toast.error("Enter a phone number.");
       return;
     }
     setSendingWa(true);
@@ -271,21 +271,32 @@ export default function InvoiceViewPage() {
                 <FileDown className="h-4 w-4 mr-2" /> Download
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="hidden sm:inline-flex gap-2"
-              disabled={!canSendWhatsapp}
-              onClick={() => setSendWaOpen(true)}
-              title={
-                !invoiceChannelsUnlocked
-                  ? "Enable Invoices and WhatsApp for this workspace to send on WhatsApp."
-                  : "Send the PDF to the client on WhatsApp (connected number in workspace)."
-              }
-            >
-              <MessageCircle className="h-4 w-4" />
-              Send on WhatsApp
-            </Button>
+            <div className="hidden sm:flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="inline-flex gap-2"
+                disabled={!canSendWhatsapp}
+                onClick={() => setSendWaOpen(true)}
+                title={
+                  !invoiceChannelsUnlocked
+                    ? "Enable Invoices and WhatsApp for this workspace to send on WhatsApp."
+                    : "Send the PDF to the client on WhatsApp (connected number in workspace)."
+                }
+              >
+                <MessageCircle className="h-4 w-4" />
+                Send on WhatsApp
+              </Button>
+              {invoice.whatsapp_pdf_seen_at ? (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                  title={`Opened on WhatsApp ${new Date(invoice.whatsapp_pdf_seen_at).toLocaleString()}`}
+                >
+                  <Eye className="h-2.5 w-2.5 opacity-80" aria-hidden />
+                  Seen
+                </span>
+              ) : null}
+            </div>
             <Button
               size="sm"
               className="hidden sm:inline-flex gap-2"
@@ -547,6 +558,12 @@ export default function InvoiceViewPage() {
                 <div className="font-semibold">{invoice.client_name}</div>
                 {invoice.client_email && <div className="text-muted-foreground">{invoice.client_email}</div>}
                 {invoice.client_phone && <div className="text-muted-foreground">{invoice.client_phone}</div>}
+                {invoice.whatsapp_pdf_seen_at && (
+                  <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Eye className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                    PDF seen on WhatsApp
+                  </p>
+                )}
                 {invoice.client_address && (
                   <div className="text-muted-foreground">
                     {(invoice.client_address as any).line1 && <span>{(invoice.client_address as any).line1}, </span>}
@@ -666,16 +683,18 @@ export default function InvoiceViewPage() {
           <DialogHeader>
             <DialogTitle>Send {docLabel} on WhatsApp</DialogTitle>
             <DialogDescription>
-              Delivers the PDF as a WhatsApp document to the number you enter. Requires a connected WhatsApp client for this workspace.
+              Delivers the PDF as a WhatsApp document. South African numbers can be entered as{" "}
+              <span className="whitespace-nowrap">0662236440</span> or <span className="whitespace-nowrap">662236440</span>{" "}
+              (country code +27 is added automatically). Other regions: include the country code. Requires a connected WhatsApp client for this workspace.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-1">
             <div className="space-y-1.5">
-              <Label htmlFor="inv-wa-phone">Phone (with country code)</Label>
+              <Label htmlFor="inv-wa-phone">Phone</Label>
               <Input
                 id="inv-wa-phone"
                 type="tel"
-                placeholder="+27 82 123 4567"
+                placeholder="0662236440 or +27 66 223 6440"
                 value={sendWaPhone}
                 onChange={(e) => setSendWaPhone(e.target.value)}
                 autoComplete="tel"
