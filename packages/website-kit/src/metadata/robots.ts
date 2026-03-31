@@ -14,7 +14,7 @@ export interface RobotsConfig {
  * @example
  * ```ts
  * // app/robots.ts
- * import { getRobotsConfig } from "@luminum/website-kit/metadata";
+ * import { getRobotsConfig } from "@itsjust-lt/website-kit/metadata";
  *
  * export default function robots() {
  *   return getRobotsConfig({ baseUrl: "https://yoursite.com" });

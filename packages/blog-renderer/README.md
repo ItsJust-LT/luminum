@@ -1,4 +1,4 @@
-# @luminum/blog-renderer
+# @itsjust-lt/blog-renderer
 
 Renders the `renderSpec` object returned by the Luminum API (`GET /api/blog/posts/:slug?organizationId=`) into React elements.
 
@@ -9,8 +9,8 @@ Renders the `renderSpec` object returned by the Luminum API (`GET /api/blog/post
 3. Render `renderBlogSpec(spec, componentMap)` inside your page.
 
 ```tsx
-import { renderBlogSpec } from "@luminum/blog-renderer";
-import type { BlogRenderSpec } from "@luminum/blog-renderer";
+import { renderBlogSpec } from "@itsjust-lt/blog-renderer";
+import type { BlogRenderSpec } from "@itsjust-lt/blog-renderer";
 
 const componentMap = {
   Callout: YourCallout,

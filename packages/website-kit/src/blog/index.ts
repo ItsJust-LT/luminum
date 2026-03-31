@@ -9,10 +9,10 @@ export {
   type BlogCategory,
 } from "./fetch.js";
 
-export { renderBlogSpec, type BlogComponentMap } from "@luminum/blog-renderer";
+export { renderBlogSpec, type BlogComponentMap } from "@itsjust-lt/blog-renderer";
 export type {
   BlogRenderSpec,
   RenderSpecBlock,
   MarkdownRenderBlock,
   ComponentRenderBlock,
-} from "@luminum/blog-renderer";
+} from "@itsjust-lt/blog-renderer";

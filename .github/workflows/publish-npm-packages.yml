@@ -1,0 +1,45 @@
+# Publishes @itsjust-lt/blog-renderer then @itsjust-lt/website-kit to GitHub Packages.
+# Scope matches GitHub user ItsJust-LT (npm uses lowercase @itsjust-lt).
+name: Publish npm packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "npm-v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Node + GitHub Packages auth
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@itsjust-lt"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish @itsjust-lt/blog-renderer
+        run: pnpm --filter @itsjust-lt/blog-renderer publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish @itsjust-lt/website-kit
+        run: pnpm --filter @itsjust-lt/website-kit publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,14 +1,18 @@
-# @luminum/website-kit
+# @itsjust-lt/website-kit
 
 Drop-in package for customer Next.js (App Router) websites. Provides analytics tracking, form submission, blog rendering with SSR/SEO, and Next.js metadata helpers — all powered by a single `websiteId`.
 
 ## Installation
 
+Published to **GitHub Packages** (private). Full setup (GitHub Packages, CI publish, `.npmrc`, `NODE_AUTH_TOKEN`, Next.js `transpilePackages`) is in **[`docs/github-packages.md`](../../docs/github-packages.md)**.
+
+After auth is configured:
+
 ```bash
-npm install @luminum/website-kit
-# or
-pnpm add @luminum/website-kit
+pnpm add @itsjust-lt/website-kit
 ```
+
+For development inside the Luminum monorepo, depend on `workspace:*` as other packages do.
 
 ## Quick Start
 
@@ -18,7 +22,7 @@ Add the analytics script to your root layout. This tracks page views, manages se
 
 ```tsx
 // app/layout.tsx
-import { AnalyticsScript } from "@luminum/website-kit/analytics";
+import { AnalyticsScript } from "@itsjust-lt/website-kit/analytics";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -43,7 +47,7 @@ Submit form data from any client component. The session ID is automatically incl
 "use client";
 
 import { useState } from "react";
-import { submitForm } from "@luminum/website-kit/forms";
+import { submitForm } from "@itsjust-lt/website-kit/forms";
 
 export function ContactForm() {
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -91,7 +95,7 @@ Fetch published posts server-side and render using the `renderSpec` with your ow
 
 ```tsx
 // app/blog/page.tsx
-import { getPublishedPosts } from "@luminum/website-kit/blog";
+import { getPublishedPosts } from "@itsjust-lt/website-kit/blog";
 import Link from "next/link";
 
 export default async function BlogPage() {
@@ -123,8 +127,8 @@ export default async function BlogPage() {
 
 ```tsx
 // app/blog/[slug]/page.tsx
-import { getPublishedPostBySlug, renderBlogSpec, type BlogComponentMap } from "@luminum/website-kit/blog";
-import { blogSeoToMetadata } from "@luminum/website-kit/metadata";
+import { getPublishedPostBySlug, renderBlogSpec, type BlogComponentMap } from "@itsjust-lt/website-kit/blog";
+import { blogSeoToMetadata } from "@itsjust-lt/website-kit/metadata";
 import { notFound } from "next/navigation";
 
 // Define your component map for custom MDX-like components
@@ -182,7 +186,7 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
 
 ```ts
 // app/sitemap.ts
-import { getBlogSitemapEntries } from "@luminum/website-kit/metadata";
+import { getBlogSitemapEntries } from "@itsjust-lt/website-kit/metadata";
 
 export default async function sitemap() {
   const blogEntries = await getBlogSitemapEntries({
@@ -203,7 +207,7 @@ export default async function sitemap() {
 
 ```ts
 // app/robots.ts
-import { getRobotsConfig } from "@luminum/website-kit/metadata";
+import { getRobotsConfig } from "@itsjust-lt/website-kit/metadata";
 
 export default function robots() {
   return getRobotsConfig({
@@ -218,8 +222,8 @@ export default function robots() {
 ```tsx
 // app/blog/[slug]/opengraph-image.tsx
 import { ImageResponse } from "next/og";
-import { getPublishedPostBySlug } from "@luminum/website-kit/blog";
-import { generateOpenGraphImageElement } from "@luminum/website-kit/metadata";
+import { getPublishedPostBySlug } from "@itsjust-lt/website-kit/blog";
+import { generateOpenGraphImageElement } from "@itsjust-lt/website-kit/metadata";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -255,8 +259,8 @@ export default async function Image({ params }: { params: { slug: string } }) {
 
 | Import Path | Exports |
 |---|---|
-| `@luminum/website-kit` | Everything (barrel) |
-| `@luminum/website-kit/analytics` | `AnalyticsScript`, `getSessionId` |
-| `@luminum/website-kit/forms` | `submitForm` |
-| `@luminum/website-kit/blog` | `getPublishedPosts`, `getPublishedPostBySlug`, `getAllPublishedPosts`, `renderBlogSpec` |
-| `@luminum/website-kit/metadata` | `getBlogSitemapEntries`, `getRobotsConfig`, `generateOpenGraphImageElement`, `blogSeoToMetadata` |
+| `@itsjust-lt/website-kit` | Everything (barrel) |
+| `@itsjust-lt/website-kit/analytics` | `AnalyticsScript`, `getSessionId` |
+| `@itsjust-lt/website-kit/forms` | `submitForm` |
+| `@itsjust-lt/website-kit/blog` | `getPublishedPosts`, `getPublishedPostBySlug`, `getAllPublishedPosts`, `renderBlogSpec` |
+| `@itsjust-lt/website-kit/metadata` | `getBlogSitemapEntries`, `getRobotsConfig`, `generateOpenGraphImageElement`, `blogSeoToMetadata` |

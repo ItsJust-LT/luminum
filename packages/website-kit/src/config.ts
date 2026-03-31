@@ -7,7 +7,7 @@ let globalConfig: LuminumConfig | null = null;
 
 export function initLuminum(config: LuminumConfig): void {
   if (!config.websiteId) {
-    throw new Error("[@luminum/website-kit] websiteId is required");
+    throw new Error("[@itsjust-lt/website-kit] websiteId is required");
   }
   globalConfig = {
     websiteId: config.websiteId,
@@ -19,7 +19,7 @@ export function initLuminum(config: LuminumConfig): void {
 export function getConfig(): LuminumConfig {
   if (!globalConfig) {
     throw new Error(
-      "[@luminum/website-kit] Not initialized. Call initLuminum({ websiteId }) first."
+      "[@itsjust-lt/website-kit] Not initialized. Call initLuminum({ websiteId }) first."
     );
   }
   return globalConfig;

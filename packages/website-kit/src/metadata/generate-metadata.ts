@@ -7,8 +7,8 @@ import type { BlogSeoPayload } from "../types.js";
  * @example
  * ```ts
  * // app/blog/[slug]/page.tsx
- * import { getPublishedPostBySlug } from "@luminum/website-kit/blog";
- * import { blogSeoToMetadata } from "@luminum/website-kit/metadata";
+ * import { getPublishedPostBySlug } from "@itsjust-lt/website-kit/blog";
+ * import { blogSeoToMetadata } from "@itsjust-lt/website-kit/metadata";
  *
  * export async function generateMetadata({ params }) {
  *   const data = await getPublishedPostBySlug({

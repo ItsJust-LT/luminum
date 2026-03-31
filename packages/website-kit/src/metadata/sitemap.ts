@@ -28,7 +28,7 @@ export interface BlogSitemapOptions extends BlogFetchOptions {
  * @example
  * ```ts
  * // app/sitemap.ts
- * import { getBlogSitemapEntries } from "@luminum/website-kit/metadata";
+ * import { getBlogSitemapEntries } from "@itsjust-lt/website-kit/metadata";
  *
  * export default async function sitemap() {
  *   const blogEntries = await getBlogSitemapEntries({

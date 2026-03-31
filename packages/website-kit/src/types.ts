@@ -39,7 +39,7 @@ export interface BlogSeoPayload {
 
 export interface BlogPostDetail {
   post: BlogPostSummary;
-  renderSpec: import("@luminum/blog-renderer").BlogRenderSpec | null;
+  renderSpec: import("@itsjust-lt/blog-renderer").BlogRenderSpec | null;
   seo: BlogSeoPayload;
 }
 

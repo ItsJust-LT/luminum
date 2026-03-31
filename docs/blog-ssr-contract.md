@@ -45,20 +45,20 @@ Use `seo` in Next.js `generateMetadata` / `<head>`. Ensure `organization.metadat
 
 ## Rendering in Next.js
 
-### Using `@luminum/website-kit` (recommended)
+### Using `@itsjust-lt/website-kit` (recommended)
 
-The `@luminum/website-kit` package wraps blog fetching, rendering, and SEO into a single package. See `packages/website-kit/README.md` for full examples.
+The `@itsjust-lt/website-kit` package wraps blog fetching, rendering, and SEO into a single package. See `packages/website-kit/README.md` for full examples.
 
 ```tsx
-import { getPublishedPostBySlug, renderBlogSpec } from "@luminum/website-kit/blog";
-import { blogSeoToMetadata } from "@luminum/website-kit/metadata";
+import { getPublishedPostBySlug, renderBlogSpec } from "@itsjust-lt/website-kit/blog";
+import { blogSeoToMetadata } from "@itsjust-lt/website-kit/metadata";
 ```
 
-### Using `@luminum/blog-renderer` directly
+### Using `@itsjust-lt/blog-renderer` directly
 
 ```tsx
-import { renderBlogSpec } from "@luminum/blog-renderer";
-import type { BlogRenderSpec } from "@luminum/blog-renderer";
+import { renderBlogSpec } from "@itsjust-lt/blog-renderer";
+import type { BlogRenderSpec } from "@itsjust-lt/blog-renderer";
 
 const map = {
   Callout: YourCallout,

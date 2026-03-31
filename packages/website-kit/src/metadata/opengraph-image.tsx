@@ -19,8 +19,8 @@ export interface OpenGraphImageProps {
  * ```tsx
  * // app/blog/[slug]/opengraph-image.tsx
  * import { ImageResponse } from "next/og";
- * import { getPublishedPostBySlug } from "@luminum/website-kit/blog";
- * import { generateOpenGraphImageElement } from "@luminum/website-kit/metadata";
+ * import { getPublishedPostBySlug } from "@itsjust-lt/website-kit/blog";
+ * import { generateOpenGraphImageElement } from "@itsjust-lt/website-kit/metadata";
  *
  * export const size = { width: 1200, height: 630 };
  * export const contentType = "image/png";

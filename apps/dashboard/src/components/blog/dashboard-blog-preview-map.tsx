@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { BlogComponentMap } from "@luminum/blog-renderer";
+import type { BlogComponentMap } from "@itsjust-lt/blog-renderer";
 
 function PreviewCallout(props: {
   variant?: string;
