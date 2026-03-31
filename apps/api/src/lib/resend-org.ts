@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import { prisma } from "./prisma.js";
 import { decryptEmailSecret } from "./email-secrets.js";
-import { normalizeMessageIdForStorage } from "./email-message-id.js";
+import { normalizeMessageIdForStorage, normalizeReferencesForStorage } from "./email-message-id.js";
 
 export const OUTBOUND_MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
