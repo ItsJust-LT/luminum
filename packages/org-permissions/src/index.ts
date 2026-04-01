@@ -530,6 +530,23 @@ export function getRequiredPermissionsForOrgSubpath(subpath: string): readonly s
     return ["support:read"];
   }
 
+  // team/invite, team/roles, team/members/.../access|remove, team/invitations/.../cancel
+  if (segments[0] === "team") {
+    if (segments[1] === "invite") return ["team:invite"];
+    if (segments[1] === "roles") {
+      if (segments.length === 2) return ["team:read"];
+      if (segments[2] === "new") return ["team:roles:manage"];
+      if (segments.length === 3) return ["team:roles:manage"];
+    }
+    if (segments[1] === "members" && segments.length === 4) {
+      if (segments[3] === "access") return ["team:roles:assign"];
+      if (segments[3] === "remove") return ["team:remove"];
+    }
+    if (segments[1] === "invitations" && segments.length === 4 && segments[3] === "cancel") {
+      return ["team:invite"];
+    }
+  }
+
   const first = segments[0];
   if (first && PAGE_REQUIRED_PERMISSIONS[first]) return PAGE_REQUIRED_PERMISSIONS[first]!;
 

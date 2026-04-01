@@ -1,22 +1,20 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Users, Shield, User2, UserMinus, Mail, X } from "lucide-react"
+import { Users, Shield, User2, UserMinus, Mail, KeyRound, Sparkles } from "lucide-react"
 import { useRealtime } from "@/components/realtime/realtime-provider"
-import { OrganizationInviteDialog } from "@/components/dashboard/organization-invite-dialog"
 import { TransferOwnershipDialog } from "@/components/dashboard/transfer-ownership-dialog"
 import { useSession } from "@/lib/auth/client"
-import { RemoveMemberDialog } from "@/components/dashboard/remove-member-dialog"
-import { CancelInvitationDialog } from "@/components/dashboard/cancel-invitation-dialog"
 import { api } from "@/lib/api"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
+import { useTeamHref } from "@/lib/team/use-team-href"
 
 interface MemberUser {
   id: string
@@ -45,21 +43,18 @@ interface OrganizationInvitation {
 }
 
 export default function TeamPage() {
-  const router = useRouter()
   const { data: session } = useSession()
   const { organization, userRole, loading: orgLoading, error: orgError, hasAllPermissions } = useOrganization()
+  const { href } = useTeamHref()
   const canInvite = hasAllPermissions(["team:invite"])
   const canRemove = hasAllPermissions(["team:remove"])
+  const canAssignRoles = hasAllPermissions(["team:roles:assign"])
   const isPlatformAdmin = (session?.user as { role?: string } | undefined)?.role === "admin"
   const canTransferOwnership = userRole === "owner" || isPlatformAdmin
   const { onlineUsers } = useRealtime()
   const [members, setMembers] = useState<OrganizationMember[]>([])
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>([])
   const [loading, setLoading] = useState(true)
-  const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
-  const [selectedMember, setSelectedMember] = useState<OrganizationMember | null>(null)
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
-  const [selectedInvitation, setSelectedInvitation] = useState<OrganizationInvitation | null>(null)
 
   useEffect(() => {
     if (!orgLoading && organization) {
@@ -94,34 +89,6 @@ export default function TeamPage() {
     } catch (error) {
       console.error("Failed to load invitations:", error)
     }
-  }
-
-  const handleRemoveMember = (member: OrganizationMember) => {
-    setSelectedMember(member)
-    setRemoveDialogOpen(true)
-  }
-
-  const handleCloseRemoveDialog = () => {
-    setRemoveDialogOpen(false)
-    setSelectedMember(null)
-  }
-
-  const handleMemberRemoved = () => {
-    fetchMembers() // Refresh the members list
-  }
-
-  const handleCancelInvitation = (invitation: OrganizationInvitation) => {
-    setSelectedInvitation(invitation)
-    setCancelDialogOpen(true)
-  }
-
-  const handleCloseCancelDialog = () => {
-    setCancelDialogOpen(false)
-    setSelectedInvitation(null)
-  }
-
-  const handleInvitationCancelled = () => {
-    fetchInvitations() // Refresh the invitations list
   }
 
   const getRoleBadge = (m: OrganizationMember) => {
@@ -195,17 +162,35 @@ export default function TeamPage() {
             />
           )}
           {canInvite && (
-            <OrganizationInviteDialog
-              organizationId={organization.id}
-              organizationName={organization.name}
-              onInvitationSent={() => {
-                fetchMembers()
-                fetchInvitations()
-              }}
-            />
+            <Button asChild className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-md">
+              <Link href={href("invite")}>
+                <Users className="w-4 h-4 mr-2" />
+                Invite member
+              </Link>
+            </Button>
           )}
         </div>
       </div>
+
+      <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm border-primary/10">
+        <CardHeader className="px-4 sm:px-6 pb-2">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Roles & permissions
+          </CardTitle>
+          <CardDescription>
+            Choose who can do what: saved roles, default member access, or per-person permissions—all on dedicated pages (no popups).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-4 sm:px-6 pt-0">
+          <Button variant="secondary" size="sm" asChild>
+            <Link href={href("roles")}>
+              <KeyRound className="h-4 w-4 mr-2" />
+              Open roles & permissions
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
         <CardHeader className="px-4 sm:px-6">
@@ -238,18 +223,22 @@ export default function TeamPage() {
                       <div className="text-xs text-muted-foreground truncate">{m.user.email}</div>
                     )}
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                     {getRoleBadge(m)}
-                    {canRemove && m.role !== "owner" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveMember(m)}
-                        className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                        <UserMinus className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2 justify-end">
+                      {canAssignRoles && m.role !== "owner" && (
+                        <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                          <Link href={href(`members/${m.id}/access`)}>Manage access</Link>
+                        </Button>
+                      )}
+                      {canRemove && m.role !== "owner" && (
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" asChild>
+                          <Link href={href(`members/${m.id}/remove`)} aria-label="Remove member">
+                            <UserMinus className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
                 )
@@ -306,10 +295,10 @@ export default function TeamPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleCancelInvitation(invitation)}
-                        className="h-8 w-8 p-0 text-orange-500 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                        className="h-8 px-2 text-xs text-orange-600 hover:text-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                        asChild
                       >
-                        <X className="h-4 w-4" />
+                        <Link href={href(`invitations/${invitation.id}/cancel`)}>Cancel</Link>
                       </Button>
                     </div>
                   </div>
@@ -320,38 +309,6 @@ export default function TeamPage() {
         </Card>
       )}
 
-      {/* Remove Member Dialog */}
-      {selectedMember && (
-        <RemoveMemberDialog
-          isOpen={removeDialogOpen}
-          onClose={handleCloseRemoveDialog}
-          member={{
-            id: selectedMember.userId,
-            name: selectedMember.user?.name || selectedMember.user?.email || "User",
-            email: selectedMember.user?.email || "",
-            role: selectedMember.role,
-          }}
-          organizationName={organization.name}
-          organizationId={organization.id}
-          onMemberRemoved={handleMemberRemoved}
-        />
-      )}
-
-      {/* Cancel Invitation Dialog */}
-      {selectedInvitation && (
-        <CancelInvitationDialog
-          isOpen={cancelDialogOpen}
-          onClose={handleCloseCancelDialog}
-          invitation={{
-            id: selectedInvitation.id,
-            email: selectedInvitation.email,
-            role: selectedInvitation.role,
-            createdAt: selectedInvitation.createdAt,
-            expiresAt: selectedInvitation.expiresAt,
-          }}
-          onInvitationCancelled={handleInvitationCancelled}
-        />
-      )}
     </AppPageContainer>
   )
 }

@@ -707,6 +707,17 @@ function createApiClient(baseUrl: string = "") {
 
   const organizationRoles = {
     catalog: () => get("/api/organization-roles/catalog"),
+    getMemberAccess: (organizationId: string, memberRowId: string) =>
+      get("/api/organization-roles/member-access", { organizationId, memberRowId }),
+    setMemberPermissions: (
+      organizationId: string,
+      body: { memberRowId: string; permissionIds: string[] },
+    ) =>
+      patch("/api/organization-roles/member-permissions", {
+        organizationId,
+        memberRowId: body.memberRowId,
+        permissionIds: body.permissionIds,
+      }),
     list: (organizationId: string) => get("/api/organization-roles", { organizationId }),
     create: (
       organizationId: string,

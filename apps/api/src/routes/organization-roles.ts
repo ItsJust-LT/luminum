@@ -8,6 +8,7 @@ import {
   ROLE_TEMPLATES,
   validatePermissionSelection,
   expandPermissionSet,
+  getAllGrantablePermissionsSet,
 } from "@luminum/org-permissions";
 import { ensureBuiltinRolesForOrganization } from "../lib/org-roles-seed.js";
 
@@ -119,6 +120,176 @@ router.post("/", async (req: Request, res: Response) => {
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed";
     res.json({ success: false, error: msg });
+  }
+});
+
+// GET /api/organization-roles/member-access?organizationId=&memberRowId=
+router.get("/member-access", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    const memberRowId = req.query.memberRowId as string;
+    if (!organizationId || !memberRowId) {
+      return res.status(400).json({ success: false, error: "organizationId and memberRowId required" });
+    }
+    const pr = await requireOrgPermissions(organizationId, req.user, res, ["team:read"]);
+    if (!pr) return;
+
+    await ensureBuiltinRolesForOrganization(prisma, organizationId);
+    const member = await prisma.member.findFirst({
+      where: { id: memberRowId, organizationId },
+      include: {
+        user: { select: { name: true, email: true } },
+        organization_role: { include: { permissions: true } },
+      },
+    });
+    if (!member) return res.status(404).json({ success: false, error: "Member not found" });
+
+    const roleStr = (member.role || "member").toLowerCase();
+    const name = member.user?.name || member.user?.email || "Member";
+    const email = member.user?.email || "";
+
+    if (roleStr === "owner" || roleStr === "admin") {
+      const all = [...getAllGrantablePermissionsSet()];
+      return res.json({
+        success: true,
+        fullAccess: true,
+        member: {
+          id: member.id,
+          userId: member.userId,
+          role: member.role,
+          name,
+          email,
+          organizationRoleId: member.organizationRoleId,
+          organizationRole: member.organization_role
+            ? {
+                id: member.organization_role.id,
+                name: member.organization_role.name,
+                kind: member.organization_role.kind,
+                color: member.organization_role.color,
+                iconKey: member.organization_role.iconKey,
+              }
+            : null,
+        },
+        permissionIds: all,
+      });
+    }
+
+    const raw = member.organization_role?.permissions.map((p) => p.permission) ?? [];
+    return res.json({
+      success: true,
+      fullAccess: false,
+      member: {
+        id: member.id,
+        userId: member.userId,
+        role: member.role,
+        name,
+        email,
+        organizationRoleId: member.organizationRoleId,
+        organizationRole: member.organization_role
+          ? {
+              id: member.organization_role.id,
+              name: member.organization_role.name,
+              kind: member.organization_role.kind,
+              color: member.organization_role.color,
+              iconKey: member.organization_role.iconKey,
+            }
+          : null,
+      },
+      permissionIds: raw,
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+// PATCH /api/organization-roles/member-permissions — set permissions without naming a role (creates/updates a private custom role)
+router.patch("/member-permissions", async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req.query.organizationId as string) || (req.body?.organizationId as string);
+    const memberRowId = req.body?.memberRowId as string | undefined;
+    const permissionIds = req.body?.permissionIds as string[] | undefined;
+    if (!organizationId || !memberRowId || !Array.isArray(permissionIds)) {
+      return res.status(400).json({ success: false, error: "organizationId, memberRowId, and permissionIds required" });
+    }
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:roles:assign"]))) return;
+
+    await ensureBuiltinRolesForOrganization(prisma, organizationId);
+    const member = await prisma.member.findFirst({
+      where: { id: memberRowId, organizationId },
+      include: { user: { select: { name: true, email: true } }, organization_role: true },
+    });
+    if (!member) return res.status(404).json({ success: false, error: "Member not found" });
+
+    const roleStr = (member.role || "member").toLowerCase();
+    if (roleStr === "owner" || roleStr === "admin") {
+      return res.status(400).json({
+        success: false,
+        error: "Owner and admin always have full access. Change their organization role in the database if needed.",
+      });
+    }
+
+    const v = validatePermissionSelection([...permissionIds]);
+    if (!v.ok) return res.status(400).json({ success: false, error: v.error });
+    const expanded = new Set(v.expanded);
+    const now = new Date();
+    const display = (member.user?.name || member.user?.email || "Member").trim().slice(0, 80);
+
+    const existingRoleId = member.organizationRoleId;
+    if (existingRoleId) {
+      const existing = await prisma.organization_role.findFirst({
+        where: { id: existingRoleId, organizationId },
+      });
+      const memberCount = existing
+        ? await prisma.member.count({ where: { organizationRoleId: existing.id } })
+        : 0;
+      if (existing?.kind === ORG_ROLE_KIND.custom && memberCount === 1) {
+        await prisma.organization_role_permission.deleteMany({ where: { roleId: existing.id } });
+        await prisma.organization_role_permission.createMany({
+          data: [...expanded].map((permission) => ({
+            id: crypto.randomUUID(),
+            roleId: existing.id,
+            permission,
+          })),
+        });
+        await prisma.organization_role.update({
+          where: { id: existing.id },
+          data: { name: `Access · ${display}`, updatedAt: now },
+        });
+        return res.json({ success: true, organizationRoleId: existing.id });
+      }
+    }
+
+    const roleId = crypto.randomUUID();
+    await prisma.organization_role.create({
+      data: {
+        id: roleId,
+        organizationId,
+        name: `Access · ${display}`,
+        slug: null,
+        color: "#64748b",
+        iconKey: "User",
+        kind: ORG_ROLE_KIND.custom,
+        createdAt: now,
+        updatedAt: now,
+        permissions: {
+          create: [...expanded].map((permission) => ({
+            id: crypto.randomUUID(),
+            permission,
+          })),
+        },
+      },
+    });
+
+    await prisma.member.update({
+      where: { id: memberRowId },
+      data: { role: "member", organizationRoleId: roleId },
+    });
+
+    res.json({ success: true, organizationRoleId: roleId });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Failed";
+    res.status(500).json({ success: false, error: msg });
   }
 });
 
