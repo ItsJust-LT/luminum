@@ -104,7 +104,8 @@ export default function InvoiceViewPage() {
   }, [sendWaOpen, invoice?.client_phone]);
 
   const isQuote = invoice?.document_type === "quote";
-  const docLabel = isQuote ? "Quote" : "Invoice";
+  const isReceipt = invoice?.document_type === "receipt";
+  const docLabel = isReceipt ? "Receipt" : isQuote ? "Quote" : "Invoice";
 
   async function handleGeneratePdf() {
     setGenerating(true);
@@ -243,7 +244,10 @@ export default function InvoiceViewPage() {
               <h1 className="text-lg sm:text-xl font-bold tracking-tight">
                 {invoice.invoice_number}
               </h1>
-              <Badge variant="outline" className="text-xs">
+              <Badge
+                variant="outline"
+                className={`text-xs ${isReceipt ? "border-emerald-300/80 text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20" : ""}`}
+              >
                 {docLabel}
               </Badge>
               <Badge variant={cfg.variant} className={cfg.className}>
@@ -424,7 +428,7 @@ export default function InvoiceViewPage() {
                   </div>
                   <h3 className="text-lg font-semibold">No PDF generated yet</h3>
                   <p className="text-muted-foreground text-sm mt-1 mb-5 max-w-sm">
-                    Generate a PDF to preview and share your {isQuote ? "quote" : "invoice"} with your client
+                    Generate a PDF to preview and share your {isReceipt ? "receipt" : isQuote ? "quote" : "invoice"} with your client
                   </p>
                   <Button onClick={handleGeneratePdf} disabled={generating}>
                     {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileDown className="h-4 w-4 mr-2" />}
@@ -497,11 +501,14 @@ export default function InvoiceViewPage() {
             <Card className="border-primary/20">
               <CardContent className="pt-5 pb-4">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
-                  {isQuote ? "Quote Total" : "Grand Total"}
+                  {isReceipt ? "Amount received" : isQuote ? "Quote Total" : "Grand Total"}
                 </p>
                 <p className="text-3xl font-bold tracking-tight tabular-nums">{fmt(invoice.grand_total)}</p>
                 <div className="flex items-center gap-2 mt-2">
-                  <Badge variant="outline" className="text-xs">
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${isReceipt ? "border-emerald-300/80 text-emerald-700 dark:text-emerald-400" : ""}`}
+                  >
                     {docLabel}
                   </Badge>
                   <Badge variant={cfg.variant} className={cfg.className}>
@@ -552,13 +559,16 @@ export default function InvoiceViewPage() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <User className="h-3.5 w-3.5" /> {isQuote ? "Quote To" : "Bill To"}
+                  <User className="h-3.5 w-3.5" /> {isQuote ? "Quote To" : isReceipt ? "Received from" : "Bill To"}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
                 <div className="font-semibold">{invoice.client_name}</div>
                 {invoice.client_email && <div className="text-muted-foreground">{invoice.client_email}</div>}
                 {invoice.client_phone && <div className="text-muted-foreground">{invoice.client_phone}</div>}
+                {invoice.client_tax_number && (
+                  <div className="text-muted-foreground">Tax ID: {invoice.client_tax_number}</div>
+                )}
                 {invoice.whatsapp_pdf_seen_at && (
                   <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
                     <Eye className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
@@ -803,7 +813,8 @@ export default function InvoiceViewPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {docLabel}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete {isQuote ? "quote" : "invoice"} <span className="font-mono font-medium">{invoice.invoice_number}</span> and its PDF. This cannot be undone.
+              This will permanently delete {isReceipt ? "receipt" : isQuote ? "quote" : "invoice"}{" "}
+              <span className="font-mono font-medium">{invoice.invoice_number}</span> and its PDF. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

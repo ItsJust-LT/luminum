@@ -19,8 +19,28 @@ import { broadcastOrgEmailOutboundSent } from "../lib/org-ws-broadcast.js";
 import { sendDocumentMessage } from "../whatsapp/manager.js";
 import { normalizePhoneDigitsForWhatsApp } from "../lib/phone-whatsapp-normalize.js";
 import { invoiceWhatsAppClientMessageId } from "../lib/invoice-whatsapp-read-receipt.js";
+import { getNextInvoiceNumber, type BillingDocumentType } from "../lib/invoice-next-number.js";
 
 const router = Router();
+
+function parseBillingDocumentType(raw: unknown): BillingDocumentType {
+  const s = String(raw ?? "invoice").toLowerCase();
+  if (s === "quote") return "quote";
+  if (s === "receipt") return "receipt";
+  return "invoice";
+}
+
+function pdfFilePrefix(document_type: string): string {
+  if (document_type === "quote") return "quote";
+  if (document_type === "receipt") return "receipt";
+  return "invoice";
+}
+
+function outboundDocWord(document_type: string): string {
+  if (document_type === "quote") return "Quote";
+  if (document_type === "receipt") return "Receipt";
+  return "Invoice";
+}
 router.use(requireAuth);
 
 function paramId(req: Request): string {
@@ -137,22 +157,9 @@ router.get("/next-number", async (req: Request, res: Response) => {
     if (!organizationId) return res.status(400).json({ error: "organizationId required" });
     if (!(await requireOrgPermissions(organizationId, req.user, res, ["invoices:read"]))) return;
 
-    const documentType = (req.query.document_type as string) || "invoice";
-    const prefix = documentType === "quote" ? "QUO" : "INV";
-
-    const last = await prisma.invoice.findFirst({
-      where: { organization_id: organizationId, document_type: documentType },
-      orderBy: { created_at: "desc" },
-      select: { invoice_number: true },
-    });
-
-    let nextNum = 1;
-    if (last?.invoice_number) {
-      const match = last.invoice_number.match(/(\d+)$/);
-      if (match) nextNum = parseInt(match[1]!) + 1;
-    }
-
-    res.json({ success: true, nextNumber: `${prefix}-${String(nextNum).padStart(4, "0")}` });
+    const documentType = parseBillingDocumentType(req.query.document_type);
+    const nextNumber = await getNextInvoiceNumber(organizationId, documentType);
+    res.json({ success: true, nextNumber });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -176,6 +183,7 @@ router.get("/clients", async (req: Request, res: Response) => {
         client_name: true,
         client_email: true,
         client_phone: true,
+        client_tax_number: true,
         client_address: true,
         created_at: true,
       },
@@ -191,6 +199,7 @@ router.get("/clients", async (req: Request, res: Response) => {
           name: inv.client_name,
           email: inv.client_email || undefined,
           phone: inv.client_phone || undefined,
+          taxNumber: inv.client_tax_number || undefined,
           address: inv.client_address || undefined,
         });
       }
@@ -280,14 +289,18 @@ router.post("/", async (req: Request, res: Response) => {
       customAdjustments: customAdj.length > 0 ? customAdj : undefined,
     });
 
-    const documentType = body.documentType === "quote" ? "quote" : "invoice";
+    const documentType = parseBillingDocumentType(body.documentType);
+    const invoice_number =
+      (body.invoiceNumber && String(body.invoiceNumber).trim()) ||
+      (await getNextInvoiceNumber(organizationId, documentType));
+    const initialStatus = "draft";
 
     const invoice = await prisma.invoice.create({
       data: {
         organization_id: organizationId,
         document_type: documentType,
-        invoice_number: body.invoiceNumber || (documentType === "quote" ? "QUO-0001" : "INV-0001"),
-        status: "draft",
+        invoice_number,
+        status: initialStatus,
         date: body.date ? new Date(body.date) : new Date(),
         due_date: body.dueDate ? new Date(body.dueDate) : null,
         currency: body.currency || "ZAR",
@@ -301,6 +314,7 @@ router.post("/", async (req: Request, res: Response) => {
         client_name: body.clientName,
         client_email: body.clientEmail || null,
         client_phone: body.clientPhone || null,
+        client_tax_number: body.clientTaxNumber ? String(body.clientTaxNumber).trim().slice(0, 64) || null : null,
         client_address: body.clientAddress ?? Prisma.JsonNull,
         subtotal: totals.subtotal,
         total_tax: totals.totalTax,
@@ -394,6 +408,11 @@ router.patch("/:id", async (req: Request, res: Response) => {
     if (body.clientName !== undefined) updateData.client_name = body.clientName;
     if (body.clientEmail !== undefined) updateData.client_email = body.clientEmail || null;
     if (body.clientPhone !== undefined) updateData.client_phone = body.clientPhone || null;
+    if (body.clientTaxNumber !== undefined) {
+      updateData.client_tax_number = body.clientTaxNumber
+        ? String(body.clientTaxNumber).trim().slice(0, 64) || null
+        : null;
+    }
     if (body.clientAddress !== undefined) updateData.client_address = body.clientAddress ?? Prisma.JsonNull;
     if (body.taxInclusive !== undefined) updateData.tax_inclusive = !!body.taxInclusive;
     if (body.globalTaxPercent !== undefined) updateData.global_tax_percent = body.globalTaxPercent != null ? Number(body.globalTaxPercent) : null;
@@ -536,8 +555,7 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
       return res.status(400).json({ error: msg });
     }
 
-    const isQuote = invoice.document_type === "quote";
-    const docWord = isQuote ? "Quote" : "Invoice";
+    const docWord = outboundDocWord(invoice.document_type);
     const subject = `${docWord} ${invoice.invoice_number} from ${invoice.company_name}`;
     const text =
       (message && String(message).trim()) ||
@@ -558,7 +576,7 @@ router.post("/:id/send-email", async (req: Request, res: Response) => {
     );
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
-    const prefix = isQuote ? "quote" : "invoice";
+    const prefix = pdfFilePrefix(invoice.document_type);
     const filename = `${prefix}-${invoice.invoice_number.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
 
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
@@ -656,9 +674,8 @@ router.post("/:id/send-whatsapp", async (req: Request, res: Response) => {
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
     const dataUrl = `data:application/pdf;base64,${pdfBuffer.toString("base64")}`;
-    const isQuote = invoice.document_type === "quote";
-    const docWord = isQuote ? "Quote" : "Invoice";
-    const prefix = isQuote ? "quote" : "invoice";
+    const docWord = outboundDocWord(invoice.document_type);
+    const prefix = pdfFilePrefix(invoice.document_type);
     const filename = `${prefix}-${invoice.invoice_number.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
     const caption =
       (message && String(message).trim()) ||
@@ -707,7 +724,7 @@ router.get("/:id/pdf", async (req: Request, res: Response) => {
     const obj = await s3.getObject(invoice.pdf_storage_key);
     if (!obj) return res.status(404).json({ error: "PDF file not found" });
 
-    const prefix = (invoice as any).document_type === "quote" ? "quote" : "invoice";
+    const prefix = pdfFilePrefix(invoice.document_type);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${prefix}-${invoice.invoice_number}.pdf"`);
     if (obj.contentLength) res.setHeader("Content-Length", obj.contentLength);
@@ -756,22 +773,13 @@ router.post("/:id/convert-to-invoice", async (req: Request, res: Response) => {
     if (!(await requireOrgPermissions(quote.organization_id, req.user, res, ["invoices:write"]))) return;
     if (quote.document_type !== "quote") return res.status(400).json({ error: "Only quotes can be converted to invoices" });
 
-    const lastInvoice = await prisma.invoice.findFirst({
-      where: { organization_id: quote.organization_id, document_type: "invoice" },
-      orderBy: { created_at: "desc" },
-      select: { invoice_number: true },
-    });
-    let nextNum = 1;
-    if (lastInvoice?.invoice_number) {
-      const match = lastInvoice.invoice_number.match(/(\d+)$/);
-      if (match) nextNum = parseInt(match[1]!) + 1;
-    }
+    const invoice_number = await getNextInvoiceNumber(quote.organization_id, "invoice");
 
     const invoice = await prisma.invoice.create({
       data: {
         organization_id: quote.organization_id,
         document_type: "invoice",
-        invoice_number: `INV-${String(nextNum).padStart(4, "0")}`,
+        invoice_number,
         status: "draft",
         date: new Date(),
         due_date: quote.due_date,
@@ -786,6 +794,7 @@ router.post("/:id/convert-to-invoice", async (req: Request, res: Response) => {
         client_name: quote.client_name,
         client_email: quote.client_email,
         client_phone: quote.client_phone,
+        client_tax_number: quote.client_tax_number,
         client_address: quote.client_address ?? Prisma.JsonNull,
         subtotal: quote.subtotal,
         total_tax: quote.total_tax,

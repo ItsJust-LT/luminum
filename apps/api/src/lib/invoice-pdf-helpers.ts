@@ -11,8 +11,11 @@ import type { CustomAdjustment } from "./invoice/calculations.js";
 export type InvoiceWithItems = Prisma.invoiceGetPayload<{ include: { items: true } }>;
 
 export function invoiceToTemplateData(invoice: InvoiceWithItems): InvoiceTemplateData {
+  const dt = invoice.document_type;
+  const documentType: InvoiceTemplateData["documentType"] =
+    dt === "quote" ? "quote" : dt === "receipt" ? "receipt" : "invoice";
   return {
-    documentType: invoice.document_type === "quote" ? "quote" : "invoice",
+    documentType,
     company: {
       name: invoice.company_name,
       email: invoice.company_email || undefined,
@@ -25,6 +28,7 @@ export function invoiceToTemplateData(invoice: InvoiceWithItems): InvoiceTemplat
       name: invoice.client_name,
       email: invoice.client_email || undefined,
       phone: invoice.client_phone || undefined,
+      taxNumber: invoice.client_tax_number || undefined,
       address: invoice.client_address as Record<string, unknown> | undefined,
     },
     invoiceNumber: invoice.invoice_number,

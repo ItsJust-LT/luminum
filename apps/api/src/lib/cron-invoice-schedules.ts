@@ -74,6 +74,7 @@ async function processOneSchedule(schedule: ScheduleWithRelations) {
   let client_name: string;
   let client_email: string | null;
   let client_phone: string | null;
+  let client_tax_number: string | null;
   let client_address: Prisma.InputJsonValue | typeof Prisma.JsonNull;
   let tax_inclusive: boolean;
   let global_tax_percent: number | null;
@@ -100,6 +101,7 @@ async function processOneSchedule(schedule: ScheduleWithRelations) {
     client_name = tmpl.client_name;
     client_email = tmpl.client_email;
     client_phone = tmpl.client_phone;
+    client_tax_number = tmpl.client_tax_number;
     client_address = tmpl.client_address ?? Prisma.JsonNull;
     tax_inclusive = tmpl.tax_inclusive;
     global_tax_percent = tmpl.global_tax_percent;
@@ -129,6 +131,7 @@ async function processOneSchedule(schedule: ScheduleWithRelations) {
     client_name = parsed.clientName;
     client_email = parsed.clientEmail ?? null;
     client_phone = parsed.clientPhone ?? null;
+    client_tax_number = parsed.clientTaxNumber ?? null;
     client_address = parsed.clientAddress
       ? (parsed.clientAddress as Prisma.InputJsonValue)
       : Prisma.JsonNull;
@@ -170,6 +173,7 @@ async function processOneSchedule(schedule: ScheduleWithRelations) {
       client_name,
       client_email,
       client_phone,
+      client_tax_number,
       client_address,
       subtotal: totals.subtotal,
       total_tax: totals.totalTax,

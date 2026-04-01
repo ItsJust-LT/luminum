@@ -29,8 +29,12 @@ export async function sendInvoiceEmailSystem(opts: {
       displayName: undefined,
     }));
 
-    const isQuote = invoice.document_type === "quote";
-    const docWord = isQuote ? "Quote" : "Invoice";
+    const docWord =
+      invoice.document_type === "quote"
+        ? "Quote"
+        : invoice.document_type === "receipt"
+          ? "Receipt"
+          : "Invoice";
     const subject = `${docWord} ${invoice.invoice_number} from ${invoice.company_name}`;
     const text =
       (message && String(message).trim()) ||
@@ -54,7 +58,12 @@ export async function sendInvoiceEmailSystem(opts: {
     );
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
-    const prefix = isQuote ? "quote" : "invoice";
+    const prefix =
+      invoice.document_type === "quote"
+        ? "quote"
+        : invoice.document_type === "receipt"
+          ? "receipt"
+          : "invoice";
     const filename = `${prefix}-${invoice.invoice_number.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
 
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@scheduled-invoice>`;
@@ -120,9 +129,18 @@ export async function sendInvoiceWhatsAppSystem(opts: {
 
     const pdfBuffer = await ensureInvoicePdfBuffer(invoice);
     const dataUrl = `data:application/pdf;base64,${pdfBuffer.toString("base64")}`;
-    const isQuote = invoice.document_type === "quote";
-    const docWord = isQuote ? "Quote" : "Invoice";
-    const prefix = isQuote ? "quote" : "invoice";
+    const docWord =
+      invoice.document_type === "quote"
+        ? "Quote"
+        : invoice.document_type === "receipt"
+          ? "Receipt"
+          : "Invoice";
+    const prefix =
+      invoice.document_type === "quote"
+        ? "quote"
+        : invoice.document_type === "receipt"
+          ? "receipt"
+          : "invoice";
     const filename = `${prefix}-${invoice.invoice_number.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
     const caption =
       (message && String(message).trim()) ||

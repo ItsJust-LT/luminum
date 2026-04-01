@@ -809,6 +809,8 @@ model invoice {
   client_name        String
   client_email       String?
   client_phone       String?
+  /// Optional VAT / tax ID for the client (shown on PDFs).
+  client_tax_number  String?        @db.VarChar(64)
   client_address     Json?
 
   subtotal           Decimal        @db.Decimal(12, 2)

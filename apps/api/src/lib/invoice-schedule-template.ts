@@ -12,6 +12,7 @@ export type ScheduleTemplatePayload = {
   clientName: string;
   clientEmail?: string | null;
   clientPhone?: string | null;
+  clientTaxNumber?: string | null;
   clientAddress?: Record<string, unknown> | null;
   currency: string;
   language: string;
@@ -87,6 +88,8 @@ export function parseScheduleTemplatePayload(input: unknown): ScheduleTemplatePa
     clientName,
     clientEmail: p.clientEmail != null ? String(p.clientEmail).trim() || null : null,
     clientPhone: p.clientPhone != null ? String(p.clientPhone).trim() || null : null,
+    clientTaxNumber:
+      p.clientTaxNumber != null ? String(p.clientTaxNumber).trim().slice(0, 64) || null : null,
     clientAddress:
       p.clientAddress != null && typeof p.clientAddress === "object"
         ? (p.clientAddress as Record<string, unknown>)

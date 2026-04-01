@@ -42,6 +42,7 @@ interface PreviousClient {
   name: string;
   email?: string;
   phone?: string;
+  taxNumber?: string;
   address?: { line1?: string; city?: string; country?: string };
 }
 
@@ -132,6 +133,7 @@ export default function NewRecurringSchedulePage() {
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [clientTaxNumber, setClientTaxNumber] = useState("");
   const [clientAddressLine1, setClientAddressLine1] = useState("");
   const [clientCity, setClientCity] = useState("");
   const [clientCountry, setClientCountry] = useState("");
@@ -199,6 +201,7 @@ export default function NewRecurringSchedulePage() {
         setClientName(String(inv.client_name || ""));
         setClientEmail(String(inv.client_email || ""));
         setClientPhone(String(inv.client_phone || ""));
+        setClientTaxNumber(String(inv.client_tax_number || ""));
         const addr = inv.client_address as { line1?: string; city?: string; country?: string } | null;
         setClientAddressLine1(addr?.line1 || "");
         setClientCity(addr?.city || "");
@@ -252,6 +255,7 @@ export default function NewRecurringSchedulePage() {
     setClientName(client.name);
     setClientEmail(client.email || "");
     setClientPhone(client.phone || "");
+    setClientTaxNumber(client.taxNumber || "");
     const addr = client.address;
     setClientAddressLine1(addr?.line1 || "");
     setClientCity(addr?.city || "");
@@ -338,6 +342,7 @@ export default function NewRecurringSchedulePage() {
       clientName: clientName.trim(),
       clientEmail: clientEmail.trim() || undefined,
       clientPhone: clientPhone.trim() || undefined,
+      clientTaxNumber: clientTaxNumber.trim() || undefined,
       clientAddress:
         clientAddressLine1 || clientCity || clientCountry
           ? { line1: clientAddressLine1, city: clientCity, country: clientCountry }
@@ -365,6 +370,7 @@ export default function NewRecurringSchedulePage() {
     clientName,
     clientEmail,
     clientPhone,
+    clientTaxNumber,
     clientAddressLine1,
     clientCity,
     clientCountry,
@@ -892,6 +898,10 @@ export default function NewRecurringSchedulePage() {
                       <div className="space-y-1.5">
                         <Label>Phone</Label>
                         <Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Tax / VAT number (optional)</Label>
+                        <Input value={clientTaxNumber} onChange={(e) => setClientTaxNumber(e.target.value)} />
                       </div>
                       <Separator />
                       <div className="space-y-1.5">

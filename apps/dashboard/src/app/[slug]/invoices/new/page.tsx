@@ -43,6 +43,7 @@ interface PreviousClient {
   name: string;
   email?: string;
   phone?: string;
+  taxNumber?: string;
   address?: { line1?: string; city?: string; country?: string };
 }
 
@@ -67,8 +68,15 @@ export default function NewInvoicePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const slug = params.slug as string;
-  const documentType = searchParams.get("type") === "quote" ? "quote" : "invoice";
+  const documentType =
+    searchParams.get("type") === "quote"
+      ? "quote"
+      : searchParams.get("type") === "receipt"
+        ? "receipt"
+        : "invoice";
   const isQuote = documentType === "quote";
+  const isReceipt = documentType === "receipt";
+  const docNoun = isReceipt ? "Receipt" : isQuote ? "Quote" : "Invoice";
   const logoInputRef = useRef<HTMLInputElement>(null);
   const clientInputRef = useRef<HTMLInputElement>(null);
 
@@ -92,6 +100,7 @@ export default function NewInvoicePage() {
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [clientTaxNumber, setClientTaxNumber] = useState("");
   const [clientAddressLine1, setClientAddressLine1] = useState("");
   const [clientCity, setClientCity] = useState("");
   const [clientCountry, setClientCountry] = useState("");
@@ -164,6 +173,7 @@ export default function NewInvoicePage() {
     setClientName(client.name);
     setClientEmail(client.email || "");
     setClientPhone(client.phone || "");
+    setClientTaxNumber(client.taxNumber || "");
     const addr = client.address as any;
     setClientAddressLine1(addr?.line1 || "");
     setClientCity(addr?.city || "");
@@ -233,11 +243,12 @@ export default function NewInvoicePage() {
     companyEmail: companyEmail || undefined, companyPhone: companyPhone || undefined,
     companyVat: companyVat || undefined, companyLogo: companyLogo || undefined,
     clientName, clientEmail: clientEmail || undefined, clientPhone: clientPhone || undefined,
+    clientTaxNumber: clientTaxNumber.trim() || undefined,
     clientAddress: clientAddressLine1 || clientCity || clientCountry
       ? { line1: clientAddressLine1, city: clientCity, country: clientCountry } : undefined,
     items: items.map((it) => ({ description: it.description, quantity: it.quantity, unit_price: it.unit_price, tax_percent: it.tax_percent || undefined })),
     discountAmount, shippingAmount, taxInclusive, notes: notes || undefined, terms: terms || undefined,
-  }), [organization?.id, documentType, invoiceNumber, date, dueDate, currency, language, companyName, companyEmail, companyPhone, companyVat, companyLogo, clientName, clientEmail, clientPhone, clientAddressLine1, clientCity, clientCountry, items, discountAmount, shippingAmount, taxInclusive, notes, terms]);
+  }), [organization?.id, documentType, invoiceNumber, date, dueDate, currency, language, companyName, companyEmail, companyPhone, companyVat, companyLogo, clientName, clientEmail, clientPhone, clientTaxNumber, clientAddressLine1, clientCity, clientCountry, items, discountAmount, shippingAmount, taxInclusive, notes, terms]);
 
   async function handleSave() {
     if (!organization?.id) return;
@@ -247,7 +258,7 @@ export default function NewInvoicePage() {
     setSaving(true);
     try {
       const res = (await api.invoices.create(buildPayload())) as any;
-      toast.success(`${isQuote ? "Quote" : "Invoice"} saved as draft`);
+      toast.success(`${docNoun} saved as draft`);
       router.push(`/${slug}/invoices/${res.invoice.id}`);
     } catch (err: any) { toast.error(err?.message || "Failed to create"); }
     finally { setSaving(false); }
@@ -261,7 +272,7 @@ export default function NewInvoicePage() {
     try {
       const res = (await api.invoices.create(buildPayload())) as any;
       await api.invoices.generatePdf(res.invoice.id);
-      toast.success(`${isQuote ? "Quote" : "Invoice"} created & PDF generated`);
+      toast.success(`${docNoun} created & PDF generated`);
       router.push(`/${slug}/invoices/${res.invoice.id}`);
     } catch (err: any) { toast.error(err?.message || "Failed to create"); }
     finally { setSaving(false); setGenerating(false); }
@@ -278,9 +289,11 @@ export default function NewInvoicePage() {
             <Link href={`/${slug}/invoices`}><ArrowLeft className="h-4 w-4" /></Link>
           </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">New {isQuote ? "Quote" : "Invoice"}</h1>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">New {docNoun}</h1>
             <p className="text-muted-foreground text-xs sm:text-sm hidden sm:block">
-              Fill in the details below to create a new {isQuote ? "quote" : "invoice"}
+              {isReceipt
+                ? "Record a payment received — PDF uses a clear receipt layout."
+                : `Fill in the details below to create a new ${isQuote ? "quote" : "invoice"}`}
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -306,15 +319,15 @@ export default function NewInvoicePage() {
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center"><Receipt className="h-4 w-4 text-primary" /></div>
                   <div>
-                    <CardTitle className="text-base">{isQuote ? "Quote" : "Invoice"} Details</CardTitle>
-                    <CardDescription>Basic information for your {isQuote ? "quote" : "invoice"}</CardDescription>
+                    <CardTitle className="text-base">{docNoun} details</CardTitle>
+                    <CardDescription>Basic information for your {docNoun.toLowerCase()}</CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5"><Hash className="h-3.5 w-3.5 text-muted-foreground" />{isQuote ? "Quote" : "Invoice"} Number</Label>
-                  <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder={isQuote ? "QUO-0001" : "INV-0001"} className="font-mono" />
+                  <Label className="flex items-center gap-1.5"><Hash className="h-3.5 w-3.5 text-muted-foreground" />{docNoun} number</Label>
+                  <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder={isQuote ? "QUO-0001" : isReceipt ? "REC-0001" : "INV-0001"} className="font-mono" />
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5 text-muted-foreground" />Currency</Label>
@@ -358,7 +371,7 @@ export default function NewInvoicePage() {
                   </Popover>
                 </div>
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5"><CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />Date</Label>
+                  <Label className="flex items-center gap-1.5"><CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />{isReceipt ? "Payment date" : "Date"}</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className="w-full justify-start font-normal"><CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />{format(date, "PPP")}</Button>
@@ -366,6 +379,7 @@ export default function NewInvoicePage() {
                     <PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus /></PopoverContent>
                   </Popover>
                 </div>
+                {!isReceipt && (
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5"><CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />{isQuote ? "Valid Until" : "Due Date"} <span className="text-muted-foreground text-xs">(optional)</span></Label>
                   <Popover>
@@ -380,6 +394,7 @@ export default function NewInvoicePage() {
                     </PopoverContent>
                   </Popover>
                 </div>
+                )}
                 <div className="space-y-2 sm:col-span-2">
                   <Label className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5 text-muted-foreground" />Language</Label>
                   <Select value={language} onValueChange={setLanguage}>
@@ -431,7 +446,7 @@ export default function NewInvoicePage() {
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-emerald-500/10 flex items-center justify-center"><User className="h-4 w-4 text-emerald-500" /></div>
-                    <div><CardTitle className="text-base">{isQuote ? "Quote To" : "Bill To"}</CardTitle><CardDescription>Client / customer details</CardDescription></div>
+                    <div><CardTitle className="text-base">{isQuote ? "Quote To" : isReceipt ? "Received from" : "Bill To"}</CardTitle><CardDescription>Client / customer details</CardDescription></div>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
@@ -484,6 +499,7 @@ export default function NewInvoicePage() {
                   </div>
                   <div className="space-y-1.5"><Label>Email</Label><Input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} type="email" placeholder="client@example.com" /></div>
                   <div className="space-y-1.5"><Label>Phone</Label><Input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+1 (555) 000-0000" /></div>
+                  <div className="space-y-1.5"><Label>Tax / VAT number <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label><Input value={clientTaxNumber} onChange={(e) => setClientTaxNumber(e.target.value)} placeholder="Customer tax ID" /></div>
                   <Separator />
                   <div className="space-y-1.5"><Label>Street Address</Label><Input value={clientAddressLine1} onChange={(e) => setClientAddressLine1(e.target.value)} placeholder="123 Main Street" /></div>
                   <div className="grid grid-cols-2 gap-3">
@@ -616,10 +632,10 @@ export default function NewInvoicePage() {
                     {shippingAmount > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Shipping</span><span className="font-medium tabular-nums">{formatMoney(shippingAmount)}</span></div>}
                   </div>
                   <Separator />
-                  <div className="flex justify-between items-center"><span className="font-semibold">Grand Total</span><span className="text-2xl font-bold tabular-nums tracking-tight">{formatMoney(Math.max(0, grandTotal))}</span></div>
+                  <div className="flex justify-between items-center"><span className="font-semibold">{isReceipt ? "Amount received" : "Grand Total"}</span><span className="text-2xl font-bold tabular-nums tracking-tight">{formatMoney(Math.max(0, grandTotal))}</span></div>
                   <div className="text-xs text-muted-foreground space-y-1 pt-1">
-                    <div className="flex justify-between"><span>Date</span><span>{format(date, "PP")}</span></div>
-                    {dueDate && <div className="flex justify-between"><span>{isQuote ? "Valid Until" : "Due"}</span><span>{format(dueDate, "PP")}</span></div>}
+                    <div className="flex justify-between"><span>{isReceipt ? "Payment date" : "Date"}</span><span>{format(date, "PP")}</span></div>
+                    {!isReceipt && dueDate && <div className="flex justify-between"><span>{isQuote ? "Valid Until" : "Due"}</span><span>{format(dueDate, "PP")}</span></div>}
                     <div className="flex justify-between"><span>Currency</span><span>{currency}</span></div>
                   </div>
                 </CardContent>

@@ -28,7 +28,7 @@ import {
   Receipt, Loader2, MoreHorizontal, Plus, Search, Trash2,
   FileDown, Eye, Pencil, Send, CheckCircle, Clock, FileText,
   AlertCircle, TrendingUp, DollarSign,
-  ChevronDown, FileCheck, ArrowRightLeft, CalendarClock, Sparkles,
+  ChevronDown, FileCheck, ArrowRightLeft, CalendarClock, Sparkles, Banknote,
 } from "lucide-react";
 
 type InvoiceRow = {
@@ -92,7 +92,7 @@ export default function OrgInvoicesListPage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [docTypeFilter, setDocTypeFilter] = useState<"all" | "invoice" | "quote">("all");
+  const [docTypeFilter, setDocTypeFilter] = useState<"all" | "invoice" | "quote" | "receipt">("all");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [converting, setConverting] = useState<string | null>(null);
@@ -180,7 +180,8 @@ export default function OrgInvoicesListPage() {
 
   const currency = (organization as any)?.currency || "ZAR";
   const isQuoteView = docTypeFilter === "quote";
-  const docLabel = isQuoteView ? "Quote" : docTypeFilter === "invoice" ? "Invoice" : "Document";
+  const isReceiptView = docTypeFilter === "receipt";
+  const docLabel = isQuoteView ? "Quote" : isReceiptView ? "Receipt" : docTypeFilter === "invoice" ? "Invoice" : "Document";
 
   const statusTabs: { value: StatusFilter; label: string; count?: number }[] = isQuoteView
     ? [
@@ -195,7 +196,7 @@ export default function OrgInvoicesListPage() {
         { value: "draft", label: "Draft", count: stats?.draft },
         { value: "sent", label: "Sent", count: stats?.sent },
         { value: "paid", label: "Paid", count: stats?.paid },
-        { value: "overdue", label: "Overdue", count: stats?.overdue },
+        ...(isReceiptView ? [] : [{ value: "overdue" as const, label: "Overdue", count: stats?.overdue }]),
       ];
 
   return (
@@ -210,10 +211,10 @@ export default function OrgInvoicesListPage() {
                 Billing workspace
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-                Invoices & quotes
+                Invoices, quotes & receipts
               </h1>
               <p className="text-muted-foreground text-sm leading-relaxed">
-                Issue documents, track status, share PDFs, and automate recurring invoices on your schedule.
+                Issue invoices and quotes, record payment receipts, track status, share PDFs, and automate recurring billing.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row flex-wrap gap-2 shrink-0">
@@ -235,6 +236,9 @@ export default function OrgInvoicesListPage() {
                   <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=quote`)}>
                     <FileText className="h-4 w-4 mr-2" /> New quote
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push(`/${slug}/invoices/new?type=receipt`)}>
+                    <Banknote className="h-4 w-4 mr-2" /> New receipt
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -243,16 +247,16 @@ export default function OrgInvoicesListPage() {
       </div>
 
       {/* Document type tabs */}
-      <div className="flex gap-1 bg-muted/40 rounded-xl p-1 w-fit border border-border/50">
-        {(["all", "invoice", "quote"] as const).map((t) => (
+      <div className="flex gap-1 bg-muted/40 rounded-xl p-1 w-fit border border-border/50 flex-wrap">
+        {(["all", "invoice", "quote", "receipt"] as const).map((t) => (
           <Button
             key={t}
             variant={docTypeFilter === t ? "default" : "ghost"}
             size="sm"
-            className="text-xs h-8 px-4"
+            className="text-xs h-8 px-3 sm:px-4"
             onClick={() => { setDocTypeFilter(t); setStatusFilter("all"); setLoading(true); }}
           >
-            {t === "all" ? "All" : t === "invoice" ? "Invoices" : "Quotes"}
+            {t === "all" ? "All" : t === "invoice" ? "Invoices" : t === "quote" ? "Quotes" : "Receipts"}
           </Button>
         ))}
       </div>
@@ -330,7 +334,7 @@ export default function OrgInvoicesListPage() {
         <div className="relative flex-1 w-full sm:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={`Search ${docTypeFilter === "all" ? "invoices & quotes" : docTypeFilter + "s"}...`}
+            placeholder={`Search ${docTypeFilter === "all" ? "documents" : docTypeFilter === "receipt" ? "receipts" : docTypeFilter + "s"}...`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9 h-10 rounded-xl border-border/80 bg-background/80"
@@ -370,19 +374,22 @@ export default function OrgInvoicesListPage() {
             <div className="h-14 w-14 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
               <Receipt className="h-7 w-7 text-muted-foreground/30" />
             </div>
-            <h3 className="text-lg font-semibold">No {docTypeFilter === "all" ? "documents" : docTypeFilter + "s"} found</h3>
+            <h3 className="text-lg font-semibold">No {docTypeFilter === "all" ? "documents" : docTypeFilter === "receipt" ? "receipts" : docTypeFilter + "s"} found</h3>
             <p className="text-muted-foreground text-sm mt-1 mb-5 max-w-sm">
               {query || statusFilter !== "all"
                 ? "Try adjusting your search or filter"
-                : `Create your first ${docTypeFilter === "quote" ? "quote" : "invoice"} to get started`}
+                : `Create your first ${docTypeFilter === "quote" ? "quote" : docTypeFilter === "receipt" ? "receipt" : "invoice"} to get started`}
             </p>
             {!query && statusFilter === "all" && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 justify-center">
                 <Button asChild size="sm">
                   <Link href={`/${slug}/invoices/new?type=invoice`}><Plus className="h-4 w-4 mr-2" /> New Invoice</Link>
                 </Button>
                 <Button asChild size="sm" variant="outline">
                   <Link href={`/${slug}/invoices/new?type=quote`}><Plus className="h-4 w-4 mr-2" /> New Quote</Link>
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/${slug}/invoices/new?type=receipt`}><Banknote className="h-4 w-4 mr-2" /> New Receipt</Link>
                 </Button>
               </div>
             )}
@@ -410,6 +417,7 @@ export default function OrgInvoicesListPage() {
                   {filtered.map((inv) => {
                     const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft!;
                     const isQuote = inv.document_type === "quote";
+                    const isReceipt = inv.document_type === "receipt";
                     return (
                       <motion.tr
                         key={inv.id}
@@ -422,8 +430,13 @@ export default function OrgInvoicesListPage() {
                         <TableCell className="font-medium font-mono text-sm">{inv.invoice_number}</TableCell>
                         {docTypeFilter === "all" && (
                           <TableCell>
-                            <Badge variant="outline" className={`text-[10px] ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
-                              {isQuote ? "Quote" : "Invoice"}
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${
+                                isQuote ? "border-blue-300 text-blue-600" : isReceipt ? "border-emerald-300 text-emerald-700 dark:text-emerald-400" : ""
+                              }`}
+                            >
+                              {isQuote ? "Quote" : isReceipt ? "Receipt" : "Invoice"}
                             </Badge>
                           </TableCell>
                         )}
@@ -486,6 +499,7 @@ export default function OrgInvoicesListPage() {
               {filtered.map((inv) => {
                 const cfg = STATUS_CONFIG[inv.status] ?? STATUS_CONFIG.draft!;
                 const isQuote = inv.document_type === "quote";
+                const isReceipt = inv.document_type === "receipt";
                 return (
                   <motion.div
                     key={inv.id}
@@ -502,8 +516,13 @@ export default function OrgInvoicesListPage() {
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono font-medium text-sm">{inv.invoice_number}</span>
-                              <Badge variant="outline" className={`text-[10px] h-5 ${isQuote ? "border-blue-300 text-blue-600" : ""}`}>
-                                {isQuote ? "Quote" : "Invoice"}
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] h-5 ${
+                                  isQuote ? "border-blue-300 text-blue-600" : isReceipt ? "border-emerald-300 text-emerald-700 dark:text-emerald-400" : ""
+                                }`}
+                              >
+                                {isQuote ? "Quote" : isReceipt ? "Receipt" : "Invoice"}
                               </Badge>
                               <Badge variant={cfg.variant} className={`text-[10px] h-5 gap-0.5 ${cfg.className || ""}`}>
                                 <cfg.icon className="h-2.5 w-2.5" /> {cfg.label}

@@ -1,10 +1,13 @@
 import { prisma } from "./prisma.js";
 
+export type BillingDocumentType = "invoice" | "quote" | "receipt";
+
 export async function getNextInvoiceNumber(
   organizationId: string,
-  documentType: "invoice" | "quote" = "invoice"
+  documentType: BillingDocumentType = "invoice"
 ): Promise<string> {
-  const prefix = documentType === "quote" ? "QUO" : "INV";
+  const prefix =
+    documentType === "quote" ? "QUO" : documentType === "receipt" ? "REC" : "INV";
   const last = await prisma.invoice.findFirst({
     where: { organization_id: organizationId, document_type: documentType },
     orderBy: { created_at: "desc" },

@@ -2,7 +2,7 @@ import { translate, formatCurrency, formatDate, TranslationKey } from "./locale.
 import type { InvoiceItem, CustomAdjustment } from "./calculations.js";
 
 export interface InvoiceTemplateData {
-  documentType?: "invoice" | "quote";
+  documentType?: "invoice" | "quote" | "receipt";
   company: {
     name: string;
     email?: string;
@@ -15,6 +15,8 @@ export interface InvoiceTemplateData {
     name: string;
     email?: string;
     phone?: string;
+    /** Client VAT / tax registration number */
+    taxNumber?: string;
     address?: { line1?: string; line2?: string; city?: string; region?: string; zip?: string; country?: string };
   };
   invoiceNumber: string;
@@ -56,17 +58,22 @@ function formatAddress(addr?: InvoiceTemplateData["company"]["address"]): string
 
 export function buildInvoiceHtml(data: InvoiceTemplateData): string {
   const isQuote = data.documentType === "quote";
+  const isReceipt = data.documentType === "receipt";
   const t = (key: string) => translate(data.language, key);
   const fc = (amount: number) => formatCurrency(amount, data.currency, data.language);
   const fd = (dateStr: string) => formatDate(dateStr, data.language);
   const htmlLang = data.language.toLowerCase().split("-")[0] || "en";
   const htmlDir = htmlLang === "ar" ? "rtl" : "ltr";
 
-  const docTitle = isQuote ? t(TranslationKey.quote) : t(TranslationKey.invoice);
-  const numberLabel = isQuote ? t(TranslationKey.quoteNumber) : t(TranslationKey.invoiceNumber);
-  const toLabel = isQuote ? t(TranslationKey.quoteTo) : t(TranslationKey.billTo);
-  const dateLabel = isQuote ? t(TranslationKey.validUntil) : t(TranslationKey.dueDate);
-  const thankYou = isQuote ? t(TranslationKey.thankYouQuote) : t(TranslationKey.thankYou);
+  const docTitle = isReceipt ? t(TranslationKey.receipt) : isQuote ? t(TranslationKey.quote) : t(TranslationKey.invoice);
+  const numberLabel = isReceipt
+    ? t(TranslationKey.receiptNumber)
+    : isQuote
+      ? t(TranslationKey.quoteNumber)
+      : t(TranslationKey.invoiceNumber);
+  const toLabel = isReceipt ? t(TranslationKey.receivedFrom) : isQuote ? t(TranslationKey.quoteTo) : t(TranslationKey.billTo);
+  const secondaryDateLabel = isQuote ? t(TranslationKey.validUntil) : isReceipt ? t(TranslationKey.paymentDate) : t(TranslationKey.dueDate);
+  const thankYou = isReceipt ? t(TranslationKey.thankYouReceipt) : isQuote ? t(TranslationKey.thankYouQuote) : t(TranslationKey.thankYou);
 
   const showQty = data.items.some((i) => i.quantity !== 1);
 
@@ -82,6 +89,9 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
   if (clientAddr) clientLines.push(clientAddr);
   if (data.client.phone) clientLines.push(escapeHtml(data.client.phone));
   if (data.client.email) clientLines.push(escapeHtml(data.client.email));
+  if (data.client.taxNumber) {
+    clientLines.push(`${escapeHtml(t(TranslationKey.clientTaxId))}: ${escapeHtml(data.client.taxNumber)}`);
+  }
 
   const itemRows = data.items.map((item) => {
     const qty = Math.floor(item.quantity);
@@ -129,9 +139,10 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     ? `<div class="notes"><div class="section-label">${t(TranslationKey.notes)}</div><div class="section-body">${escapeHtml(data.notes)}</div></div>`
     : "";
 
-  const dueDateHtml = data.dueDate
-    ? `<div class="meta-row"><span class="meta-k">${dateLabel}</span><span class="meta-v">${fd(data.dueDate)}</span></div>`
-    : "";
+  const secondaryDateHtml =
+    !isReceipt && data.dueDate
+      ? `<div class="meta-row"><span class="meta-k">${secondaryDateLabel}</span><span class="meta-v">${fd(data.dueDate)}</span></div>`
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(htmlLang)}" dir="${htmlDir}">
@@ -446,9 +457,77 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
     font-weight: 500;
     letter-spacing: 0.02em;
   }
+
+  /* Receipt: payment confirmation styling */
+  .doc-receipt {
+    --ink: #0f172a;
+    --ink-soft: #1e293b;
+    --muted: #475569;
+    --faint: #64748b;
+    --line: #e2e8f0;
+    --line-strong: #cbd5e1;
+    --surface: #f8fafc;
+    --surface-2: #f1f5f9;
+  }
+  .doc-receipt .accent-bar {
+    height: 5px;
+    background: linear-gradient(90deg, #047857 0%, #10b981 42%, #5eead4 100%);
+  }
+  .doc-receipt .doc-title {
+    color: #047857;
+  }
+  .doc-receipt .meta-panel {
+    border-color: #a7f3d0;
+    background: linear-gradient(180deg, #ecfdf5 0%, #f8fafc 55%, #fff 100%);
+    box-shadow: 0 1px 0 rgba(16, 185, 129, 0.15);
+  }
+  .doc-receipt .party-card {
+    border-left-color: #10b981;
+    background: linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%);
+  }
+  html[dir="rtl"] .doc-receipt .party-card {
+    border-left: 1px solid var(--line);
+    border-right: 3px solid #10b981;
+  }
+  .receipt-ribbon-wrap {
+    margin-bottom: 12px;
+  }
+  .receipt-ribbon {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #065f46;
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border: 1px solid #6ee7b7;
+  }
+  .doc-receipt .items-table thead th {
+    background: #ecfdf5;
+    color: #047857;
+    border-bottom-color: #a7f3d0;
+  }
+  .doc-receipt .items-table tbody tr:nth-child(even) td {
+    background: #fafefa;
+  }
+  .doc-receipt .totals-table .grand-total td {
+    background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+    color: #065f46;
+    border-top: 1px solid #6ee7b7;
+  }
+  .doc-receipt .totals-table .grand-total td:first-child {
+    color: #047857;
+  }
+  .doc-receipt .footer-text {
+    color: #059669;
+    font-weight: 600;
+  }
 </style>
 </head>
-<body>
+<body class="${isReceipt ? "doc-receipt" : ""}">
   <div class="accent-bar"></div>
   <div class="page">
     <div class="header">
@@ -461,12 +540,13 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
 
     <div class="doc-hero">
       <div class="doc-title-wrap">
+        ${isReceipt ? `<div class="receipt-ribbon-wrap"><span class="receipt-ribbon">${escapeHtml(t(TranslationKey.paymentConfirmed))}</span></div>` : ""}
         <h1 class="doc-title">${docTitle}</h1>
       </div>
       <div class="meta-panel">
         <div class="meta-row"><span class="meta-k">${numberLabel}</span><span class="meta-v">${escapeHtml(data.invoiceNumber)}</span></div>
-        <div class="meta-row"><span class="meta-k">${t(TranslationKey.date)}</span><span class="meta-v">${fd(data.date)}</span></div>
-        ${dueDateHtml}
+        <div class="meta-row"><span class="meta-k">${isReceipt ? t(TranslationKey.paymentDate) : t(TranslationKey.date)}</span><span class="meta-v">${fd(data.date)}</span></div>
+        ${secondaryDateHtml}
       </div>
     </div>
 
@@ -501,7 +581,7 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
         <table class="totals-table">
           ${totalRows.join("\n")}
           <tr class="grand-total">
-            <td>${isQuote ? t(TranslationKey.grandTotal) : t(TranslationKey.totalDue)}</td>
+            <td>${isReceipt ? t(TranslationKey.amountReceived) : isQuote ? t(TranslationKey.grandTotal) : t(TranslationKey.totalDue)}</td>
             <td>${fc(data.grandTotal)}</td>
           </tr>
         </table>
