@@ -32,6 +32,7 @@ export function invoiceToTemplateData(invoice: InvoiceWithItems): InvoiceTemplat
       address: invoice.client_address as Record<string, unknown> | undefined,
     },
     invoiceNumber: invoice.invoice_number,
+    jobReference: invoice.job_reference?.trim() || undefined,
     date: invoice.date.toISOString().split("T")[0]!,
     dueDate: invoice.due_date?.toISOString().split("T")[0],
     currency: invoice.currency,

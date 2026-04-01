@@ -118,6 +118,16 @@ export default function NewInvoicePage() {
   const [taxInclusive, setTaxInclusive] = useState(false);
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
+  /** Persist API link: receipt → source invoice; shared job_reference across the chain. */
+  const [receiptSourceInvoiceId, setReceiptSourceInvoiceId] = useState<string | null>(null);
+  const [chainJobReference, setChainJobReference] = useState("");
+
+  useEffect(() => {
+    if (!isReceipt || !fromSourceInvoiceId) {
+      setReceiptSourceInvoiceId(null);
+      setChainJobReference("");
+    }
+  }, [isReceipt, fromSourceInvoiceId]);
 
   useEffect(() => {
     if (!organization?.id) return;
@@ -203,6 +213,8 @@ export default function NewInvoicePage() {
         const paymentLine = invNum ? `Payment for invoice ${invNum}` : "Payment for invoice";
         setNotes(prevNotes ? `${paymentLine}\n\n${prevNotes}` : paymentLine);
         setTerms(String(inv.terms || ""));
+        setReceiptSourceInvoiceId(fromSourceInvoiceId);
+        setChainJobReference(String(inv.job_reference || inv.invoice_number || ""));
         toast.success("Receipt prefilled from invoice — review and save");
       } catch {
         if (!cancelled) toast.error("Could not load invoice");
@@ -313,7 +325,9 @@ export default function NewInvoicePage() {
       ? { line1: clientAddressLine1, city: clientCity, country: clientCountry } : undefined,
     items: items.map((it) => ({ description: it.description, quantity: it.quantity, unit_price: it.unit_price, tax_percent: it.tax_percent || undefined })),
     discountAmount, shippingAmount, taxInclusive, notes: notes || undefined, terms: terms || undefined,
-  }), [organization?.id, documentType, invoiceNumber, date, dueDate, currency, language, companyName, companyEmail, companyPhone, companyVat, companyLogo, clientName, clientEmail, clientPhone, clientTaxNumber, clientAddressLine1, clientCity, clientCountry, items, discountAmount, shippingAmount, taxInclusive, notes, terms]);
+    ...(isReceipt && receiptSourceInvoiceId ? { sourceDocumentId: receiptSourceInvoiceId } : {}),
+    ...(chainJobReference.trim() ? { jobReference: chainJobReference.trim() } : {}),
+  }), [organization?.id, documentType, invoiceNumber, date, dueDate, currency, language, companyName, companyEmail, companyPhone, companyVat, companyLogo, clientName, clientEmail, clientPhone, clientTaxNumber, clientAddressLine1, clientCity, clientCountry, items, discountAmount, shippingAmount, taxInclusive, notes, terms, isReceipt, receiptSourceInvoiceId, chainJobReference]);
 
   async function handleSave() {
     if (!organization?.id) return;
@@ -374,6 +388,19 @@ export default function NewInvoicePage() {
           </div>
         </div>
       </div>
+
+      {receiptSourceInvoiceId && chainJobReference.trim() && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4">
+          <div className="rounded-xl border border-emerald-200/70 bg-gradient-to-r from-emerald-500/[0.07] to-teal-500/[0.05] dark:border-emerald-900/45 dark:from-emerald-950/25 dark:to-teal-950/15 px-4 py-3">
+            <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">Connected to your invoice</p>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              PDFs will show the same client reference as your invoice (
+              <span className="font-mono font-semibold text-foreground">{chainJobReference.trim()}</span>
+              ) while this receipt keeps its own number.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 mt-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

@@ -830,6 +830,13 @@ model invoice {
   /// When the recipient read the invoice PDF on WhatsApp (read receipt), if available.
   whatsapp_pdf_seen_at DateTime?    @db.Timestamptz(6)
 
+  /// Invoice converted from this quote, or receipt issued for this invoice.
+  source_document_id String?
+  source_document    invoice?     @relation("InvoiceDocumentChain", fields: [source_document_id], references: [id], onDelete: SetNull)
+  derived_documents  invoice[]    @relation("InvoiceDocumentChain")
+  /// Same value on quote, converted invoice, and receipts so clients see one reference across the chain.
+  job_reference      String?      @db.VarChar(120)
+
   created_at         DateTime       @default(now()) @db.Timestamptz(6)
   updated_at         DateTime       @updatedAt @db.Timestamptz(6)
 
@@ -840,6 +847,7 @@ model invoice {
   @@index([status])
   @@index([invoice_number, organization_id])
   @@index([document_type])
+  @@index([organization_id, job_reference])
 }
 
 /// Recurring invoice: each run builds a new invoice from template_invoice OR template_payload JSON.

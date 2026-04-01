@@ -17,15 +17,16 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
 import {
   ArrowLeft, FileDown, Pencil, Trash2, Loader2, Send,
   CheckCircle, MoreHorizontal, RefreshCw, FileText, Clock,
   AlertCircle, Building2, User, Calendar, Receipt, ExternalLink,
-  ArrowRightLeft, FileCheck, Mail, MessageCircle, Eye,
+  ArrowRightLeft, FileCheck, Mail, MessageCircle, Eye, GitBranch, ChevronRight, ShoppingBag, Banknote,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { InvoicePdfPreview } from "./invoice-pdf-preview";
 import {
   Dialog,
@@ -51,6 +52,25 @@ const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secon
   rejected: { label: "Rejected", variant: "destructive", icon: AlertCircle },
 };
 
+type DocumentChainRow = {
+  id: string;
+  document_type: string;
+  invoice_number: string;
+  status: string;
+  job_reference: string | null;
+  grand_total: string | number;
+  currency: string;
+  client_name: string;
+  created_at: string;
+};
+
+function chainStepIcon(documentType: string) {
+  const cls = "h-4 w-4";
+  if (documentType === "quote") return <FileText className={cls} />;
+  if (documentType === "receipt") return <Banknote className={cls} />;
+  return <ShoppingBag className={cls} />;
+}
+
 export default function InvoiceViewPage() {
   const { data: session, isPending: sessionPending } = useSession();
   const { organization, loading: orgLoading } = useOrganization();
@@ -60,6 +80,7 @@ export default function InvoiceViewPage() {
   const invoiceId = params.id as string;
 
   const [invoice, setInvoice] = useState<any>(null);
+  const [documentChain, setDocumentChain] = useState<DocumentChainRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -77,19 +98,42 @@ export default function InvoiceViewPage() {
   const [markSentAfterWa, setMarkSentAfterWa] = useState(true);
   const [sendingWa, setSendingWa] = useState(false);
 
+  const refreshInvoice = useCallback(
+    async (silent?: boolean) => {
+      if (!invoiceId) return;
+      if (!silent) setLoading(true);
+      try {
+        const res = (await api.invoices.get(invoiceId)) as {
+          invoice?: any;
+          documentChain?: DocumentChainRow[];
+        };
+        setInvoice(res.invoice ?? null);
+        setDocumentChain(Array.isArray(res.documentChain) ? res.documentChain : []);
+      } catch {
+        if (!silent) toast.error("Failed to load document");
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [invoiceId]
+  );
+
+  useEffect(() => {
+    refreshInvoice(false);
+  }, [refreshInvoice]);
+
   useEffect(() => {
     if (!invoiceId) return;
-    (async () => {
-      try {
-        const res = (await api.invoices.get(invoiceId)) as any;
-        setInvoice(res.invoice);
-      } catch {
-        toast.error("Failed to load document");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [invoiceId]);
+    const tick = () => {
+      if (document.visibilityState === "visible") refreshInvoice(true);
+    };
+    const id = setInterval(tick, 16_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [invoiceId, refreshInvoice]);
 
   useEffect(() => {
     if (sendEmailOpen && invoice?.client_email) {
@@ -112,8 +156,7 @@ export default function InvoiceViewPage() {
     setGenerating(true);
     try {
       await api.invoices.generatePdf(invoiceId);
-      const res = (await api.invoices.get(invoiceId)) as any;
-      setInvoice(res.invoice);
+      await refreshInvoice(true);
       toast.success("PDF generated successfully");
     } catch {
       toast.error("Failed to generate PDF");
@@ -124,8 +167,8 @@ export default function InvoiceViewPage() {
 
   async function handleStatusChange(status: string) {
     try {
-      const res = (await api.invoices.updateStatus(invoiceId, status)) as any;
-      setInvoice(res.invoice);
+      await api.invoices.updateStatus(invoiceId, status);
+      await refreshInvoice(true);
       toast.success(`${docLabel} marked as ${status}`);
     } catch {
       toast.error("Failed to update status");
@@ -159,7 +202,7 @@ export default function InvoiceViewPage() {
         markSent: markSentAfterWa,
       })) as { success?: boolean; invoice?: any; error?: string };
       if (!res?.success) throw new Error(res?.error || "Send failed");
-      if (res.invoice) setInvoice(res.invoice);
+      await refreshInvoice(true);
       toast.success(`${docLabel} sent on WhatsApp`);
       setSendWaOpen(false);
       setSendWaMessage("");
@@ -185,7 +228,7 @@ export default function InvoiceViewPage() {
         markSent: markSentAfterEmail,
       })) as { success?: boolean; invoice?: any; error?: string };
       if (!res?.success) throw new Error(res?.error || "Send failed");
-      if (res.invoice) setInvoice(res.invoice);
+      await refreshInvoice(true);
       toast.success(`${docLabel} emailed to ${to}`);
       setSendEmailOpen(false);
       setSendMessage("");
@@ -258,6 +301,12 @@ export default function InvoiceViewPage() {
             <p className="text-muted-foreground text-xs sm:text-sm truncate">
               {invoice.client_name} &middot; {new Date(invoice.date).toLocaleDateString()}
             </p>
+            {invoice.job_reference &&
+              String(invoice.job_reference).trim() !== String(invoice.invoice_number).trim() && (
+                <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium mt-1 truncate" title={String(invoice.job_reference)}>
+                  Same client reference across this chain: {String(invoice.job_reference).trim()}
+                </p>
+              )}
           </div>
           <div className="flex gap-2 shrink-0">
             {isQuote && invoice.status !== "accepted" && (
@@ -269,7 +318,7 @@ export default function InvoiceViewPage() {
             {isInvoiceDoc && (
               <Button size="sm" variant="outline" asChild className="hidden sm:flex">
                 <Link href={`/${slug}/invoices/new?type=receipt&from=${invoiceId}`}>
-                  <Receipt className="h-4 w-4 mr-2" />
+                  <Banknote className="h-4 w-4 mr-2" />
                   Create receipt
                 </Link>
               </Button>
@@ -368,7 +417,7 @@ export default function InvoiceViewPage() {
                 {isInvoiceDoc && (
                   <DropdownMenuItem asChild className="sm:hidden">
                     <Link href={`/${slug}/invoices/new?type=receipt&from=${invoiceId}`}>
-                      <Receipt className="h-4 w-4 mr-2" /> Create receipt
+                      <Banknote className="h-4 w-4 mr-2" /> Create receipt
                     </Link>
                   </DropdownMenuItem>
                 )}
@@ -535,6 +584,96 @@ export default function InvoiceViewPage() {
               </CardContent>
             </Card>
 
+            {documentChain.length > 1 && (
+              <Card className="border-violet-200/60 dark:border-violet-900/50 bg-gradient-to-br from-violet-500/[0.07] via-background to-background shadow-sm overflow-hidden">
+                <CardHeader className="pb-2 space-y-1">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/15 text-violet-700 dark:text-violet-300">
+                      <GitBranch className="h-4 w-4" />
+                    </span>
+                    Document journey
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Every step keeps the same reference on PDFs and in your list, so quote, invoice, and receipt always line up.
+                  </p>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">
+                    {documentChain.map((d, i) => {
+                      const active = d.id === invoiceId;
+                      const st = STATUS_CONFIG[d.status] ?? STATUS_CONFIG.draft!;
+                      const StIcon = st.icon;
+                      const isQ = d.document_type === "quote";
+                      const isR = d.document_type === "receipt";
+                      const label = isQ ? "Quote" : isR ? "Receipt" : "Invoice";
+                      const ccy = d.currency || "ZAR";
+                      let chainAmt: string;
+                      try {
+                        chainAmt = new Intl.NumberFormat("en-ZA", { style: "currency", currency: ccy }).format(
+                          Number(d.grand_total)
+                        );
+                      } catch {
+                        chainAmt = `${ccy} ${Number(d.grand_total).toFixed(2)}`;
+                      }
+                      return (
+                        <Fragment key={d.id}>
+                          <Link
+                            href={`/${slug}/invoices/${d.id}`}
+                            className={cn(
+                              "flex rounded-xl border p-3 transition-all hover:border-violet-400/50 hover:shadow-md min-w-0 sm:flex-1 sm:min-w-[148px]",
+                              active
+                                ? "border-violet-500/60 bg-violet-500/[0.08] ring-2 ring-violet-500/20"
+                                : "border-border/80 bg-card/80"
+                            )}
+                          >
+                            <div className="flex flex-1 items-start gap-2 min-w-0">
+                              <span
+                                className={cn(
+                                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                                  isQ
+                                    ? "bg-blue-500/15 text-blue-700 dark:text-blue-300"
+                                    : isR
+                                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                      : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                                )}
+                              >
+                                {chainStepIcon(d.document_type)}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{label}</p>
+                                <p className="font-mono text-xs font-semibold truncate">{d.invoice_number}</p>
+                                <Badge variant={st.variant} className={cn("text-[10px] h-5 gap-0.5 mt-1.5", st.className)}>
+                                  <StIcon className="h-2.5 w-2.5" /> {st.label}
+                                </Badge>
+                                <p className="text-[10px] text-muted-foreground mt-1.5 tabular-nums font-medium">{chainAmt}</p>
+                              </div>
+                            </div>
+                          </Link>
+                          {i < documentChain.length - 1 && (
+                            <>
+                              <div className="flex justify-center py-1 sm:hidden" aria-hidden>
+                                <div className="h-px w-12 bg-gradient-to-r from-transparent via-border to-transparent" />
+                              </div>
+                              <div className="hidden sm:flex items-center self-center shrink-0 text-muted-foreground/40 px-1">
+                                <ChevronRight className="h-5 w-5" aria-hidden />
+                              </div>
+                            </>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </div>
+                  {isInvoiceDoc &&
+                    invoice.status === "paid" &&
+                    !documentChain.some((d) => d.document_type === "receipt") && (
+                      <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/60">
+                        Paid in full — add a receipt when you want a formal payment confirmation in the same reference.
+                      </p>
+                    )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Convert to invoice CTA for quotes */}
             {isQuote && invoice.status !== "accepted" && (
               <Card className="border-emerald-300/40 bg-emerald-50/30 dark:bg-emerald-950/10">
@@ -556,11 +695,11 @@ export default function InvoiceViewPage() {
                 <CardContent className="pt-4 pb-4">
                   <p className="text-sm font-medium mb-1">Payment received?</p>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Create a receipt with the same line items and totals as this invoice. You can edit before saving.
+                    Same line items, totals, and client reference as this invoice — your receipt number stays unique while the shared reference matches the quote and invoice.
                   </p>
                   <Button size="sm" variant="outline" asChild className="w-full border-amber-300/60 hover:bg-amber-50 dark:hover:bg-amber-950/30">
                     <Link href={`/${slug}/invoices/new?type=receipt&from=${invoiceId}`}>
-                      <Receipt className="h-4 w-4 mr-2" />
+                      <Banknote className="h-4 w-4 mr-2" />
                       Create receipt from invoice
                     </Link>
                   </Button>

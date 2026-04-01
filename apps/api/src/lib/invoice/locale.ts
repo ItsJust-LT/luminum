@@ -31,6 +31,7 @@ export const TranslationKey = {
   thankYouQuote: "thank_you_quote",
   thankYouReceipt: "thank_you_receipt",
   paymentConfirmed: "payment_confirmed",
+  jobReference: "job_reference",
 } as const;
 
 type TranslationMap = Record<string, string>;
@@ -69,6 +70,7 @@ const translations: Record<string, TranslationMap> = {
     thank_you_quote: "Thank you for considering our services!",
     thank_you_receipt: "Thank you — this confirms payment was received.",
     payment_confirmed: "Payment confirmed",
+    job_reference: "Reference",
   },
   es: {
     invoice: "FACTURA", quote: "COTIZACIÓN",

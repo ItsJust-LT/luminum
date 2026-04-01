@@ -20,6 +20,8 @@ export interface InvoiceTemplateData {
     address?: { line1?: string; line2?: string; city?: string; region?: string; zip?: string; country?: string };
   };
   invoiceNumber: string;
+  /** Shared across quote → invoice → receipt in a chain (shown on PDF when set). */
+  jobReference?: string;
   date: string;
   dueDate?: string;
   currency: string;
@@ -74,6 +76,13 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
   const toLabel = isReceipt ? t(TranslationKey.receivedFrom) : isQuote ? t(TranslationKey.quoteTo) : t(TranslationKey.billTo);
   const secondaryDateLabel = isQuote ? t(TranslationKey.validUntil) : isReceipt ? t(TranslationKey.paymentDate) : t(TranslationKey.dueDate);
   const thankYou = isReceipt ? t(TranslationKey.thankYouReceipt) : isQuote ? t(TranslationKey.thankYouQuote) : t(TranslationKey.thankYou);
+
+  const jobRefTrim = data.jobReference?.trim() ?? "";
+  const numTrim = data.invoiceNumber.trim();
+  const jobRefRow =
+    jobRefTrim && jobRefTrim !== numTrim
+      ? `<div class="meta-row"><span class="meta-k">${escapeHtml(t(TranslationKey.jobReference))}</span><span class="meta-v">${escapeHtml(jobRefTrim)}</span></div>`
+      : "";
 
   const showQty = data.items.some((i) => i.quantity !== 1);
 
@@ -545,6 +554,7 @@ export function buildInvoiceHtml(data: InvoiceTemplateData): string {
       </div>
       <div class="meta-panel">
         <div class="meta-row"><span class="meta-k">${numberLabel}</span><span class="meta-v">${escapeHtml(data.invoiceNumber)}</span></div>
+        ${jobRefRow}
         <div class="meta-row"><span class="meta-k">${isReceipt ? t(TranslationKey.paymentDate) : t(TranslationKey.date)}</span><span class="meta-v">${fd(data.date)}</span></div>
         ${secondaryDateHtml}
       </div>

@@ -23,6 +23,60 @@ import { getNextInvoiceNumber, type BillingDocumentType } from "../lib/invoice-n
 
 const router = Router();
 
+const documentChainSelect = {
+  id: true,
+  document_type: true,
+  invoice_number: true,
+  status: true,
+  job_reference: true,
+  source_document_id: true,
+  grand_total: true,
+  currency: true,
+  client_name: true,
+  created_at: true,
+} as const;
+
+async function loadDocumentChain(
+  organizationId: string,
+  anchor: { id: string; job_reference: string | null; source_document_id: string | null }
+) {
+  const ref = anchor.job_reference?.trim();
+  if (ref) {
+    return prisma.invoice.findMany({
+      where: { organization_id: organizationId, job_reference: ref },
+      select: documentChainSelect,
+      orderBy: { created_at: "asc" },
+    });
+  }
+  let rootId = anchor.id;
+  for (;;) {
+    const row = await prisma.invoice.findFirst({
+      where: { id: rootId, organization_id: organizationId },
+      select: { id: true, source_document_id: true },
+    });
+    if (!row?.source_document_id) break;
+    rootId = row.source_document_id;
+  }
+  const out: Prisma.invoiceGetPayload<{ select: typeof documentChainSelect }>[] = [];
+  const visit = async (id: string) => {
+    const row = await prisma.invoice.findFirst({
+      where: { id, organization_id: organizationId },
+      select: documentChainSelect,
+    });
+    if (!row) return;
+    out.push(row);
+    const kids = await prisma.invoice.findMany({
+      where: { source_document_id: id, organization_id: organizationId },
+      select: { id: true },
+      orderBy: { created_at: "asc" },
+    });
+    for (const k of kids) await visit(k.id);
+  };
+  await visit(rootId);
+  out.sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
+  return out;
+}
+
 function parseBillingDocumentType(raw: unknown): BillingDocumentType {
   const s = String(raw ?? "invoice").toLowerCase();
   if (s === "quote") return "quote";
@@ -243,12 +297,21 @@ router.get("/:id", async (req: Request, res: Response) => {
     const id = paramId(req);
     const invoice = await prisma.invoice.findUnique({
       where: { id },
-      include: { items: { orderBy: { sort_order: "asc" } }, organization: { select: { id: true, name: true, currency: true } } },
+      include: {
+        items: { orderBy: { sort_order: "asc" } },
+        organization: { select: { id: true, name: true, currency: true } },
+      },
     });
     if (!invoice) return res.status(404).json({ error: "Invoice not found" });
     if (!(await requireOrgPermissions(invoice.organization_id, req.user, res, ["invoices:read"]))) return;
 
-    res.json({ success: true, invoice });
+    const documentChain = await loadDocumentChain(invoice.organization_id, {
+      id: invoice.id,
+      job_reference: invoice.job_reference,
+      source_document_id: invoice.source_document_id,
+    });
+
+    res.json({ success: true, invoice, documentChain });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -295,11 +358,40 @@ router.post("/", async (req: Request, res: Response) => {
       (await getNextInvoiceNumber(organizationId, documentType));
     const initialStatus = "draft";
 
+    const sourceDocumentIdRaw = body.sourceDocumentId != null ? String(body.sourceDocumentId).trim() : "";
+    const sourceDocumentId = documentType === "receipt" && sourceDocumentIdRaw ? sourceDocumentIdRaw : null;
+
+    if (documentType === "receipt" && sourceDocumentId) {
+      const srcInv = await prisma.invoice.findFirst({
+        where: { id: sourceDocumentId, organization_id: organizationId },
+        select: { document_type: true },
+      });
+      if (!srcInv) return res.status(400).json({ error: "Source invoice not found" });
+      if (srcInv.document_type !== "invoice") {
+        return res.status(400).json({ error: "Receipts must reference an invoice document" });
+      }
+    }
+
+    let jobRef =
+      body.jobReference != null && String(body.jobReference).trim()
+        ? String(body.jobReference).trim().slice(0, 120)
+        : "";
+    if (!jobRef && sourceDocumentId) {
+      const src = await prisma.invoice.findFirst({
+        where: { id: sourceDocumentId, organization_id: organizationId },
+        select: { job_reference: true, invoice_number: true },
+      });
+      if (src) jobRef = (src.job_reference?.trim() || src.invoice_number).slice(0, 120);
+    }
+    if (!jobRef) jobRef = invoice_number.slice(0, 120);
+
     const invoice = await prisma.invoice.create({
       data: {
         organization_id: organizationId,
         document_type: documentType,
         invoice_number,
+        source_document_id: sourceDocumentId,
+        job_reference: jobRef,
         status: initialStatus,
         date: body.date ? new Date(body.date) : new Date(),
         due_date: body.dueDate ? new Date(body.dueDate) : null,
@@ -419,6 +511,11 @@ router.patch("/:id", async (req: Request, res: Response) => {
     if (customAdj !== undefined) updateData.custom_adjustments = customAdj.length > 0 ? (customAdj as unknown as Prisma.InputJsonValue) : Prisma.JsonNull;
     if (body.notes !== undefined) updateData.notes = body.notes || null;
     if (body.terms !== undefined) updateData.terms = body.terms || null;
+    if (body.jobReference !== undefined) {
+      updateData.job_reference = body.jobReference
+        ? String(body.jobReference).trim().slice(0, 120) || null
+        : null;
+    }
 
     if (items) {
       await prisma.invoice_item.deleteMany({ where: { invoice_id: id } });
@@ -775,11 +872,15 @@ router.post("/:id/convert-to-invoice", async (req: Request, res: Response) => {
 
     const invoice_number = await getNextInvoiceNumber(quote.organization_id, "invoice");
 
+    const jobRef = (quote.job_reference?.trim() || quote.invoice_number).slice(0, 120);
+
     const invoice = await prisma.invoice.create({
       data: {
         organization_id: quote.organization_id,
         document_type: "invoice",
         invoice_number,
+        source_document_id: quote.id,
+        job_reference: jobRef,
         status: "draft",
         date: new Date(),
         due_date: quote.due_date,
