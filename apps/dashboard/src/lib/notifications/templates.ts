@@ -192,6 +192,42 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
     icon: "🔧",
     color: "orange",
     actionText: "View Details"
+  },
+
+  invoice_created: {
+    type: "invoice_created",
+    title: "New invoice",
+    message: "Invoice {invoiceNumber} for {organizationName}",
+    priority: "normal",
+    category: "organization",
+    icon: "📄",
+    iconKey: "FileText",
+    color: "blue",
+    actionText: "View invoice"
+  },
+
+  invoice_paid: {
+    type: "invoice_paid",
+    title: "Invoice paid",
+    message: "Invoice {invoiceNumber} was marked paid",
+    priority: "normal",
+    category: "organization",
+    icon: "✅",
+    iconKey: "CircleDollarSign",
+    color: "green",
+    actionText: "View invoice"
+  },
+
+  blog_post_published: {
+    type: "blog_post_published",
+    title: "Blog post published",
+    message: "{blogPostTitle}",
+    priority: "low",
+    category: "organization",
+    icon: "📰",
+    iconKey: "Newspaper",
+    color: "blue",
+    actionText: "View post"
   }
 }
 

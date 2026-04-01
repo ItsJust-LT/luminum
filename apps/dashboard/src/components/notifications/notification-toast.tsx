@@ -119,9 +119,15 @@ export function NotificationToast({ notification, onClose, onAction }: Notificat
                   {notification.actions.map((action) => (
                     <Button
                       key={action.id}
-                      variant={action.style === 'primary' ? 'default' : 'outline'}
+                      variant={
+                        action.style === 'primary' || action.variant === 'primary'
+                          ? 'default'
+                          : 'outline'
+                      }
                       size="sm"
-                      onClick={() => handleAction(action.action)}
+                      onClick={() =>
+                        handleAction(action.action ?? action.id ?? 'open')
+                      }
                       className="text-xs h-7"
                     >
                       {action.label}

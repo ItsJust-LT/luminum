@@ -33,7 +33,9 @@ self.addEventListener("push", function (event) {
     dir: "auto",
     lang: "en"
   };
-  options.data = data.data || {};
+  const innerData = data.data && typeof data.data === "object" ? data.data : {};
+  options.data = { ...innerData };
+  if (data.url) options.data.url = data.url;
   if (data.image) options.image = data.image;
   if (data.color) options.color = data.color;
   if (data.actions && Array.isArray(data.actions)) options.actions = data.actions;

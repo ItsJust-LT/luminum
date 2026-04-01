@@ -130,6 +130,14 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeTextColor: 'text-white',
       icon: '📧',
     },
+    'member_role_changed': {
+      color: 'text-purple-700',
+      bgColor: 'bg-purple-50',
+      borderColor: 'border-purple-200',
+      badgeColor: 'bg-purple-500',
+      badgeTextColor: 'text-white',
+      icon: '🔄',
+    },
     'new_support_ticket': {
       color: 'text-blue-700',
       bgColor: 'bg-blue-50',
@@ -153,6 +161,30 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '🏢',
+    },
+    'invoice_created': {
+      color: 'text-blue-700',
+      bgColor: 'bg-blue-50',
+      borderColor: 'border-blue-200',
+      badgeColor: 'bg-blue-500',
+      badgeTextColor: 'text-white',
+      icon: '📄',
+    },
+    'invoice_paid': {
+      color: 'text-green-700',
+      bgColor: 'bg-green-50',
+      borderColor: 'border-green-200',
+      badgeColor: 'bg-green-500',
+      badgeTextColor: 'text-white',
+      icon: '💵',
+    },
+    'blog_post_published': {
+      color: 'text-indigo-700',
+      bgColor: 'bg-indigo-50',
+      borderColor: 'border-indigo-200',
+      badgeColor: 'bg-indigo-500',
+      badgeTextColor: 'text-white',
+      icon: '📰',
     },
   }
 

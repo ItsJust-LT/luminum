@@ -22,6 +22,10 @@ export type NotificationType =
   // System events
   | "system_announcement"
   | "maintenance_notice"
+  // Invoice / blog (emitters may land later)
+  | "invoice_created"
+  | "invoice_paid"
+  | "blog_post_published"
 
 export type NotificationPriority = "low" | "normal" | "high" | "urgent"
 
@@ -30,6 +34,17 @@ export type NotificationCategory = "organization" | "forms" | "admin" | "system"
 export interface NotificationData {
   // Common fields
   url?: string
+  iconKey?: string
+  actions?: Array<{
+    id: string
+    label: string
+    variant?: "primary" | "secondary"
+    kind?: "navigate" | "api"
+    href?: string
+    method?: "POST"
+    path?: string
+    body?: Record<string, unknown>
+  }>
   organizationId?: string
   organizationName?: string
   websiteId?: string
@@ -82,6 +97,10 @@ export interface NotificationData {
   subject?: string
   /** Cached avatar URL for sender (from getAvatarForEmail). Use in notifications to avoid extra lookup. */
   fromAvatarUrl?: string
+  invoiceId?: string
+  invoiceNumber?: string
+  blogPostId?: string
+  blogPostTitle?: string
 }
 
 export interface EnhancedNotification {
@@ -105,6 +124,8 @@ export interface NotificationTemplate {
   priority: NotificationPriority
   category: NotificationCategory
   icon: string
+  /** Lucide icon name (PascalCase), when set. */
+  iconKey?: string
   color: string
   actionText?: string
 }

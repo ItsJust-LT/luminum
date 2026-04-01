@@ -7,6 +7,7 @@ import type {
 import {
   getNotificationTemplate,
   formatNotificationMessage,
+  buildNotificationActions,
 } from "./templates.js";
 import { auth } from "../../auth/config.js";
 import { broadcastToUser } from "../realtime-ws.js";
@@ -52,12 +53,107 @@ async function getAdminUserIds(): Promise<string[]> {
   }
 }
 
+/** Delivered in-app even when the user turned off in-app (safety-critical notices). */
+const IN_APP_BYPASS_TYPES: NotificationType[] = [
+  "system_announcement",
+  "maintenance_notice",
+];
+
+function disabledTypesList(raw: unknown): string[] {
+  return Array.isArray(raw) ? (raw as string[]) : [];
+}
+
+function shouldDeliverInApp(
+  type: NotificationType,
+  prefs: { in_app_enabled: boolean; disabled_types: unknown } | undefined
+): boolean {
+  const disabled = disabledTypesList(prefs?.disabled_types);
+  if (disabled.includes(type)) return false;
+  if (prefs?.in_app_enabled !== false) return true;
+  return IN_APP_BYPASS_TYPES.includes(type);
+}
+
+function deriveDedupeKey(
+  type: NotificationType,
+  data: NotificationData,
+  explicit?: string | null
+): string | null {
+  if (explicit != null && explicit !== "") return explicit;
+  switch (type) {
+    case "email_received":
+      return data.emailId ? `email_received:${data.emailId}` : null;
+    case "form_submission":
+      return data.formSubmissionId
+        ? `form_submission:${data.formSubmissionId}`
+        : null;
+    case "new_support_ticket":
+      return data.ticketId ? `new_support_ticket:${data.ticketId}` : null;
+    case "support_ticket_resolved":
+    case "support_ticket_updated":
+      return data.ticketId ? `${type}:${data.ticketId}` : null;
+    case "support_message":
+      return null;
+    case "member_joined":
+      return data.organizationId && data.memberEmail
+        ? `member_joined:${data.organizationId}:${data.memberEmail}`
+        : null;
+    case "member_left":
+      return data.organizationId && data.memberEmail
+        ? `member_left:${data.organizationId}:${data.memberEmail}`
+        : null;
+    case "member_invited":
+      return data.organizationId && data.invitationEmail
+        ? `member_invited:${data.organizationId}:${data.invitationEmail}`
+        : null;
+    case "invitation_accepted":
+      return data.organizationId && data.memberEmail
+        ? `invitation_accepted:${data.organizationId}:${data.memberEmail}`
+        : null;
+    case "invitation_cancelled":
+      return data.organizationId && data.invitationEmail
+        ? `invitation_cancelled:${data.organizationId}:${data.invitationEmail}`
+        : null;
+    case "member_role_changed":
+      return data.organizationId && data.memberEmail
+        ? `member_role_changed:${data.organizationId}:${data.memberEmail}`
+        : null;
+    case "new_user_registered":
+      return data.newUserEmail
+        ? `new_user_registered:${data.newUserEmail}`
+        : null;
+    case "organization_created":
+    case "organization_deleted":
+      return data.organizationId ? `${type}:${data.organizationId}` : null;
+    case "system_announcement":
+      return data.announcementId
+        ? `system_announcement:${data.announcementId}`
+        : null;
+    case "maintenance_notice":
+      return data.maintenanceStart && data.maintenanceEnd
+        ? `maintenance_notice:${data.maintenanceStart}:${data.maintenanceEnd}`
+        : null;
+    case "invoice_created":
+    case "invoice_paid":
+      return data.invoiceId ? `${type}:${data.invoiceId}` : null;
+    case "blog_post_published":
+      return data.blogPostId && data.organizationId
+        ? `blog_post_published:${data.organizationId}:${data.blogPostId}`
+        : data.blogPostId
+          ? `blog_post_published:${data.blogPostId}`
+          : null;
+    default:
+      return null;
+  }
+}
+
 export interface SendNotificationParams {
   type: NotificationType;
   data: NotificationData;
   target: NotificationTarget;
   customTitle?: string;
   customMessage?: string;
+  /** Idempotency key per logical event; falls back to type-specific derivation when omitted. */
+  dedupeKey?: string | null;
 }
 
 export async function sendNotification({
@@ -66,6 +162,7 @@ export async function sendNotification({
   target,
   customTitle,
   customMessage,
+  dedupeKey: explicitDedupeKey,
 }: SendNotificationParams) {
   try {
     const template = getNotificationTemplate(type);
@@ -116,6 +213,7 @@ export async function sendNotification({
     }
 
     const defaultUrl = await getDefaultUrl(type, enrichedData);
+    const resolvedUrl = enrichedData.url || defaultUrl;
     const title =
       customTitle ||
       formatNotificationMessage(
@@ -125,26 +223,60 @@ export async function sendNotification({
     const message =
       customMessage || formatNotificationMessage(template, enrichedData);
 
-    const inserted = await prisma.notifications.createManyAndReturn({
-      data: userIds.map((userId) => ({
-        user_id: userId,
-        type,
-        title,
-        message,
-        data: {
-          ...enrichedData,
-          url: enrichedData.url || defaultUrl,
-          priority: template.priority,
-          category: template.category,
-          icon: template.icon,
-          color: template.color,
-          actionText: template.actionText,
-        },
-        read: false,
-      })),
-    });
+    const dedupeKey = deriveDedupeKey(type, enrichedData, explicitDedupeKey);
+    const organizationIdCol = enrichedData.organizationId ?? null;
+    const actions = buildNotificationActions(
+      type,
+      template,
+      enrichedData,
+      resolvedUrl
+    );
 
-    if (inserted && inserted.length > 0) {
+    const prefsRows = await prisma.notification_preferences.findMany({
+      where: { user_id: { in: userIds } },
+    });
+    const prefsByUser = new Map(prefsRows.map((p) => [p.user_id, p]));
+
+    const payloadData = {
+      ...enrichedData,
+      url: resolvedUrl,
+      priority: template.priority,
+      category: template.category,
+      icon: template.icon,
+      iconKey: template.iconKey,
+      color: template.color,
+      actionText: template.actionText,
+      actions,
+    };
+
+    const inserted: Awaited<ReturnType<typeof prisma.notifications.create>>[] =
+      [];
+
+    for (const userId of userIds) {
+      const prefs = prefsByUser.get(userId);
+      if (!shouldDeliverInApp(type, prefs)) continue;
+
+      try {
+        const row = await prisma.notifications.create({
+          data: {
+            user_id: userId,
+            organization_id: organizationIdCol,
+            dedupe_key: dedupeKey,
+            type,
+            title,
+            message,
+            data: payloadData as object,
+            read: false,
+          },
+        });
+        inserted.push(row);
+      } catch (e: any) {
+        if (e?.code === "P2002") continue;
+        throw e;
+      }
+    }
+
+    if (inserted.length > 0) {
       await sendPushNotifications(inserted);
 
       for (const notif of inserted) {
@@ -190,8 +322,23 @@ async function sendPushNotifications(notifications: any[]) {
     vapidPrivateKey
   );
 
+  const userIds = [
+    ...new Set(
+      notifications.map((n) => n.user_id).filter(Boolean) as string[]
+    ),
+  ];
+  const prefsRows = await prisma.notification_preferences.findMany({
+    where: { user_id: { in: userIds } },
+  });
+  const prefsByUser = new Map(prefsRows.map((p) => [p.user_id, p]));
+
   for (const notif of notifications) {
     const userId = notif.user_id;
+    const prefs = prefsByUser.get(userId);
+    const pushEnabled = prefs?.push_enabled !== false;
+    const disabled = disabledTypesList(prefs?.disabled_types);
+    if (!pushEnabled || disabled.includes(notif.type)) continue;
+
     const subs = await prisma.device_subscriptions.findMany({
       where: { user_id: userId },
       select: { id: true, subscription: true },
@@ -199,6 +346,27 @@ async function sendPushNotifications(notifications: any[]) {
 
     const branding = await getOrgBranding(notif.data?.organizationId);
     const icon = branding?.logo || DEFAULT_ICON;
+
+    const navActions = (notif.data?.actions || [])
+      .filter(
+        (a: { kind?: string; href?: string; id?: string; label?: string }) =>
+          a.kind === "navigate" && a.href && a.id && a.label
+      )
+      .slice(0, 2)
+      .map((a: { id: string; label: string }) => ({
+        action: a.id,
+        title: a.label,
+      }));
+
+    const openUrl = notif.data?.url || "/dashboard";
+    if (navActions.length === 0) {
+      navActions.push({ action: "open", title: "Open" });
+    }
+
+    const stableTag =
+      notif.dedupe_key && String(notif.dedupe_key).trim() !== ""
+        ? `dedupe:${notif.user_id}:${notif.dedupe_key}`
+        : notif.id;
 
     for (const sub of subs) {
       try {
@@ -210,12 +378,13 @@ async function sendPushNotifications(notifications: any[]) {
           title: notif.title,
           message: notif.message,
           type: notif.type,
-          data: notif.data || {},
-          url: notif.data?.url || "/dashboard",
+          data: { ...(notif.data || {}), url: openUrl },
+          url: openUrl,
           icon,
           badge: icon,
           organizationName: branding?.name || undefined,
-          tag: notif.id,
+          tag: stableTag,
+          actions: navActions,
           timestamp: Date.now(),
         });
         await webpush.sendNotification(subscription, payload);
@@ -285,6 +454,25 @@ async function getDefaultUrl(
     case "support_ticket_updated":
     case "support_ticket_resolved":
       return data.url || `/support/${data.ticketId || ""}`;
+    case "invoice_created":
+    case "invoice_paid": {
+      if (data.organizationId && data.invoiceId) {
+        const slug = await getOrganizationSlug(data.organizationId);
+        return slug
+          ? `/${slug}/invoices/${data.invoiceId}`
+          : "/dashboard";
+      }
+      return "/dashboard";
+    }
+    case "blog_post_published": {
+      if (data.organizationId && data.blogPostId) {
+        const slug = await getOrganizationSlug(data.organizationId);
+        return slug
+          ? `/${slug}/blogs/${data.blogPostId}/edit`
+          : "/dashboard";
+      }
+      return "/dashboard";
+    }
     default:
       return "/dashboard";
   }

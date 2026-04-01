@@ -15,13 +15,21 @@ export interface Notification {
   channel?: string;
   userId?: string;
   organizationId?: string;
+  /** Lucide icon name from server (PascalCase). */
+  iconKey?: string;
 }
 
 export interface NotificationAction {
   id: string;
   label: string;
-  action: string;
+  action?: string;
   style?: 'primary' | 'secondary' | 'destructive';
+  variant?: 'primary' | 'secondary';
+  kind?: 'navigate' | 'api';
+  href?: string;
+  method?: 'POST';
+  path?: string;
+  body?: Record<string, unknown>;
 }
 
 export interface NotificationPreferences {

@@ -174,31 +174,34 @@ model member {
 }
 
 model notifications {
-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id    String?
-  type       String
-  title      String?
-  message    String?
-  data       Json?
-  read       Boolean?  @default(false)
-  created_at DateTime? @default(now()) @db.Timestamp(6)
-  user       user?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String?
+  organization_id String?
+  dedupe_key      String?        @db.VarChar(500)
+  type            String
+  title           String?
+  message         String?
+  data            Json?
+  read            Boolean?       @default(false)
+  created_at      DateTime?      @default(now()) @db.Timestamp(6)
+  user            user?          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization    organization?  @relation(fields: [organization_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
+  @@unique([user_id, dedupe_key], map: "notifications_user_id_dedupe_key_key")
   @@index([user_id, created_at])
+  @@index([user_id, organization_id], map: "idx_notifications_user_organization")
 }
 
 model notification_preferences {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id          String    @unique
-  push_enabled     Boolean   @default(true)
-  in_app_enabled   Boolean   @default(true)
-  email_enabled    Boolean   @default(true)
-  disabled_types   Json?     @db.JsonB // Array of notification types to disable
-  quiet_hours_start String?  @db.VarChar(5) // Format: "HH:MM" in 24h format
-  quiet_hours_end  String?   @db.VarChar(5) // Format: "HH:MM" in 24h format
-  created_at       DateTime? @default(now()) @db.Timestamp(6)
-  updated_at       DateTime? @default(now()) @updatedAt @db.Timestamp(6)
-  user             user      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String    @unique
+  push_enabled   Boolean   @default(true)
+  in_app_enabled Boolean   @default(true)
+  email_enabled  Boolean   @default(true)
+  disabled_types Json?     @db.JsonB // Array of notification types to disable
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @default(now()) @updatedAt @db.Timestamp(6)
+  user           user      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id])
 }
@@ -344,6 +347,7 @@ model organization {
   blog_preview_tokens                                               blog_preview_token[]
   invoices                                                          invoice[]
   invoice_schedules                                                 invoice_schedule[]
+  notifications                                                     notifications[]
 
   @@index([payment_provider], map: "idx_organization_payment_provider")
   @@index([email_domain_id], map: "idx_organization_email_domain_id")

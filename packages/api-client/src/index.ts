@@ -624,11 +624,17 @@ function createApiClient(baseUrl: string = "") {
       post("/api/user-notifications/push-subscription", subscription),
     removePushSubscription: (endpoint: string) =>
       del("/api/user-notifications/push-subscription", { endpoint }),
-    fetch: (cursor?: string, limit = 20) =>
-      get("/api/user-notifications", { cursor, limit }),
-    getUnreadCount: () => get("/api/user-notifications/unread-count"),
+    fetch: (cursor?: string, limit = 20, organizationId?: string) =>
+      get("/api/user-notifications", { cursor, limit, organizationId }),
+    getUnreadCount: (organizationId?: string) =>
+      get(
+        "/api/user-notifications/unread-count",
+        organizationId ? { organizationId } : undefined,
+      ),
     markRead: (id: string) => post(`/api/user-notifications/${id}/read`),
     markAllRead: () => post("/api/user-notifications/read-all"),
+    performAction: (id: string, actionId: string, payload?: Record<string, unknown>) =>
+      post(`/api/user-notifications/${id}/action`, { actionId, payload }),
     markEmailNotificationsRead: (emailId: string) =>
       post("/api/user-notifications/mark-email-read", { emailId }),
     markFormSubmissionNotificationsRead: (formSubmissionId: string) =>

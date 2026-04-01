@@ -14,7 +14,7 @@ router.get("/", async (req: Request, res: Response) => {
     }
     res.json({
       success: true,
-      preferences: { id: prefs.id, userId: prefs.user_id, pushEnabled: prefs.push_enabled, inAppEnabled: prefs.in_app_enabled, emailEnabled: prefs.email_enabled, disabledTypes: (prefs.disabled_types as string[]) || [], quietHoursStart: prefs.quiet_hours_start, quietHoursEnd: prefs.quiet_hours_end, createdAt: prefs.created_at, updatedAt: prefs.updated_at },
+      preferences: { id: prefs.id, userId: prefs.user_id, pushEnabled: prefs.push_enabled, inAppEnabled: prefs.in_app_enabled, emailEnabled: prefs.email_enabled, disabledTypes: (prefs.disabled_types as string[]) || [], createdAt: prefs.created_at, updatedAt: prefs.updated_at },
     });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });
@@ -25,12 +25,12 @@ router.patch("/", async (req: Request, res: Response) => {
     const data = req.body;
     const prefs = await prisma.notification_preferences.upsert({
       where: { user_id: req.user.id },
-      create: { user_id: req.user.id, push_enabled: data.push_enabled ?? true, in_app_enabled: data.in_app_enabled ?? true, email_enabled: data.email_enabled ?? true, disabled_types: data.disabled_types || [], quiet_hours_start: data.quiet_hours_start ?? null, quiet_hours_end: data.quiet_hours_end ?? null },
-      update: { ...(data.push_enabled !== undefined && { push_enabled: data.push_enabled }), ...(data.in_app_enabled !== undefined && { in_app_enabled: data.in_app_enabled }), ...(data.email_enabled !== undefined && { email_enabled: data.email_enabled }), ...(data.disabled_types !== undefined && { disabled_types: data.disabled_types }), ...(data.quiet_hours_start !== undefined && { quiet_hours_start: data.quiet_hours_start }), ...(data.quiet_hours_end !== undefined && { quiet_hours_end: data.quiet_hours_end }) },
+      create: { user_id: req.user.id, push_enabled: data.push_enabled ?? true, in_app_enabled: data.in_app_enabled ?? true, email_enabled: data.email_enabled ?? true, disabled_types: data.disabled_types || [] },
+      update: { ...(data.push_enabled !== undefined && { push_enabled: data.push_enabled }), ...(data.in_app_enabled !== undefined && { in_app_enabled: data.in_app_enabled }), ...(data.email_enabled !== undefined && { email_enabled: data.email_enabled }), ...(data.disabled_types !== undefined && { disabled_types: data.disabled_types }) },
     });
     res.json({
       success: true,
-      preferences: { id: prefs.id, userId: prefs.user_id, pushEnabled: prefs.push_enabled, inAppEnabled: prefs.in_app_enabled, emailEnabled: prefs.email_enabled, disabledTypes: (prefs.disabled_types as string[]) || [], quietHoursStart: prefs.quiet_hours_start, quietHoursEnd: prefs.quiet_hours_end, createdAt: prefs.created_at, updatedAt: prefs.updated_at },
+      preferences: { id: prefs.id, userId: prefs.user_id, pushEnabled: prefs.push_enabled, inAppEnabled: prefs.in_app_enabled, emailEnabled: prefs.email_enabled, disabledTypes: (prefs.disabled_types as string[]) || [], createdAt: prefs.created_at, updatedAt: prefs.updated_at },
     });
   } catch (error: any) { res.json({ success: false, error: error.message }); }
 });

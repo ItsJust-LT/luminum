@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,7 +33,10 @@ export function NotificationPreferencesButton() {
         <DialogHeader>
           <DialogTitle>Notification Preferences</DialogTitle>
           <DialogDescription>
-            Manage how and when you receive notifications
+            Manage how and when you receive notifications.{' '}
+            <Link href="/account/settings/notifications" className="text-primary underline-offset-4 hover:underline">
+              Open full settings
+            </Link>
           </DialogDescription>
         </DialogHeader>
         <NotificationPreferencesPanel onClose={() => setOpen(false)} />

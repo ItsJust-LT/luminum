@@ -1,4 +1,6 @@
 import type {
+  NotificationActionSpec,
+  NotificationData,
   NotificationTemplate,
   NotificationType,
 } from "@luminum/database/types";
@@ -14,6 +16,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "organization",
     icon: "👥",
+    iconKey: "Users",
     color: "green",
     actionText: "View Team",
   },
@@ -24,6 +27,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "organization",
     icon: "👋",
+    iconKey: "UserMinus",
     color: "orange",
     actionText: "View Team",
   },
@@ -35,6 +39,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "low",
     category: "organization",
     icon: "📧",
+    iconKey: "Mail",
     color: "blue",
     actionText: "View Invitations",
   },
@@ -46,6 +51,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "organization",
     icon: "🔄",
+    iconKey: "RefreshCw",
     color: "purple",
     actionText: "View Team",
   },
@@ -57,6 +63,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "organization",
     icon: "✅",
+    iconKey: "CheckCircle",
     color: "green",
     actionText: "View Team",
   },
@@ -68,6 +75,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "low",
     category: "organization",
     icon: "❌",
+    iconKey: "XCircle",
     color: "red",
     actionText: "View Invitations",
   },
@@ -79,6 +87,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "high",
     category: "forms",
     icon: "📝",
+    iconKey: "ClipboardList",
     color: "blue",
     actionText: "View Submission",
   },
@@ -89,6 +98,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "organization",
     icon: "📧",
+    iconKey: "Mail",
     color: "blue",
     actionText: "Open",
   },
@@ -99,6 +109,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "admin",
     icon: "🆕",
+    iconKey: "UserPlus",
     color: "green",
     actionText: "View User",
   },
@@ -109,6 +120,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "admin",
     icon: "🏢",
+    iconKey: "Building2",
     color: "blue",
     actionText: "View Organization",
   },
@@ -119,6 +131,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "high",
     category: "admin",
     icon: "🗑️",
+    iconKey: "Trash2",
     color: "red",
     actionText: "View Details",
   },
@@ -129,6 +142,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "support",
     icon: "🎫",
+    iconKey: "Ticket",
     color: "blue",
     actionText: "View Ticket",
   },
@@ -140,6 +154,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "support",
     icon: "💬",
+    iconKey: "MessageCircle",
     color: "green",
     actionText: "View Message",
   },
@@ -150,6 +165,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "support",
     icon: "✏️",
+    iconKey: "Pencil",
     color: "orange",
     actionText: "View Ticket",
   },
@@ -160,6 +176,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "support",
     icon: "✅",
+    iconKey: "CheckCircle",
     color: "green",
     actionText: "View Ticket",
   },
@@ -170,6 +187,7 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "normal",
     category: "system",
     icon: "📢",
+    iconKey: "Megaphone",
     color: "blue",
     actionText: "Read More",
   },
@@ -181,8 +199,42 @@ export const NOTIFICATION_TEMPLATES: Record<
     priority: "high",
     category: "system",
     icon: "🔧",
+    iconKey: "Wrench",
     color: "orange",
     actionText: "View Details",
+  },
+  invoice_created: {
+    type: "invoice_created",
+    title: "New invoice",
+    message: "Invoice {invoiceNumber} for {organizationName}",
+    priority: "normal",
+    category: "organization",
+    icon: "📄",
+    iconKey: "FileText",
+    color: "blue",
+    actionText: "View invoice",
+  },
+  invoice_paid: {
+    type: "invoice_paid",
+    title: "Invoice paid",
+    message: "Invoice {invoiceNumber} was marked paid",
+    priority: "normal",
+    category: "organization",
+    icon: "✅",
+    iconKey: "CircleDollarSign",
+    color: "green",
+    actionText: "View invoice",
+  },
+  blog_post_published: {
+    type: "blog_post_published",
+    title: "Blog post published",
+    message: "{blogPostTitle}",
+    priority: "low",
+    category: "organization",
+    icon: "📰",
+    iconKey: "Newspaper",
+    color: "blue",
+    actionText: "View post",
   },
 };
 
@@ -207,4 +259,44 @@ export function formatNotificationMessage(
     }
   });
   return message;
+}
+
+export function buildNotificationActions(
+  type: NotificationType,
+  template: NotificationTemplate,
+  data: NotificationData,
+  resolvedUrl: string | undefined
+): NotificationActionSpec[] {
+  const actions: NotificationActionSpec[] = [];
+  if (resolvedUrl) {
+    actions.push({
+      id: "open",
+      label: template.actionText || "Open",
+      variant: "primary",
+      kind: "navigate",
+      href: resolvedUrl,
+    });
+  }
+  if (type === "email_received" && data.emailId) {
+    actions.push({
+      id: "mark_email_read",
+      label: "Mark read",
+      variant: "secondary",
+      kind: "api",
+      method: "POST",
+      path: "/api/user-notifications/mark-email-read",
+      body: { emailId: data.emailId },
+    });
+  }
+  if (type === "form_submission" && data.formSubmissionId) {
+    actions.push({
+      id: "mark_form_read",
+      label: "Mark read",
+      variant: "secondary",
+      kind: "api",
+      path: "/api/user-notifications/mark-form-read",
+      body: { formSubmissionId: data.formSubmissionId },
+    });
+  }
+  return actions;
 }

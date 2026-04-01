@@ -10,6 +10,7 @@ import { useSession } from '@/lib/auth/client';
 import { api } from '@/lib/api';
 import { NotificationType } from '@/lib/types/notifications';
 import { getNotificationTypeStyle } from '@/lib/notifications/utils';
+import { getNotificationIconForBadge } from '@/components/notifications/notification-icons';
 import { Loader2, Check } from 'lucide-react';
 
 interface NotificationPreferencesPanelProps {
@@ -19,7 +20,7 @@ interface NotificationPreferencesPanelProps {
 export function NotificationPreferencesPanel({ onClose }: NotificationPreferencesPanelProps) {
   const { data: session } = useSession();
   const userId = session?.user?.id;
-  
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preferences, setPreferences] = useState({
@@ -27,19 +28,17 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
     inAppEnabled: true,
     emailEnabled: true,
     disabledTypes: [] as string[],
-    quietHoursStart: null as string | null,
-    quietHoursEnd: null as string | null,
   });
 
   useEffect(() => {
     if (userId) {
-      loadPreferences();
+      void loadPreferences();
     }
   }, [userId]);
 
   const loadPreferences = async () => {
     if (!userId) return;
-    
+
     setLoading(true);
     try {
       const result = await api.notificationPreferences.get();
@@ -49,8 +48,6 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
           inAppEnabled: result.preferences.inAppEnabled,
           emailEnabled: result.preferences.emailEnabled,
           disabledTypes: result.preferences.disabledTypes || [],
-          quietHoursStart: result.preferences.quietHoursStart,
-          quietHoursEnd: result.preferences.quietHoursEnd,
         });
       }
     } catch (error) {
@@ -62,7 +59,7 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
 
   const handleSave = async () => {
     if (!userId) return;
-    
+
     setSaving(true);
     try {
       const result = await api.notificationPreferences.update({
@@ -70,12 +67,9 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
         in_app_enabled: preferences.inAppEnabled,
         email_enabled: preferences.emailEnabled,
         disabled_types: preferences.disabledTypes,
-        quiet_hours_start: preferences.quietHoursStart,
-        quiet_hours_end: preferences.quietHoursEnd,
       });
-      
+
       if (result.success) {
-        // Show success feedback
         setTimeout(() => {
           onClose?.();
         }, 500);
@@ -114,6 +108,9 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
     'support_ticket_resolved',
     'system_announcement',
     'maintenance_notice',
+    'invoice_created',
+    'invoice_paid',
+    'blog_post_published',
   ];
 
   if (loading) {
@@ -126,7 +123,6 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
 
   return (
     <div className="space-y-6 py-4">
-      {/* Channel Preferences */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Notification Channels</CardTitle>
@@ -150,9 +146,9 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
               }
             />
           </div>
-          
+
           <Separator />
-          
+
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label htmlFor="in-app-enabled">In-App Notifications</Label>
@@ -168,14 +164,14 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
               }
             />
           </div>
-          
+
           <Separator />
-          
+
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label htmlFor="email-enabled">Email Notifications</Label>
               <p className="text-sm text-muted-foreground">
-                Receive notifications via email
+                Reserved for future email digests
               </p>
             </div>
             <Switch
@@ -189,7 +185,6 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
         </CardContent>
       </Card>
 
-      {/* Notification Types */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Notification Types</CardTitle>
@@ -202,20 +197,24 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
             {notificationTypes.map((type) => {
               const style = getNotificationTypeStyle(type);
               const isEnabled = !preferences.disabledTypes.includes(type);
-              
+
               return (
                 <div
                   key={type}
                   className={`
                     flex items-center justify-between p-3 rounded-lg border
-                    ${isEnabled ? 'border-green-200 bg-green-50/50' : 'border-gray-200 bg-gray-50/50'}
+                    ${isEnabled ? 'border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/20' : 'border-gray-200 bg-gray-50/50 dark:border-border dark:bg-muted/30'}
                   `}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{style.icon}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${style.badgeColor} ${style.badgeTextColor}`}
+                    >
+                      {getNotificationIconForBadge(type, 'h-4 w-4')}
+                    </span>
                     <Label
                       htmlFor={`type-${type}`}
-                      className="text-sm font-medium cursor-pointer"
+                      className="text-sm font-medium cursor-pointer truncate"
                     >
                       {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                     </Label>
@@ -232,57 +231,11 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
         </CardContent>
       </Card>
 
-      {/* Quiet Hours */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Quiet Hours</CardTitle>
-          <CardDescription>
-            Set times when you don't want to receive notifications
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="quiet-start">Start Time</Label>
-              <input
-                id="quiet-start"
-                type="time"
-                value={preferences.quietHoursStart || ''}
-                onChange={(e) =>
-                  setPreferences(prev => ({ ...prev, quietHoursStart: e.target.value || null }))
-                }
-                className="w-full px-3 py-2 border rounded-md"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="quiet-end">End Time</Label>
-              <input
-                id="quiet-end"
-                type="time"
-                value={preferences.quietHoursEnd || ''}
-                onChange={(e) =>
-                  setPreferences(prev => ({ ...prev, quietHoursEnd: e.target.value || null }))
-                }
-                className="w-full px-3 py-2 border rounded-md"
-              />
-            </div>
-          </div>
-          {(preferences.quietHoursStart || preferences.quietHoursEnd) && (
-            <p className="text-sm text-muted-foreground">
-              Notifications will be muted between{' '}
-              {preferences.quietHoursStart || '00:00'} and{' '}
-              {preferences.quietHoursEnd || '23:59'}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Save Button */}
       <div className="flex justify-end gap-2 pt-4 border-t">
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={() => void handleSave()} disabled={saving}>
           {saving ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -299,4 +252,3 @@ export function NotificationPreferencesPanel({ onClose }: NotificationPreference
     </div>
   );
 }
-

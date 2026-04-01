@@ -270,6 +270,14 @@ export default function AccountSettingsPage() {
             </button>
             <h1 className="text-3xl font-bold text-foreground">Account Settings</h1>
             <p className="text-muted-foreground mt-2">Manage your account information and security settings.</p>
+            <p className="mt-3 text-sm">
+              <a
+                href="/account/settings/notifications"
+                className="text-primary hover:underline font-medium"
+              >
+                Notification settings
+              </a>
+            </p>
           </div>
 
           {/* Success/Error Messages */}

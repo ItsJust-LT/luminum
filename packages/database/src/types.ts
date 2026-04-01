@@ -49,7 +49,10 @@ export type NotificationType =
   | "support_ticket_updated"
   | "support_ticket_resolved"
   | "system_announcement"
-  | "maintenance_notice";
+  | "maintenance_notice"
+  | "invoice_created"
+  | "invoice_paid"
+  | "blog_post_published";
 
 export type NotificationPriority = "low" | "normal" | "high" | "urgent";
 
@@ -60,8 +63,24 @@ export type NotificationCategory =
   | "system"
   | "support";
 
+export type NotificationActionKind = "navigate" | "api";
+
+export interface NotificationActionSpec {
+  id: string;
+  label: string;
+  variant: "primary" | "secondary";
+  kind: NotificationActionKind;
+  href?: string;
+  method?: "POST";
+  path?: string;
+  body?: Record<string, unknown>;
+}
+
 export interface NotificationData {
   url?: string;
+  /** Lucide icon name for in-app UI (e.g. "Mail", "Users"). */
+  iconKey?: string;
+  actions?: NotificationActionSpec[];
   organizationId?: string;
   organizationName?: string;
   websiteId?: string;
@@ -99,6 +118,11 @@ export interface NotificationData {
   toEmail?: string;
   subject?: string;
   fromAvatarUrl?: string;
+  /** Invoice / blog (when those features emit events) */
+  invoiceId?: string;
+  invoiceNumber?: string;
+  blogPostId?: string;
+  blogPostTitle?: string;
 }
 
 export interface NotificationTemplate {
@@ -107,7 +131,10 @@ export interface NotificationTemplate {
   message: string;
   priority: NotificationPriority;
   category: NotificationCategory;
+  /** @deprecated Prefer iconKey in UI; kept for older stored rows. */
   icon: string;
+  /** Lucide icon component name (PascalCase). */
+  iconKey: string;
   color: string;
   actionText?: string;
 }
@@ -328,8 +355,6 @@ export interface NotificationPreferencesData {
   in_app_enabled?: boolean;
   email_enabled?: boolean;
   disabled_types?: string[];
-  quiet_hours_start?: string | null;
-  quiet_hours_end?: string | null;
 }
 
 export interface AvatarResult {
