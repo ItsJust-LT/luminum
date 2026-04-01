@@ -105,6 +105,7 @@ export default function InvoiceViewPage() {
 
   const isQuote = invoice?.document_type === "quote";
   const isReceipt = invoice?.document_type === "receipt";
+  const isInvoiceDoc = !!invoice && !isQuote && !isReceipt;
   const docLabel = isReceipt ? "Receipt" : isQuote ? "Quote" : "Invoice";
 
   async function handleGeneratePdf() {
@@ -265,6 +266,14 @@ export default function InvoiceViewPage() {
                 Convert to Invoice
               </Button>
             )}
+            {isInvoiceDoc && (
+              <Button size="sm" variant="outline" asChild className="hidden sm:flex">
+                <Link href={`/${slug}/invoices/new?type=receipt&from=${invoiceId}`}>
+                  <Receipt className="h-4 w-4 mr-2" />
+                  Create receipt
+                </Link>
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleGeneratePdf} disabled={generating} className="hidden sm:flex">
               {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               {hasPdf ? "Regenerate" : "Generate PDF"}
@@ -354,6 +363,13 @@ export default function InvoiceViewPage() {
                 {isQuote && invoice.status !== "accepted" && (
                   <DropdownMenuItem onClick={handleConvertToInvoice} disabled={converting} className="sm:hidden">
                     <ArrowRightLeft className="h-4 w-4 mr-2" /> Convert to Invoice
+                  </DropdownMenuItem>
+                )}
+                {isInvoiceDoc && (
+                  <DropdownMenuItem asChild className="sm:hidden">
+                    <Link href={`/${slug}/invoices/new?type=receipt&from=${invoiceId}`}>
+                      <Receipt className="h-4 w-4 mr-2" /> Create receipt
+                    </Link>
                   </DropdownMenuItem>
                 )}
                 {!isQuote && invoice.status === "draft" && (
@@ -530,6 +546,23 @@ export default function InvoiceViewPage() {
                   <Button size="sm" onClick={handleConvertToInvoice} disabled={converting} className="w-full bg-emerald-600 hover:bg-emerald-700">
                     {converting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ArrowRightLeft className="h-4 w-4 mr-2" />}
                     Convert to Invoice
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {isInvoiceDoc && (
+              <Card className="border-amber-300/40 bg-amber-50/30 dark:bg-amber-950/10">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-sm font-medium mb-1">Payment received?</p>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Create a receipt with the same line items and totals as this invoice. You can edit before saving.
+                  </p>
+                  <Button size="sm" variant="outline" asChild className="w-full border-amber-300/60 hover:bg-amber-50 dark:hover:bg-amber-950/30">
+                    <Link href={`/${slug}/invoices/new?type=receipt&from=${invoiceId}`}>
+                      <Receipt className="h-4 w-4 mr-2" />
+                      Create receipt from invoice
+                    </Link>
                   </Button>
                 </CardContent>
               </Card>

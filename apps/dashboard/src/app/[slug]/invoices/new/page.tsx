@@ -77,6 +77,7 @@ export default function NewInvoicePage() {
   const isQuote = documentType === "quote";
   const isReceipt = documentType === "receipt";
   const docNoun = isReceipt ? "Receipt" : isQuote ? "Quote" : "Invoice";
+  const fromSourceInvoiceId = searchParams.get("from")?.trim() ?? "";
   const logoInputRef = useRef<HTMLInputElement>(null);
   const clientInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,6 +121,8 @@ export default function NewInvoicePage() {
 
   useEffect(() => {
     if (!organization?.id) return;
+    if (isReceipt && fromSourceInvoiceId) return;
+
     setCurrency((organization as any).currency || "ZAR");
 
     const loadData = async () => {
@@ -147,7 +150,69 @@ export default function NewInvoicePage() {
       }
     };
     loadData();
-  }, [organization?.id, organization?.name, documentType]);
+  }, [organization?.id, organization?.name, documentType, isReceipt, fromSourceInvoiceId]);
+
+  useEffect(() => {
+    if (!organization?.id || !isReceipt || !fromSourceInvoiceId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = (await api.invoices.get(fromSourceInvoiceId)) as { invoice?: Record<string, unknown> };
+        const inv = res.invoice;
+        if (!inv || cancelled) return;
+        if (inv.document_type !== "invoice") {
+          toast.error("Create a receipt only from an invoice.");
+          return;
+        }
+        setCurrency(String(inv.currency || "ZAR"));
+        const nextRes = (await api.invoices.getNextNumber(organization.id, "receipt")) as { nextNumber?: string };
+        if (!cancelled && nextRes?.nextNumber) setInvoiceNumber(nextRes.nextNumber);
+        setDate(new Date());
+        setDueDate(undefined);
+        setLanguage(String(inv.language || "en"));
+        setCompanyName(String(inv.company_name || ""));
+        setCompanyEmail(String(inv.company_email || ""));
+        setCompanyPhone(String(inv.company_phone || ""));
+        setCompanyVat(String(inv.company_vat || ""));
+        setCompanyLogo((inv.company_logo as string) || null);
+        setClientName(String(inv.client_name || ""));
+        setClientEmail(String(inv.client_email || ""));
+        setClientPhone(String(inv.client_phone || ""));
+        setClientTaxNumber(String(inv.client_tax_number || ""));
+        const addr = inv.client_address as { line1?: string; city?: string; country?: string } | null;
+        setClientAddressLine1(addr?.line1 || "");
+        setClientCity(addr?.city || "");
+        setClientCountry(addr?.country || "");
+        const mapped = ((inv.items as Record<string, unknown>[]) || []).map((it) => ({
+          id: generateId(),
+          description: String(it.description || ""),
+          quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unit_price) || 0,
+          tax_percent: Number(it.tax_percent) || 0,
+        }));
+        setItems(
+          mapped.length > 0
+            ? mapped
+            : [{ id: generateId(), description: "", quantity: 1, unit_price: 0, tax_percent: 0 }]
+        );
+        setDiscountAmount(Number(inv.discount_amount) || 0);
+        setShippingAmount(Number(inv.shipping_amount) || 0);
+        setTaxInclusive(!!inv.tax_inclusive);
+        const invNum = String(inv.invoice_number || "");
+        const prevNotes = String(inv.notes || "").trim();
+        const paymentLine = invNum ? `Payment for invoice ${invNum}` : "Payment for invoice";
+        setNotes(prevNotes ? `${paymentLine}\n\n${prevNotes}` : paymentLine);
+        setTerms(String(inv.terms || ""));
+        toast.success("Receipt prefilled from invoice — review and save");
+      } catch {
+        if (!cancelled) toast.error("Could not load invoice");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once from URL
+  }, [organization?.id, isReceipt, fromSourceInvoiceId]);
 
   function handleClientNameChange(value: string) {
     setClientName(value);
