@@ -449,6 +449,8 @@ function createApiClient(baseUrl: string = "") {
       get(`/api/admin/database/tables/${encodeURIComponent(tableName)}/rows`, params),
     updateDatabaseRow: (tableName: string, data: { primaryKey: Record<string, unknown>; data: Record<string, unknown> }) =>
       patch(`/api/admin/database/tables/${encodeURIComponent(tableName)}/rows`, data),
+    deleteDatabaseRow: (tableName: string, data: { primaryKey: Record<string, unknown> }) =>
+      del(`/api/admin/database/tables/${encodeURIComponent(tableName)}/rows`, data),
     runDatabaseSql: (query: string) =>
       post("/api/admin/database/sql", { query }),
   };

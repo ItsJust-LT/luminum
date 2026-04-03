@@ -241,6 +241,48 @@ router.patch("/tables/:tableName/rows", requireAuth, adminOnly, async (req: Requ
   }
 });
 
+/** DELETE /api/admin/database/tables/:tableName/rows — delete one row by primary key */
+router.delete("/tables/:tableName/rows", requireAuth, adminOnly, async (req: Request, res: Response) => {
+  try {
+    const tableName = paramTableName(req);
+    const valid = await validateTableName(tableName);
+    if (!valid) {
+      res.status(400).json({ success: false, error: "Invalid or unknown table" });
+      return;
+    }
+    const body = req.body as { primaryKey?: Record<string, unknown> };
+    if (!body.primaryKey || typeof body.primaryKey !== "object") {
+      res.status(400).json({ success: false, error: "primaryKey required" });
+      return;
+    }
+    const pkRows = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
+      `SELECT kcu.column_name FROM information_schema.table_constraints tc
+       JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+       WHERE tc.table_schema = 'public' AND tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
+       ORDER BY kcu.ordinal_position`,
+      valid
+    );
+    const primaryKey = pkRows.map((r) => r.column_name);
+    if (primaryKey.length === 0) {
+      res.status(400).json({ success: false, error: "Table has no primary key; row delete not supported" });
+      return;
+    }
+    for (const pk of primaryKey) {
+      if (!(pk in body.primaryKey)) {
+        res.status(400).json({ success: false, error: `Missing primary key: ${pk}` });
+        return;
+      }
+    }
+    const whereClause = primaryKey.map((pk, i) => `"${pk}" = $${i + 1}`).join(" AND ");
+    const values = primaryKey.map((pk) => body.primaryKey![pk]);
+    const sql = `DELETE FROM "${valid}" WHERE ${whereClause}`;
+    const result = await prisma.$executeRawUnsafe(sql, ...values);
+    res.json({ success: true, deleted: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message ?? "Failed to delete row" });
+  }
+});
+
 /** POST /api/admin/database/sql — run raw SQL (admin only; single statement; 10s timeout) */
 router.post("/sql", requireAuth, adminOnly, async (req: Request, res: Response) => {
   try {

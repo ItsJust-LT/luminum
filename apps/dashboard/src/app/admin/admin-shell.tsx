@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useSession } from "@/lib/auth/client"
 import LoadingAnimation from "@/components/LoadingAnimation"
 import { useEffect, useState } from "react"
@@ -45,6 +45,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import NotificationBell from "@/components/NotificationBell"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
+import { cn } from "@/lib/utils"
 
 export default function AdminShell({
   children,
@@ -52,6 +53,7 @@ export default function AdminShell({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { data: session, isPending } = useSession()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [workspaceSlug, setWorkspaceSlug] = useState<string | null>(null)
@@ -277,7 +279,14 @@ export default function AdminShell({
             </div>
           </header>
 
-          <main className="flex-1 overflow-auto">{children}</main>
+          <main
+            className={cn(
+              "flex-1 min-h-0 flex flex-col",
+              pathname?.startsWith("/admin/database") ? "overflow-hidden" : "overflow-auto"
+            )}
+          >
+            {children}
+          </main>
         </SidebarInset>
       </div>
     </SidebarProvider>
