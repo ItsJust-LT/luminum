@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { ArrowLeft, Loader2 } from "lucide-react"
+import { useSession } from "@/lib/auth/client"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { Button } from "@/components/ui/button"
@@ -27,7 +28,7 @@ import { toast } from "sonner"
 type MemberAccessPayload = {
   success?: boolean
   fullAccess?: boolean
-  member?: { id: string; name: string; email: string; role: string }
+  member?: { id: string; userId?: string; name: string; email: string; role: string }
   permissionIds?: string[]
 }
 
@@ -37,6 +38,7 @@ export default function MemberAccessPage() {
   const params = useParams()
   const memberRowId = params.memberId as string
   const router = useRouter()
+  const { data: session } = useSession()
   const { organization, loading: orgLoading, error: orgError, hasAllPermissions } = useOrganization()
   const { href } = useTeamHref()
   const canAssign = hasAllPermissions(["team:roles:assign"])
@@ -169,6 +171,7 @@ export default function MemberAccessPage() {
 
   const m = access.member
   const full = access.fullAccess === true
+  const viewingSelf = Boolean(session?.user?.id && m.userId && session.user.id === m.userId)
 
   return (
     <AppPageContainer>
@@ -191,10 +194,19 @@ export default function MemberAccessPage() {
         {full && (
           <Card className="border-violet-500/30 bg-violet-500/[0.06]">
             <CardHeader>
-              <CardTitle className="text-base">Owner or admin</CardTitle>
+              <CardTitle className="text-base">Workspace owner</CardTitle>
               <CardDescription>
-                This person always has full workspace access. You cannot trim their permissions here. Transfer ownership from the team
-                page if you need to change who owns the organization.
+                {viewingSelf ? (
+                  <>
+                    You have full access to this workspace. Permissions cannot be reduced while you are the owner. Use{" "}
+                    <strong>Transfer ownership</strong> on the team page if you want someone else to become owner.
+                  </>
+                ) : (
+                  <>
+                    The workspace owner always has full access. To change who owns this organization, use{" "}
+                    <strong>Transfer ownership</strong> on the team page.
+                  </>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>

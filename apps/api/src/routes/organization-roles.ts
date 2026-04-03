@@ -148,7 +148,8 @@ router.get("/member-access", async (req: Request, res: Response) => {
     const name = member.user?.name || member.user?.email || "Member";
     const email = member.user?.email || "";
 
-    if (roleStr === "owner" || roleStr === "admin") {
+    // Only the workspace owner is immutable here; admins can be reassigned to other roles or custom permissions.
+    if (roleStr === "owner") {
       const all = [...getAllGrantablePermissionsSet()];
       return res.json({
         success: true,
@@ -222,10 +223,10 @@ router.patch("/member-permissions", async (req: Request, res: Response) => {
     if (!member) return res.status(404).json({ success: false, error: "Member not found" });
 
     const roleStr = (member.role || "member").toLowerCase();
-    if (roleStr === "owner" || roleStr === "admin") {
+    if (roleStr === "owner") {
       return res.status(400).json({
         success: false,
-        error: "Owner and admin always have full access. Change their organization role in the database if needed.",
+        error: "The workspace owner cannot be edited here. Transfer ownership first if you need to change their access.",
       });
     }
 
@@ -314,6 +315,12 @@ router.patch("/assign-member/membership", async (req: Request, res: Response) =>
 
     const row = await prisma.member.findFirst({ where: { id: memberRowId, organizationId } });
     if (!row) return res.status(404).json({ success: false, error: "Member not found" });
+    if ((row.role || "").toLowerCase() === "owner") {
+      return res.status(400).json({
+        success: false,
+        error: "Use Transfer ownership to change the workspace owner; you cannot reassign this member to another role here.",
+      });
+    }
 
     let newRoleStr = "member";
     if (targetRole.kind === ORG_ROLE_KIND.admin) newRoleStr = "admin";
