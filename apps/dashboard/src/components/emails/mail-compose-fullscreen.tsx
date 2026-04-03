@@ -98,6 +98,7 @@ export function MailComposeFullscreen(props: {
   const [editorSession, setEditorSession] = useState(0)
   const [richMode, setRichMode] = useState(true)
   const [composeFromLocal, setComposeFromLocal] = useState("")
+  const [composeReplyTo, setComposeReplyTo] = useState("")
   const [composeTo, setComposeTo] = useState("")
   const [composeSubject, setComposeSubject] = useState("")
   const [composeBody, setComposeBody] = useState("")
@@ -116,6 +117,7 @@ export function MailComposeFullscreen(props: {
 
   const resetForm = useCallback(() => {
     setComposeFromLocal("noreply")
+    setComposeReplyTo("")
     setComposeTo("")
     setComposeSubject("")
     setComposeBody("")
@@ -186,9 +188,10 @@ export function MailComposeFullscreen(props: {
         composeSubject.trim() ||
         hasBody ||
         attachments.length > 0 ||
-        (composeFromLocal.trim() && composeFromLocal.trim() !== "noreply")
+        (composeFromLocal.trim() && composeFromLocal.trim() !== "noreply") ||
+        composeReplyTo.trim()
     )
-  }, [composeTo, composeSubject, hasBody, attachments.length, composeFromLocal])
+  }, [composeTo, composeSubject, hasBody, attachments.length, composeFromLocal, composeReplyTo])
 
   const buildAttachmentsPayload = useCallback(async () => {
     const out: { filename: string; contentType: string; contentBase64: string }[] = []
@@ -312,6 +315,7 @@ export function MailComposeFullscreen(props: {
       const result = (await api.emails.send({
         organizationId,
         fromLocalPart: composeFromLocal.trim(),
+        replyTo: composeReplyTo.trim() || undefined,
         to: [to],
         subject,
         text: text || "",
@@ -350,6 +354,7 @@ export function MailComposeFullscreen(props: {
       const result = (await api.emails.scheduleSend({
         organizationId,
         fromLocalPart: composeFromLocal.trim(),
+        replyTo: composeReplyTo.trim() || undefined,
         to: [to],
         subject,
         text: text || "",
@@ -526,6 +531,25 @@ export function MailComposeFullscreen(props: {
                           className="h-9 rounded-lg border-border/80 text-sm"
                         />
                       </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="mc-reply-to" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Reply-To
+                      </Label>
+                      <Input
+                        id="mc-reply-to"
+                        type="email"
+                        placeholder="Leave blank to use the same address as From"
+                        value={composeReplyTo}
+                        onChange={(e) => setComposeReplyTo(e.target.value)}
+                        className="h-9 rounded-lg border-border/80 text-sm font-mono"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Where recipients&apos; mail clients send replies. Defaults to your From mailbox if empty.
+                      </p>
                     </div>
 
                     <div className="space-y-1.5">

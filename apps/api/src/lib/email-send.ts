@@ -2,6 +2,7 @@ import { prisma } from "./prisma.js";
 import { isEmailSystemEnabled, EMAIL_SYSTEM_UNAVAILABLE_MESSAGE } from "./email-system.js";
 import type { SendViaMailAppPayload } from "./email-outbound-types.js";
 import { sendOutboundViaResendApi } from "./resend-org.js";
+import { extractEmailAddress } from "./inbound-email-persist.js";
 
 export type { SendViaMailAppPayload } from "./email-outbound-types.js";
 
@@ -52,11 +53,28 @@ export function formatFromWithDisplayName(displayName: string | null | undefined
 export interface GetOrgReplyOptions {
   /** Shown as From display name in mail clients (e.g. member name), not the local part. */
   displayName?: string | null;
+  /**
+   * Optional Reply-To (full address). When empty, Reply-To matches the From mailbox (`local@domain`).
+   */
+  replyTo?: string | null;
+}
+
+const SIMPLE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Normalize user-supplied Reply-To; throws if non-empty but invalid. */
+export function resolveOutboundReplyTo(override: string | undefined | null, mailboxEmail: string): string {
+  const raw = typeof override === "string" ? override.trim() : "";
+  if (!raw) return mailboxEmail.trim();
+  const addr = (extractEmailAddress(raw) || raw).trim();
+  if (!SIMPLE_EMAIL_RE.test(addr)) {
+    throw new Error("Invalid Reply-To address");
+  }
+  return addr;
 }
 
 /**
  * Outbound mailbox is always local@orgdomain.
- * Reply-To is the same mailbox (not a separate replies@ address) so conversations stay coherent.
+ * Reply-To defaults to that same mailbox; callers may override per message (e.g. compose field).
  * When `displayName` is set, From is `"Name" <local@domain>` so clients show the person, not "noreply".
  */
 export async function getOrgReplyAddress(
@@ -95,7 +113,7 @@ export async function getOrgReplyAddress(
     (options?.displayName != null && String(options.displayName).trim()) ||
     (org.name?.trim() ? org.name.trim() : null);
   const from = formatFromWithDisplayName(display, mailboxEmail);
-  const replyTo = mailboxEmail;
+  const replyTo = resolveOutboundReplyTo(options?.replyTo ?? null, mailboxEmail);
   return { from, replyTo };
 }
 

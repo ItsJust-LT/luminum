@@ -85,7 +85,7 @@ export function useOrganizationChannel(
   organizationId: string | null | undefined,
   onEvent: (eventType: string, data: any) => void
 ) {
-  const { connected, onMessage } = useRealtime()
+  const { connected, onMessage, subscribe } = useRealtime()
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
 
@@ -94,6 +94,11 @@ export function useOrganizationChannel(
       data?.organizationId == null || data.organizationId === organizationId,
     [organizationId]
   )
+
+  useEffect(() => {
+    if (!organizationId || !connected) return
+    subscribe(`org:${organizationId}`)
+  }, [organizationId, connected, subscribe])
 
   useEffect(() => {
     if (!organizationId) return

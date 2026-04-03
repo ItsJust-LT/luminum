@@ -6,7 +6,6 @@ import { motion } from "framer-motion"
 import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Globe, Link2, Loader2, Mail } from "lucide-react"
@@ -18,12 +17,10 @@ export function AdminOrganizationEmailDomainSection(props: {
   organizationSlug: string
   websites: AdminOrgWebsiteRow[]
   linkedWebsiteId?: string | null
-  emailFromAddress?: string | null
   onUpdated: () => void
 }) {
-  const { organizationId, organizationSlug, websites, linkedWebsiteId, emailFromAddress, onUpdated } = props
+  const { organizationId, organizationSlug, websites, linkedWebsiteId, onUpdated } = props
   const [selectedWebsiteId, setSelectedWebsiteId] = useState<string>(linkedWebsiteId || websites[0]?.id || "")
-  const [fromInput, setFromInput] = useState("")
   const [saving, setSaving] = useState(false)
 
   const linkedSite = useMemo(
@@ -39,16 +36,6 @@ export function AdminOrganizationEmailDomainSection(props: {
     }
   }, [linkedWebsiteId, websites])
 
-  useEffect(() => {
-    if (emailFromAddress?.trim()) {
-      setFromInput(emailFromAddress.trim())
-      return
-    }
-    const d = linkedSite?.domain ?? websites.find((w) => w.id === selectedWebsiteId)?.domain
-    if (d) setFromInput(`replies@${d}`)
-    else setFromInput("")
-  }, [emailFromAddress, linkedSite?.domain, selectedWebsiteId, websites])
-
   const handleSave = async () => {
     if (!selectedWebsiteId) {
       toast.error("Choose a website domain to use for mail.")
@@ -56,11 +43,11 @@ export function AdminOrganizationEmailDomainSection(props: {
     }
     setSaving(true)
     try {
-      const r = (await api.admin.linkOrganizationEmailDomain(
-        organizationId,
-        selectedWebsiteId,
-        fromInput.trim() || undefined
-      )) as { success?: boolean; message?: string; error?: string }
+      const r = (await api.admin.linkOrganizationEmailDomain(organizationId, selectedWebsiteId)) as {
+        success?: boolean
+        message?: string
+        error?: string
+      }
       if (!r.success) throw new Error(r.error || "Could not link mail domain")
       toast.success(r.message || "Mail domain updated")
       await onUpdated()
@@ -90,7 +77,8 @@ export function AdminOrganizationEmailDomainSection(props: {
                 <CardTitle className="text-lg">Mail domain</CardTitle>
                 <CardDescription className="max-w-2xl">
                   Inbound and outbound mail use the domain from one of this organization&apos;s websites. Link it here
-                  before saving Resend credentials in <strong>Mail delivery</strong> below.
+                  before saving Resend credentials in <strong>Mail delivery</strong> below. Senders set From and Reply-To per
+                  message in the workspace compose UI.
                 </CardDescription>
               </div>
             </div>
@@ -102,11 +90,6 @@ export function AdminOrganizationEmailDomainSection(props: {
               <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="text-muted-foreground">Currently linked:</span>
               <span className="font-medium font-mono text-foreground">{linkedSite.domain}</span>
-              {emailFromAddress ? (
-                <span className="text-xs text-muted-foreground">
-                  · Default From <span className="font-mono text-foreground/90">{emailFromAddress}</span>
-                </span>
-              ) : null}
             </div>
           ) : linkedWebsiteId ? (
             <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -129,40 +112,21 @@ export function AdminOrganizationEmailDomainSection(props: {
               .
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor={`mail-domain-website-${organizationId}`}>Website / domain</Label>
-                <select
-                  id={`mail-domain-website-${organizationId}`}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={selectedWebsiteId}
-                  onChange={(e) => {
-                    const id = e.target.value
-                    setSelectedWebsiteId(id)
-                    const d = websites.find((w) => w.id === id)?.domain
-                    if (d) setFromInput(`replies@${d}`)
-                  }}
-                >
-                  {websites.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.domain}
-                      {w.name ? ` (${w.name})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={`mail-domain-from-${organizationId}`}>Default From address</Label>
-                <Input
-                  id={`mail-domain-from-${organizationId}`}
-                  type="email"
-                  className="font-mono text-sm h-10"
-                  placeholder="replies@example.com"
-                  value={fromInput}
-                  onChange={(e) => setFromInput(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">Used as the default reply-from when sending from the dashboard.</p>
-              </div>
+            <div className="max-w-md space-y-2">
+              <Label htmlFor={`mail-domain-website-${organizationId}`}>Website / domain</Label>
+              <select
+                id={`mail-domain-website-${organizationId}`}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={selectedWebsiteId}
+                onChange={(e) => setSelectedWebsiteId(e.target.value)}
+              >
+                {websites.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.domain}
+                    {w.name ? ` (${w.name})` : ""}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

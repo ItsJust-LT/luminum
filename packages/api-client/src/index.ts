@@ -145,6 +145,7 @@ function createApiClient(baseUrl: string = "") {
       text?: string;
       html?: string;
       fromLocalPart?: string;
+      replyTo?: string;
       scheduledSendAt: string;
       attachments?: { filename: string; contentType: string; contentBase64: string }[];
     }) => post("/api/emails/schedule", body),
@@ -155,6 +156,7 @@ function createApiClient(baseUrl: string = "") {
       text?: string;
       html?: string;
       fromLocalPart?: string;
+      replyTo?: string;
       attachments?: { filename: string; contentType: string; contentBase64: string }[];
     }) => post("/api/emails/send", body),
     reply: (
@@ -163,6 +165,7 @@ function createApiClient(baseUrl: string = "") {
         text?: string;
         html?: string;
         fromLocalPart?: string;
+        replyTo?: string;
         attachments?: { filename: string; contentType: string; contentBase64: string }[];
       }
     ) => post(`/api/emails/${encodeURIComponent(emailId)}/reply`, body),
@@ -411,16 +414,8 @@ function createApiClient(baseUrl: string = "") {
     enableEmailAccess: (organizationId: string) =>
       post("/api/admin/enable-organization-email-access", { organizationId }),
     /** Attach org mail to a website row’s domain (platform admin). Enables email for the org and clears DNS verification until Resend verify. */
-    linkOrganizationEmailDomain: (
-      organizationId: string,
-      websiteId: string,
-      email_from_address?: string
-    ) =>
-      post("/api/admin/link-organization-email-domain", {
-        organizationId,
-        websiteId,
-        ...(email_from_address != null && email_from_address !== "" ? { email_from_address } : {}),
-      }),
+    linkOrganizationEmailDomain: (organizationId: string, websiteId: string) =>
+      post("/api/admin/link-organization-email-domain", { organizationId, websiteId }),
     disableEmail: (organizationId: string) =>
       post("/api/admin/disable-organization-email", { organizationId }),
     enableWhatsapp: (organizationId: string) =>

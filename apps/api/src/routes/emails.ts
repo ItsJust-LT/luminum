@@ -207,7 +207,6 @@ router.get("/setup-status", async (req: Request, res: Response) => {
         email_dns_verified_at: true,
         email_dns_last_check_at: true,
         email_dns_last_error: true,
-        email_from_address: true,
         resend_api_key_ciphertext: true,
         resend_webhook_secret_ciphertext: true,
         resend_last_validated_at: true,
@@ -302,7 +301,6 @@ router.get("/setup-status", async (req: Request, res: Response) => {
       domain: domain || undefined,
       lastCheckAt: new Date().toISOString(),
       lastError: org.email_dns_last_error ?? org.resend_last_error ?? undefined,
-      emailFromAddress: org.email_from_address ?? undefined,
       dnsRecords,
       setupNotes,
       liveChecks,
@@ -340,7 +338,7 @@ router.post("/setup-domain", async (req: Request, res: Response) => {
       data: {
         emails_enabled: true,
         email_domain_id: websiteId,
-        email_from_address: `replies@${website.domain}`,
+        email_from_address: null,
         email_dns_verified_at: null,
         email_dns_last_check_at: null,
         email_dns_last_error: null,
@@ -430,11 +428,13 @@ router.post("/verify-dns", async (req: Request, res: Response) => {
 router.post("/send", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
-    const { organizationId, to: toInput, subject, text, html, attachments: attachmentsInput, fromLocalPart } = req.body as {
+    const { organizationId, to: toInput, subject, text, html, attachments: attachmentsInput, fromLocalPart, replyTo: replyToInput } = req.body as {
       organizationId?: string; to?: string | string[]; subject?: string; text?: string; html?: string;
       attachments?: { storageKey?: string; filename?: string; contentType?: string; contentBase64?: string }[];
       /** Mailbox name only (before @); must match org email domain on the server. */
       fromLocalPart?: string;
+      /** Optional Reply-To; when omitted, matches the From mailbox. */
+      replyTo?: string;
     };
     if (!organizationId || !subject || (!text?.trim() && !html?.trim())) {
       return res.status(400).json({ success: false, error: "organizationId, subject, and text or html required" });
@@ -445,6 +445,7 @@ router.post("/send", async (req: Request, res: Response) => {
     try {
       ({ from, replyTo } = await getOrgReplyAddress(organizationId, fromLocalPart, {
         displayName: senderDisplayName(req),
+        replyTo: replyToInput,
       }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -638,6 +639,7 @@ router.post("/schedule", async (req: Request, res: Response) => {
       text,
       html,
       fromLocalPart,
+      replyTo: scheduleReplyTo,
       scheduledSendAt,
       attachments: attachmentsInput,
     } = req.body as {
@@ -647,6 +649,7 @@ router.post("/schedule", async (req: Request, res: Response) => {
       text?: string;
       html?: string;
       fromLocalPart?: string;
+      replyTo?: string;
       scheduledSendAt?: string;
       attachments?: unknown;
     };
@@ -670,6 +673,7 @@ router.post("/schedule", async (req: Request, res: Response) => {
     try {
       ({ from } = await getOrgReplyAddress(organizationId, fromLocalPart, {
         displayName: senderDisplayName(req),
+        replyTo: scheduleReplyTo,
       }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -678,6 +682,7 @@ router.post("/schedule", async (req: Request, res: Response) => {
 
     const attachments = normalizeAttachmentsFromRequest(attachmentsInput);
     const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2)}@scheduled>`;
+    const replyTrim = typeof scheduleReplyTo === "string" ? scheduleReplyTo.trim() : "";
     const row = await prisma.email.create({
       data: {
         organization_id: organizationId,
@@ -686,6 +691,9 @@ router.post("/schedule", async (req: Request, res: Response) => {
         subject,
         text: text?.trim() || null,
         html: html?.trim() ? sanitizeComposeHtml(html) : null,
+        ...(replyTrim.length > 0
+          ? { headers: { outboundReplyTo: replyTrim } as Prisma.InputJsonValue }
+          : {}),
         outbound_pending_attachments:
           attachments.length > 0 ? (attachments as unknown as Prisma.InputJsonValue) : undefined,
         outbound_scheduled_by_user_id: req.user.id,
@@ -962,10 +970,11 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
   try {
     if (!isEmailSystemEnabled()) return jsonEmailSystemDisabled(res);
     const id = pathParam(req, "id");
-    const { text, html, fromLocalPart, attachments: attachmentsInput } = req.body as {
+    const { text, html, fromLocalPart, replyTo: replyToInput, attachments: attachmentsInput } = req.body as {
       text?: string;
       html?: string;
       fromLocalPart?: string;
+      replyTo?: string;
       attachments?: unknown;
     };
     if (!text?.trim() && !html?.trim()) return res.status(400).json({ success: false, error: "text or html required" });
@@ -986,6 +995,7 @@ router.post("/:id/reply", async (req: Request, res: Response) => {
     if (!(await requireOrgPermissions(original.organization_id, req.user, res, ["email:send"]))) return;
     const { from, replyTo } = await getOrgReplyAddress(original.organization_id, fromLocalPart, {
       displayName: senderDisplayName(req),
+      replyTo: replyToInput,
     });
     const toAddr = replyToAddressForEmail(original);
     if (!toAddr || !toAddr.includes("@")) {

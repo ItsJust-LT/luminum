@@ -12,7 +12,6 @@ export interface EmailSetupStatus {
   domain?: string
   lastCheckAt?: string
   lastError?: string
-  emailFromAddress?: string
   dnsRecords?: EmailDnsRecords
   setupNotes?: string[]
   liveChecks?: {

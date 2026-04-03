@@ -30,12 +30,49 @@ export function useRealtime() {
   return useContext(RealtimeContext)
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(/\/$/, "")
 
+/**
+ * WebSocket URL for org-scoped events (mail, forms, etc.).
+ * Prefer NEXT_PUBLIC_REALTIME_WS_URL when the API is on another host than the dashboard
+ * (cookies + TLS must still allow the upgrade).
+ * Otherwise derive from NEXT_PUBLIC_API_URL; in the browser, if that host differs from the
+ * page host, still use the API host (cross-origin WS with credentials).
+ * If NEXT_PUBLIC_API_URL is unset in the browser, use same origin so a reverse proxy can route /ws/realtime to the API.
+ */
 function getWsUrl(): string {
-  const url = new URL(API_URL)
-  const protocol = url.protocol === "https:" ? "wss:" : "ws:"
-  return `${protocol}//${url.host}/ws/realtime`
+  const explicit = process.env.NEXT_PUBLIC_REALTIME_WS_URL?.trim()
+  if (explicit) return explicit.replace(/\/$/, "")
+
+  if (typeof window !== "undefined") {
+    try {
+      if (API_URL && API_URL.length > 0) {
+        const apiUrl = new URL(API_URL)
+        const pageHost = window.location.hostname
+        const apiHost = apiUrl.hostname
+        const apiIsLoopback = apiHost === "localhost" || apiHost === "127.0.0.1"
+        const pageIsLoopback = pageHost === "localhost" || pageHost === "127.0.0.1"
+        if (apiIsLoopback && !pageIsLoopback) {
+          const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+          return `${protocol}//${window.location.host}/ws/realtime`
+        }
+        const protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:"
+        return `${protocol}//${apiUrl.host}/ws/realtime`
+      }
+    } catch {
+      /* fall through */
+    }
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+    return `${protocol}//${window.location.host}/ws/realtime`
+  }
+
+  try {
+    const url = new URL(API_URL || "http://localhost:4000")
+    const protocol = url.protocol === "https:" ? "wss:" : "ws:"
+    return `${protocol}//${url.host}/ws/realtime`
+  } catch {
+    return "ws://localhost:4000/ws/realtime"
+  }
 }
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {

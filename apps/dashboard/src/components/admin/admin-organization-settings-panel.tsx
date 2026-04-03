@@ -521,7 +521,6 @@ export function AdminOrganizationSettingsPanel({
             name: w.name ?? null,
           }))}
           linkedWebsiteId={org.email_domain_id ?? null}
-          emailFromAddress={org.email_from_address ?? null}
           onUpdated={refresh}
         />
       ) : null}

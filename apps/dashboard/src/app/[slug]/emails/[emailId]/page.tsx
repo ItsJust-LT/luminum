@@ -37,6 +37,7 @@ export default function EmailDetailPage() {
     status: "loading" | "error" | "redirect" | "ready" | "unavailable"
     error?: string
     email?: any
+    mailDomain?: string
   }>({ status: "loading" })
 
   useEffect(() => {
@@ -117,7 +118,14 @@ export default function EmailDetailPage() {
           })),
           inlineImages: [],
         }
-        setState({ status: "ready", email })
+        let mailDomain: string | undefined
+        try {
+          const st = (await api.emails.getSetupStatus(emailData.organization_id)) as { domain?: string }
+          mailDomain = st.domain
+        } catch {
+          /* ignore */
+        }
+        setState({ status: "ready", email, mailDomain })
       } catch {
         if (!cancelled) setState({ status: "error", error: "Failed to load email" })
       }
@@ -205,5 +213,7 @@ export default function EmailDetailPage() {
     )
   }
 
-  return <EmailDetailClient email={state.email} organizationSlug={slug} />
+  return (
+    <EmailDetailClient email={state.email} organizationSlug={slug} mailDomain={state.mailDomain} />
+  )
 }

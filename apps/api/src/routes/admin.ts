@@ -696,10 +696,9 @@ router.post("/link-organization-email-domain", adminOnly, async (req: Request, r
         error: EMAIL_SYSTEM_UNAVAILABLE_MESSAGE,
       });
     }
-    const { organizationId, websiteId, email_from_address } = req.body as {
+    const { organizationId, websiteId } = req.body as {
       organizationId?: string;
       websiteId?: string;
-      email_from_address?: string;
     };
     if (!organizationId || !websiteId) {
       return res.status(400).json({ success: false, error: "organizationId and websiteId required" });
@@ -711,16 +710,12 @@ router.post("/link-organization-email-domain", adminOnly, async (req: Request, r
     if (!website || website.organization_id !== organizationId) {
       return res.status(400).json({ success: false, error: "Website not found or does not belong to this organization" });
     }
-    const from =
-      typeof email_from_address === "string" && email_from_address.trim().length > 0
-        ? email_from_address.trim().slice(0, 320)
-        : `replies@${website.domain}`;
     await prisma.organization.update({
       where: { id: organizationId },
       data: {
         emails_enabled: true,
         email_domain_id: websiteId,
-        email_from_address: from,
+        email_from_address: null,
         email_dns_verified_at: null,
         email_dns_last_check_at: null,
         email_dns_last_error: null,
@@ -768,7 +763,7 @@ router.post("/enable-organization-email", adminOnly, async (req: Request, res: R
           "Platform email is disabled (EMAIL_SYSTEM_ENABLED). Enable it in the server environment before enabling email for organizations.",
       });
     }
-    const { organizationId, websiteId, email_from_address } = req.body as { organizationId: string; websiteId?: string; email_from_address?: string };
+    const { organizationId, websiteId } = req.body as { organizationId: string; websiteId?: string };
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     if (!websiteId) {
       await prisma.organization.update({ where: { id: organizationId }, data: { emails_enabled: true } });
@@ -781,7 +776,6 @@ router.post("/enable-organization-email", adminOnly, async (req: Request, res: R
     if (!website || website.organization_id !== organizationId) {
       return res.status(400).json({ success: false, error: "Website not found or does not belong to this organization" });
     }
-    const replyAddress = email_from_address || `replies@${website.domain}`;
     const now = new Date();
     await prisma.organization.update({
       where: { id: organizationId },
@@ -791,7 +785,7 @@ router.post("/enable-organization-email", adminOnly, async (req: Request, res: R
         email_dns_verified_at: now,
         email_dns_last_check_at: now,
         email_dns_last_error: null,
-        email_from_address: replyAddress,
+        email_from_address: null,
       },
     });
     res.json({ success: true, message: "Email enabled" });

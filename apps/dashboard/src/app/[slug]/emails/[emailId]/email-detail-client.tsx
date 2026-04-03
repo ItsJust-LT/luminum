@@ -98,6 +98,8 @@ export interface Email {
 interface EmailDetailClientProps {
   email: Email
   organizationSlug: string
+  /** Mail domain for From hint (optional). */
+  mailDomain?: string
 }
 
 type PreviewType = "image" | "pdf" | "text"
@@ -314,7 +316,7 @@ function MessageSanitizedHtml({ htmlBody }: { htmlBody: string }) {
   return <EmailHTMLBody html={html} />
 }
 
-export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailDetailClientProps) {
+export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDomain }: EmailDetailClientProps) {
   const router = useRouter()
   const [thread, setThread] = useState<Email[]>([])
   const [threadLoading, setThreadLoading] = useState(true)
@@ -331,6 +333,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
   const [textPreviewContent, setTextPreviewContent] = useState<string | null>(null)
   const [replyText, setReplyText] = useState("")
   const [replyFromLocal, setReplyFromLocal] = useState("noreply")
+  const [replyReplyTo, setReplyReplyTo] = useState("")
   const [replyAttachments, setReplyAttachments] = useState<{ id: string; file: File }[]>([])
   const replyFileRef = useRef<HTMLInputElement>(null)
   const [sendingReply, setSendingReply] = useState(false)
@@ -487,11 +490,13 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
       const result = (await api.emails.reply(replyAnchor.id, {
         text,
         fromLocalPart: replyFromLocal.trim() || undefined,
+        replyTo: replyReplyTo.trim() || undefined,
         attachments: att.length ? att : undefined,
       })) as { success?: boolean; error?: string }
       if (!result?.success) throw new Error(result?.error || "Failed to send reply")
       toast.success("Reply sent")
       setReplyText("")
+      setReplyReplyTo("")
       setReplyAttachments([])
       await refreshThread()
     } catch (err) {
@@ -820,6 +825,9 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
                     className="h-9 text-sm"
                     spellCheck={false}
                   />
+                  {mailDomain ? (
+                    <p className="text-[10px] text-muted-foreground font-mono truncate">@{mailDomain}</p>
+                  ) : null}
                 </div>
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
@@ -888,6 +896,21 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug }: EmailD
                     </ul>
                   ) : null}
                 </div>
+              </div>
+              <div className="space-y-1 sm:pl-[calc(7rem+0.5rem)] sm:max-w-xl">
+                <Label htmlFor="reply-reply-to" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Reply-To
+                </Label>
+                <Input
+                  id="reply-reply-to"
+                  type="email"
+                  value={replyReplyTo}
+                  onChange={(e) => setReplyReplyTo(e.target.value)}
+                  placeholder="Leave blank to use the same address as From"
+                  className="h-9 text-sm font-mono"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
               </div>
             </div>
             <Button

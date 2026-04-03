@@ -38,6 +38,7 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
       references: true,
       outbound_pending_attachments: true,
       outbound_scheduled_by_user_id: true,
+      headers: true,
     },
   });
 
@@ -60,15 +61,25 @@ export async function runScheduledEmailOutbox(): Promise<{ processed: number; se
 
     const messageId = row.messageId?.trim() || `<${Date.now()}.${Math.random().toString(36).slice(2)}@outbound>`;
 
-    let fromAddr = row.from;
-    let replyToAddr = row.from;
+    let replyOverride: string | null = null;
+    const h = row.headers;
+    if (h && typeof h === "object" && !Array.isArray(h)) {
+      const raw = (h as Record<string, unknown>).outboundReplyTo;
+      if (typeof raw === "string" && raw.trim()) replyOverride = raw.trim();
+    }
+    let fromAddr: string;
+    let replyToAddr: string;
     try {
       const localPart = row.from ? extractMailboxLocalPart(row.from) : "noreply";
-      const resolved = await getOrgReplyAddress(organizationId, localPart);
+      const resolved = await getOrgReplyAddress(organizationId, localPart, {
+        replyTo: replyOverride,
+      });
       fromAddr = resolved.from;
       replyToAddr = resolved.replyTo;
-    } catch {
-      /* use row.from only */
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`skip ${row.id}: ${msg}`);
+      continue;
     }
 
     try {

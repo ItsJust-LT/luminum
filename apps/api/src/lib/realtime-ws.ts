@@ -290,6 +290,10 @@ function canSubscribe(client: ConnectedClient, channel: string): boolean {
   if (channel.startsWith("analytics:")) {
     return client.userRole === "admin" || client.organizationIds.length > 0;
   }
+  if (channel.startsWith("org:")) {
+    const orgId = channel.slice("org:".length);
+    return client.organizationIds.includes(orgId);
+  }
   return false;
 }
 
