@@ -14,6 +14,12 @@ After auth is configured:
 pnpm add @itsjust-lt/website-kit
 ```
 
+**Next.js 16:** older published lines such as `0.1.x` only declare `next@^14 || ^15`, so pnpm reports an unmet peer on Next 16. Use **`@itsjust-lt/website-kit@^0.3.0`** (or whatever is current in this package’s `version` field after you publish from Luminum):
+
+```bash
+pnpm add @itsjust-lt/website-kit@^0.3.0
+```
+
 For development inside the Luminum monorepo, depend on `workspace:*` as other packages do.
 
 **Current published versions** are in each package’s `package.json` (`@itsjust-lt/website-kit`, `@itsjust-lt/blog-renderer`). After pulling new Luminum releases, bump the dependency in your site and run `pnpm install` (or publish from this monorepo per [`docs/github-packages.md`](../../docs/github-packages.md)).
