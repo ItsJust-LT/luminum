@@ -13,7 +13,7 @@ router.get("/", async (req: Request, res: Response) => {
     const websiteId = queryParam(req, "websiteId");
     if (!websiteId) return res.status(400).json({ success: false, error: "websiteId required" });
     const website = await prisma.websites.findFirst({
-      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
+      where: { id: websiteId },
       select: { id: true, organization_id: true },
     });
     if (!website) return res.status(404).json({ success: false, error: "Website not found" });

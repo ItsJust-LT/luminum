@@ -159,13 +159,12 @@ router.get("/breakdown", async (req: Request, res: Response) => {
     const maxResults = Math.min(parseInt(limit) || 20, 100);
 
     const websites = await prisma.websites.findMany({
-      select: { id: true, website_id: true, name: true, domain: true, organization_id: true, organization: { select: { id: true, name: true, slug: true } } },
+      select: { id: true, name: true, domain: true, organization_id: true, organization: { select: { id: true, name: true, slug: true } } },
     });
 
     const websiteMap = new Map<string, typeof websites[0]>();
     for (const w of websites) {
       websiteMap.set(w.id, w);
-      if (w.website_id) websiteMap.set(w.website_id, w);
     }
 
     const events = await prisma.events.findMany({

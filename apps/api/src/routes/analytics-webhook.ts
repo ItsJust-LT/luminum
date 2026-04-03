@@ -21,7 +21,6 @@ function verifyWebhookSecret(req: Request, res: Response): boolean {
 // POST /api/analytics/live-update
 // Called by the Go analytics service when viewer count changes for a website.
 // Now also accepts per-page visitor counts.
-// Store under both website.id and website.website_id so dashboard gets count regardless of which it subscribes with.
 router.post("/live-update", async (req: Request, res: Response) => {
   try {
     if (!verifyWebhookSecret(req, res)) return;
@@ -36,19 +35,6 @@ router.post("/live-update", async (req: Request, res: Response) => {
 
     if (pages && typeof pages === "object") {
       setLivePages(websiteId, pages);
-    }
-
-    const website = await prisma.websites.findFirst({
-      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
-      select: { id: true, website_id: true },
-    });
-    if (website && website.id !== websiteId) {
-      setLiveCount(website.id, live);
-      if (pages && typeof pages === "object") setLivePages(website.id, pages);
-    }
-    if (website?.website_id && website.website_id !== websiteId) {
-      setLiveCount(website.website_id, live);
-      if (pages && typeof pages === "object") setLivePages(website.website_id, pages);
     }
 
     res.json({ success: true });
@@ -72,8 +58,8 @@ router.post("/page-transition", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Missing websiteId" });
     }
 
-    const website = await prisma.websites.findFirst({
-      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
+    const website = await prisma.websites.findUnique({
+      where: { id: websiteId },
       select: { id: true },
     });
     if (!website) return res.status(404).json({ error: "Website not found" });
@@ -126,21 +112,15 @@ router.post("/event-notify", async (req: Request, res: Response) => {
     const { websiteId, eventId, url, sessionId } = req.body;
     if (!websiteId) return res.status(400).json({ error: "Missing websiteId" });
 
-    const website = await prisma.websites.findFirst({
-      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
-      select: { id: true, website_id: true },
+    const website = await prisma.websites.findUnique({
+      where: { id: websiteId },
+      select: { id: true },
     });
 
     if (website) {
       const data = { websiteId: website.id, eventId, url, sessionId, timestamp: new Date().toISOString() };
       broadcastToChannel(`analytics:${website.id}`, { type: "analytics:event", data });
-      if (website.website_id && website.website_id !== website.id) {
-        broadcastToChannel(`analytics:${website.website_id}`, { type: "analytics:event", data });
-      }
       await setAnalyticsDirty(website.id);
-      if (website.website_id && website.website_id !== website.id) {
-        await setAnalyticsDirty(website.website_id);
-      }
     }
 
     res.json({ success: true });
@@ -159,8 +139,8 @@ router.post("/form-notify", async (req: Request, res: Response) => {
     const { websiteId, submissionId, formName, formData } = req.body;
     if (!websiteId) return res.status(400).json({ error: "Missing websiteId" });
 
-    const website = await prisma.websites.findFirst({
-      where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
+    const website = await prisma.websites.findUnique({
+      where: { id: websiteId },
       select: { id: true, organization_id: true, name: true },
     });
     if (!website) return res.status(404).json({ error: "Website not found" });

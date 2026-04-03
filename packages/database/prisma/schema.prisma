@@ -654,7 +654,6 @@ model websites {
   script_last_verified_at           DateTime?            @db.Timestamptz(6)
   script_last_error                String?              @db.Text
   metadata           Json?
-  website_id         String?              @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   settings           Json?                @default("{}")
   events                     events[]
   form_submissions           form_submissions[]
@@ -666,7 +665,6 @@ model websites {
   @@index([domain], map: "idx_websites_domain")
   @@index([metadata], map: "idx_websites_metadata_gin", type: Gin)
   @@index([organization_id], map: "idx_websites_organization_id")
-  @@index([website_id], map: "idx_websites_website_id")
 }
 
 // ── Site Audits (Lighthouse-based performance scans) ────────────────────

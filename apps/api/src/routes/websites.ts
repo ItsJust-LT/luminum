@@ -13,7 +13,6 @@ function formatWebsite(w: any) {
     name: w.name ?? undefined,
     created_at: w.created_at?.toISOString() || new Date().toISOString(),
     updated_at: w.updated_at?.toISOString() || new Date().toISOString(),
-    website_id: w.website_id ?? undefined,
     analytics: w.analytics ?? false,
     script_last_verified_at: w.script_last_verified_at?.toISOString?.() ?? undefined,
     script_last_error: w.script_last_error ?? undefined,

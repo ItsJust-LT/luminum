@@ -81,9 +81,7 @@ export default function OrganizationSettingsPage() {
       attachments: { support: number; emails: number; forms: number };
     };
   } | null>(null)
-  const [workspaceWebsites, setWorkspaceWebsites] = useState<
-    { id: string; domain: string; website_id?: string | null }[]
-  >([])
+  const [workspaceWebsites, setWorkspaceWebsites] = useState<{ id: string; domain: string }[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const copyIdentifier = async (label: string, text: string) => {
@@ -124,7 +122,7 @@ export default function OrganizationSettingsPage() {
             .catch(() => {})
         }
         try {
-          const wsRes = await api.websites.list(organization.id) as { data?: { id: string; domain: string; website_id?: string | null }[] }
+          const wsRes = await api.websites.list(organization.id) as { data?: { id: string; domain: string }[] }
           setWorkspaceWebsites(Array.isArray(wsRes?.data) ? wsRes.data : [])
         } catch {
           setWorkspaceWebsites([])
@@ -621,47 +619,21 @@ export default function OrganizationSettingsPage() {
                             <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span className="truncate">{w.domain}</span>
                           </div>
-                          <div className="grid gap-2 sm:grid-cols-2 text-xs">
-                            <div>
-                              <div className="text-muted-foreground mb-0.5">Website ID (database)</div>
-                              <div className="flex items-start gap-1.5">
-                                <code className="font-mono break-all flex-1 bg-muted/40 px-1.5 py-0.5 rounded">{w.id}</code>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 shrink-0"
-                                  onClick={() => void copyIdentifier("Website ID", w.id)}
-                                  aria-label="Copy website ID"
-                                >
-                                  <Copy className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
+                          <div className="text-xs">
+                            <div className="text-muted-foreground mb-0.5">Website ID (analytics, blog, forms)</div>
+                            <div className="flex items-start gap-1.5">
+                              <code className="font-mono break-all flex-1 bg-muted/40 px-1.5 py-0.5 rounded">{w.id}</code>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 shrink-0"
+                                onClick={() => void copyIdentifier("Website ID", w.id)}
+                                aria-label="Copy website ID"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
                             </div>
-                            {w.website_id ? (
-                              <div>
-                                <div className="text-muted-foreground mb-0.5">Embed / analytics ID</div>
-                                <div className="flex items-start gap-1.5">
-                                  <code className="font-mono break-all flex-1 bg-muted/40 px-1.5 py-0.5 rounded">
-                                    {w.website_id}
-                                  </code>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 shrink-0"
-                                    onClick={() => void copyIdentifier("Embed ID", w.website_id!)}
-                                    aria-label="Copy embed ID"
-                                  >
-                                    <Copy className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-muted-foreground sm:col-span-1 self-center">
-                                Embed ID matches Website ID when not set separately.
-                              </div>
-                            )}
                           </div>
                         </div>
                       ))}

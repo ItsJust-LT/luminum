@@ -26,7 +26,7 @@ export function assertWebsiteId(
   }
   if (!isValidWebsiteId(t)) {
     throw new Error(
-      `[@itsjust-lt/website-kit] ${context}: websiteId must be a UUID (the Website ID from your Luminum project).`,
+      `[@itsjust-lt/website-kit] ${context}: websiteId must be a UUID — copy "Website ID" from your Luminum workspace settings.`,
     );
   }
 }

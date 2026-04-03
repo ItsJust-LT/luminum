@@ -139,11 +139,22 @@ func broadcastFormSubmission(websiteId string, data map[string]interface{}) {
 }
 
 func handleLiveDashboardWS(w http.ResponseWriter, r *http.Request) {
-	websiteId, ok := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
+	normalizedWid, ok := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
 	if !ok {
 		http.Error(w, "Missing or invalid websiteId", http.StatusBadRequest)
 		return
 	}
+	found, existErr := websiteExists(r.Context(), normalizedWid)
+	if existErr != nil {
+		log.Printf("live-dashboard website lookup: %v", existErr)
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "Unknown websiteId", http.StatusBadRequest)
+		return
+	}
+	websiteId := normalizedWid
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Dashboard WebSocket upgrade failed:", err)
@@ -176,13 +187,24 @@ func handleLiveDashboardWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	websiteId, widOK := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
+	normalizedWid, widOK := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
 	eventId := r.URL.Query().Get("eventId")
 
 	if !widOK || eventId == "" {
 		http.Error(w, "Missing or invalid websiteId or eventId", http.StatusBadRequest)
 		return
 	}
+	found, existErr := websiteExists(r.Context(), normalizedWid)
+	if existErr != nil {
+		log.Printf("visitor ws website lookup: %v", existErr)
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "Unknown websiteId", http.StatusBadRequest)
+		return
+	}
+	websiteId := normalizedWid
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -305,11 +327,22 @@ func GetLivePageCounts(websiteId string) map[string]int {
 }
 
 func LiveViewerCountHandler(w http.ResponseWriter, r *http.Request) {
-	websiteId, ok := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
+	normalizedWid, ok := normalizeWebsiteID(r.URL.Query().Get("websiteId"))
 	if !ok {
 		http.Error(w, "Missing or invalid websiteId", http.StatusBadRequest)
 		return
 	}
+	found, existErr := websiteExists(r.Context(), normalizedWid)
+	if existErr != nil {
+		log.Printf("live count website lookup: %v", existErr)
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "Unknown websiteId", http.StatusBadRequest)
+		return
+	}
+	websiteId := normalizedWid
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(WSMessage{
 		Type:      WSMessageTypeLiveCount,

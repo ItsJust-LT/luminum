@@ -30,23 +30,15 @@ async function fetchPageHtml(url: string): Promise<{ ok: boolean; body?: string;
 }
 
 /**
- * Check if the page HTML contains the analytics script for this website.
- * Script can use either websites.id or websites.website_id as websiteId; also accept analytics domain + script.js.
+ * Check if the page HTML contains the analytics script for this website (websites.id in script URL).
  */
-function pageContainsScript(
-  body: string,
-  siteId: string,
-  siteWebsiteId: string | null
-): boolean {
+function pageContainsScript(body: string, siteId: string): boolean {
   const lower = body.toLowerCase();
   if (!lower.includes("script.js") && !lower.includes("script.min.js")) return false;
   const idLower = siteId.toLowerCase();
-  const widLower = (siteWebsiteId || "").toLowerCase();
-  // Match by primary id or website_id (either may be used in the embed)
   if (body.includes(siteId) || lower.includes(idLower)) return true;
-  if (siteWebsiteId && (body.includes(siteWebsiteId) || lower.includes(widLower))) return true;
-  if (body.includes(`websiteId=${siteId}`) || body.includes(`websiteId=${siteWebsiteId}`)) return true;
-  if (lower.includes(`websiteid=${idLower}`) || (widLower && lower.includes(`websiteid=${widLower}`))) return true;
+  if (body.includes(`websiteId=${siteId}`)) return true;
+  if (lower.includes(`websiteid=${idLower}`)) return true;
   return false;
 }
 
@@ -58,7 +50,6 @@ export async function runAnalyticsScriptVerification(): Promise<AnalyticsScriptV
     },
     select: {
       id: true,
-      website_id: true,
       domain: true,
       organization_id: true,
       script_last_verified_at: true,
@@ -85,7 +76,7 @@ export async function runAnalyticsScriptVerification(): Promise<AnalyticsScriptV
       result.errors.push(`Website ${site.domain} (${site.id}): ${fetchError || "fetch failed"}`);
       continue;
     }
-    const found = pageContainsScript(body, site.id, site.website_id);
+    const found = pageContainsScript(body, site.id);
     if (found) {
       await prisma.websites.update({
         where: { id: site.id },
@@ -118,7 +109,6 @@ export async function runAnalyticsScriptVerificationForOrg(
     },
     select: {
       id: true,
-      website_id: true,
       domain: true,
       organization_id: true,
       script_last_verified_at: true,
@@ -145,7 +135,7 @@ export async function runAnalyticsScriptVerificationForOrg(
       result.errors.push(`Website ${site.domain} (${site.id}): ${fetchError || "fetch failed"}`);
       continue;
     }
-    const found = pageContainsScript(body, site.id, site.website_id);
+    const found = pageContainsScript(body, site.id);
     if (found) {
       await prisma.websites.update({
         where: { id: site.id },

@@ -12,27 +12,20 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 router.use(requireAuth);
 
-/** Resolves a website by id or website_id and verifies the user has access (member or platform admin). Also enforces org-level analytics_enabled. */
+/** Resolves a website by primary id and verifies the user has access (member or platform admin). Also enforces org-level analytics_enabled. */
 async function resolveWebsiteWithAccess(
   websiteId: string,
   user: { id: string; role?: string }
 ) {
   const website = await prisma.websites.findFirst({
-    where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
-    select: { id: true, website_id: true, organization_id: true, organization: { select: { analytics_enabled: true } } },
+    where: { id: websiteId },
+    select: { id: true, organization_id: true, organization: { select: { analytics_enabled: true } } },
   });
   if (!website) return null;
   if (!website.organization?.analytics_enabled) return null;
   const resolved = await resolveOrgMemberPermissions(prisma, website.organization_id, user);
   if (!resolved || !hasOrgPermissions(resolved.effectivePermissions, ["analytics:read"])) return null;
-  return { id: website.id, website_id: website.website_id, organization_id: website.organization_id };
-}
-
-/** Website IDs to use when querying events/form_submissions (script may send id or website_id). */
-function websiteIdFilter(website: { id: string; website_id: string | null }) {
-  const ids = [website.id];
-  if (website.website_id && website.website_id !== website.id) ids.push(website.website_id);
-  return { in: ids };
+  return { id: website.id, organization_id: website.organization_id };
 }
 
 // GET /api/analytics/setup-status?organizationId=...
@@ -106,7 +99,7 @@ router.get("/live-ws-token", async (req: Request, res: Response) => {
     const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
-    const { token, exp } = createLiveToken(websiteId, req.user.id);
+    const { token, exp } = createLiveToken(website.id, req.user.id);
     const baseUrl = config.apiWsUrl;
     const wsProtocol = baseUrl.startsWith("https") ? "wss" : "ws";
     const wsHost = baseUrl.replace(/^https?:\/\//, "");
@@ -139,25 +132,24 @@ router.get("/overview", async (req: Request, res: Response) => {
     const startDate = new Date(start);
     const endDate = new Date(end);
 
-    const websiteIds = websiteIdFilter(website);
     const [eventsAgg, sessionGroups, formCount, blogCategoryViews, blogCategorySessions, blogPublishedPosts] =
       await Promise.all([
       prisma.events.aggregate({
-        where: { website_id: websiteIds, created_at: { gte: startDate, lte: endDate } },
+        where: { website_id: website.id, created_at: { gte: startDate, lte: endDate } },
         _count: { id: true },
         _avg: { duration: true },
       }),
       prisma.events.groupBy({
         by: ["session_id"],
-        where: { website_id: websiteIds, created_at: { gte: startDate, lte: endDate }, session_id: { not: null } },
+        where: { website_id: website.id, created_at: { gte: startDate, lte: endDate }, session_id: { not: null } },
       }),
       prisma.form_submissions.count({
-        where: { website_id: websiteIds, submitted_at: { gte: startDate, lte: endDate } },
+        where: { website_id: website.id, submitted_at: { gte: startDate, lte: endDate } },
       }),
       // Blog analytics: category pages are canonical + predictable (/blog/category/:slug).
       prisma.events.count({
         where: {
-          website_id: websiteIds,
+          website_id: website.id,
           created_at: { gte: startDate, lte: endDate },
           url: { contains: "/blog/category/" },
         },
@@ -165,7 +157,7 @@ router.get("/overview", async (req: Request, res: Response) => {
       prisma.events.groupBy({
         by: ["session_id"],
         where: {
-          website_id: websiteIds,
+          website_id: website.id,
           created_at: { gte: startDate, lte: endDate },
           url: { contains: "/blog/category/" },
           session_id: { not: null },
@@ -214,15 +206,13 @@ router.get("/timeseries", async (req: Request, res: Response) => {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
-    const websiteIds = websiteIdFilter(website);
-
     const events = await prisma.events.findMany({
-      where: { website_id: websiteIds, created_at: { gte: startDate, lte: endDate } },
+      where: { website_id: website.id, created_at: { gte: startDate, lte: endDate } },
       select: { created_at: true, session_id: true },
     });
 
     const formSubs = await prisma.form_submissions.findMany({
-      where: { website_id: websiteIds, submitted_at: { gte: startDate, lte: endDate } },
+      where: { website_id: website.id, submitted_at: { gte: startDate, lte: endDate } },
       select: { submitted_at: true },
     });
 
@@ -285,7 +275,7 @@ router.get("/top-pages", async (req: Request, res: Response) => {
 
     const events = await prisma.events.findMany({
       where: {
-        website_id: websiteIdFilter(website),
+        website_id: website.id,
         created_at: { gte: new Date(start), lte: new Date(end) },
         url: { not: null },
       },
@@ -320,7 +310,7 @@ router.get("/countries", async (req: Request, res: Response) => {
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const events = await prisma.events.findMany({
-      where: { website_id: websiteIdFilter(website), created_at: { gte: new Date(start), lte: new Date(end) } },
+      where: { website_id: website.id, created_at: { gte: new Date(start), lte: new Date(end) } },
       select: { country: true },
     });
 
@@ -352,7 +342,7 @@ router.get("/devices", async (req: Request, res: Response) => {
     if (!website) return res.status(403).json({ error: "Access denied" });
 
     const events = await prisma.events.findMany({
-      where: { website_id: websiteIdFilter(website), created_at: { gte: new Date(start), lte: new Date(end) } },
+      where: { website_id: website.id, created_at: { gte: new Date(start), lte: new Date(end) } },
       select: { device_type: true },
     });
 
@@ -383,31 +373,30 @@ router.get("/realtime", async (req: Request, res: Response) => {
     const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
-    const ids = websiteIdFilter(website);
     const now = new Date();
     const since2min = new Date(now.getTime() - 2 * 60 * 1000);
     const since30min = new Date(now.getTime() - 30 * 60 * 1000);
 
     const [recentEvents, sessionIds, count30] = await Promise.all([
       prisma.events.findMany({
-        where: { website_id: ids, created_at: { gte: since2min } },
+        where: { website_id: website.id, created_at: { gte: since2min } },
         select: { created_at: true, url: true, country: true, device_type: true },
         orderBy: { created_at: "desc" },
         take: 20,
       }),
       prisma.events.findMany({
-        where: { website_id: ids, created_at: { gte: since2min }, session_id: { not: null } },
+        where: { website_id: website.id, created_at: { gte: since2min }, session_id: { not: null } },
         select: { session_id: true },
         distinct: ["session_id"],
       }),
       prisma.events.count({
-        where: { website_id: ids, created_at: { gte: since30min } },
+        where: { website_id: website.id, created_at: { gte: since30min } },
       }),
     ]);
 
     // Top pages last 30 min
     const pageEvents = await prisma.events.findMany({
-      where: { website_id: ids, created_at: { gte: since30min }, url: { not: null } },
+      where: { website_id: website.id, created_at: { gte: since30min }, url: { not: null } },
       select: { url: true },
     });
     const pageCounts: Record<string, number> = {};
@@ -423,7 +412,7 @@ router.get("/realtime", async (req: Request, res: Response) => {
     // Top countries last 30 min
     const countryCounts: Record<string, number> = {};
     const countryEvents = await prisma.events.findMany({
-      where: { website_id: ids, created_at: { gte: since30min } },
+      where: { website_id: website.id, created_at: { gte: since30min } },
       select: { country: true },
     });
     for (const e of countryEvents) {
@@ -464,14 +453,8 @@ router.get("/live-pages", async (req: Request, res: Response) => {
     const website = await resolveWebsiteWithAccess(websiteId, req.user);
     if (!website) return res.status(403).json({ error: "Access denied" });
 
-    const pages = getLivePages(websiteId);
-    // Also try with the other ID form
-    const altPages = website.website_id && website.website_id !== websiteId
-      ? getLivePages(website.website_id)
-      : {};
-
-    const merged = { ...altPages, ...pages };
-    res.json({ websiteId: website.id, pages: merged });
+    const pages = getLivePages(website.id);
+    res.json({ websiteId: website.id, pages });
   } catch (error: any) {
     logger.error("Analytics live-pages failed", { error: error.message });
     res.status(500).json({ error: error.message });
@@ -494,28 +477,13 @@ router.get("/page-flow", async (req: Request, res: Response) => {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
-    const websiteIds = websiteIdFilter(website);
-
-    const transitions = await prisma.page_transitions.findMany({
+    const allTransitions = await prisma.page_transitions.findMany({
       where: {
-        website_id: websiteIds.in[0],
+        website_id: website.id,
         created_at: { gte: startDate, lte: endDate },
       },
       select: { from_page: true, to_page: true, session_id: true },
     });
-
-    // Also try with the other ID if available
-    let allTransitions = transitions;
-    if (websiteIds.in.length > 1) {
-      const extra = await prisma.page_transitions.findMany({
-        where: {
-          website_id: websiteIds.in[1],
-          created_at: { gte: startDate, lte: endDate },
-        },
-        select: { from_page: true, to_page: true, session_id: true },
-      });
-      allTransitions = [...transitions, ...extra];
-    }
 
     // Aggregate transition counts
     const linkCounts: Record<string, number> = {};
@@ -581,12 +549,10 @@ router.get("/top-entry-exit", async (req: Request, res: Response) => {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
-    const websiteIds = websiteIdFilter(website);
-
     // Group events by session, ordered by time, to find first and last page per session
     const events = await prisma.events.findMany({
       where: {
-        website_id: websiteIds,
+        website_id: website.id,
         created_at: { gte: startDate, lte: endDate },
         url: { not: null },
         session_id: { not: null },
@@ -652,11 +618,9 @@ router.get("/session-paths", async (req: Request, res: Response) => {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
-    const websiteIds = websiteIdFilter(website);
-
     const events = await prisma.events.findMany({
       where: {
-        website_id: websiteIds,
+        website_id: website.id,
         created_at: { gte: startDate, lte: endDate },
         url: { not: null },
         session_id: { not: null },
@@ -726,11 +690,9 @@ router.get("/page-stats", async (req: Request, res: Response) => {
 
     const startDate = new Date(start);
     const endDate = new Date(end);
-    const websiteIds = websiteIdFilter(website);
-
     const events = await prisma.events.findMany({
       where: {
-        website_id: websiteIds,
+        website_id: website.id,
         created_at: { gte: startDate, lte: endDate },
         url: { not: null },
       },

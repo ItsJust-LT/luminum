@@ -39,7 +39,7 @@ async function resolveOrganizationId(
   if (organizationId) return organizationId;
   if (!websiteId) return null;
   const website = await prisma.websites.findFirst({
-    where: { OR: [{ id: websiteId }, { website_id: websiteId }] },
+    where: { id: websiteId },
     select: { organization_id: true },
   });
   return website?.organization_id ?? null;

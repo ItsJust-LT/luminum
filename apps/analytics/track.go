@@ -154,14 +154,27 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	canonWid, ok := normalizeWebsiteID(event.WebsiteID)
+	normalizedWid, ok := normalizeWebsiteID(event.WebsiteID)
 	if !ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing websiteId"})
 		return
 	}
-	event.WebsiteID = canonWid
+	found, existErr := websiteExists(context.Background(), normalizedWid)
+	if existErr != nil {
+		log.Printf("[%s] track website lookup id=%s: %v", serviceName, normalizedWid, existErr)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unknown websiteId"})
+		log.Printf("[%s] track unknown websites.id: %s", serviceName, normalizedWid)
+		return
+	}
+	event.WebsiteID = normalizedWid
 
 	// Site audits (Lighthouse/Puppeteer) and similar automated browsers: do not record events.
 	if shouldIgnoreAutomatedClient(r) {

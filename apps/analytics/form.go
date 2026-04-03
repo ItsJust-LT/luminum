@@ -45,13 +45,28 @@ func formSubmissionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing websiteId", http.StatusBadRequest)
 		return
 	}
-	websiteId, widOK := normalizeWebsiteID(rawWid)
+	normalizedWid, widOK := normalizeWebsiteID(rawWid)
 	if !widOK {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing websiteId"})
 		return
 	}
+
+	found, existErr := websiteExists(context.Background(), normalizedWid)
+	if existErr != nil {
+		log.Printf("[%s] form website lookup id=%s: %v", serviceName, normalizedWid, existErr)
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unknown websiteId"})
+		log.Printf("[%s] form unknown websites.id: %s", serviceName, normalizedWid)
+		return
+	}
+	websiteId := normalizedWid
 
 	formName, _ := payload["formName"].(string)
 	if formName == "" {
@@ -84,8 +99,10 @@ func formSubmissionHandler(w http.ResponseWriter, r *http.Request) {
 	if sessionId != "" {
 		sessionIdPtr = sessionId
 	}
+	// Pass JSON as string so pgx simple protocol sends json/jsonb, not bytea (which breaks ::jsonb).
+	formJSON := string(formData)
 	err = dbPool.QueryRow(context.Background(), query,
-		websiteId, sessionIdPtr, time.Now().UTC(), formData,
+		websiteId, sessionIdPtr, time.Now().UTC(), formJSON,
 	).Scan(&submissionId)
 	if err != nil {
 		var pgErr *pgconn.PgError

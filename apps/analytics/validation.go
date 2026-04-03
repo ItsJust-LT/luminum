@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// events.website_id is a UUID FK to websites.id
+// Client scripts must send websites.id (UUID from the Luminum dashboard).
 var websiteUUIDRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func normalizeWebsiteID(raw string) (canonical string, ok bool) {

@@ -158,7 +158,6 @@ export interface Website {
   updated_at: string;
   metadata?: Record<string, any>;
   settings?: Record<string, any>;
-  website_id?: string;
 }
 
 export interface FormSubmission {
