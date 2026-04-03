@@ -687,6 +687,55 @@ router.get("/email-system-status", adminOnly, async (_req: Request, res: Respons
   });
 });
 
+// POST /api/admin/link-organization-email-domain — attach inbound/outbound mail to a website domain (same as tenant setup-domain; DNS not marked verified).
+router.post("/link-organization-email-domain", adminOnly, async (req: Request, res: Response) => {
+  try {
+    if (!isEmailSystemEnabled()) {
+      return res.status(400).json({
+        success: false,
+        error: EMAIL_SYSTEM_UNAVAILABLE_MESSAGE,
+      });
+    }
+    const { organizationId, websiteId, email_from_address } = req.body as {
+      organizationId?: string;
+      websiteId?: string;
+      email_from_address?: string;
+    };
+    if (!organizationId || !websiteId) {
+      return res.status(400).json({ success: false, error: "organizationId and websiteId required" });
+    }
+    const website = await prisma.websites.findUnique({
+      where: { id: websiteId },
+      select: { id: true, domain: true, organization_id: true },
+    });
+    if (!website || website.organization_id !== organizationId) {
+      return res.status(400).json({ success: false, error: "Website not found or does not belong to this organization" });
+    }
+    const from =
+      typeof email_from_address === "string" && email_from_address.trim().length > 0
+        ? email_from_address.trim().slice(0, 320)
+        : `replies@${website.domain}`;
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        emails_enabled: true,
+        email_domain_id: websiteId,
+        email_from_address: from,
+        email_dns_verified_at: null,
+        email_dns_last_check_at: null,
+        email_dns_last_error: null,
+      },
+    });
+    await invalidateDomainLookupCacheForOrganization(organizationId);
+    res.json({
+      success: true,
+      message: `Mail domain set to ${website.domain}. Add the domain in Resend, publish DNS, then save the API key and webhook secret below and run Verify DNS when ready.`,
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
 // POST /api/admin/enable-organization-email-access — enable emails feature for org (access only; org does domain/DNS setup in dashboard).
 router.post("/enable-organization-email-access", adminOnly, async (req: Request, res: Response) => {
   try {

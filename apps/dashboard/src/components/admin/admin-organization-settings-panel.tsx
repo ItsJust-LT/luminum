@@ -49,6 +49,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TransferOwnershipDialog } from "@/components/dashboard/transfer-ownership-dialog"
+import { AdminOrganizationEmailDomainSection } from "@/components/admin/admin-organization-email-domain-section"
 import { AdminOrganizationResendSection } from "@/components/admin/admin-organization-resend-section"
 import { AdminOrganizationPlatformFeatures } from "@/components/admin/admin-organization-platform-features"
 
@@ -88,6 +89,9 @@ type WorkspaceOrg = {
   custom_domain_prefix?: string | null
   custom_domain_verified?: boolean
   email_dns_verified_at?: string | Date | null
+  email_domain_id?: string | null
+  email_from_address?: string | null
+  websites?: { id: string; domain: string; name?: string | null }[]
 }
 
 export type AdminOrganizationSettingsPanelProps = {
@@ -506,6 +510,21 @@ export function AdminOrganizationSettingsPanel({
         }}
         onUpdated={refresh}
       />
+
+      {org.id && org.slug ? (
+        <AdminOrganizationEmailDomainSection
+          organizationId={org.id}
+          organizationSlug={org.slug}
+          websites={(org.websites ?? []).map((w) => ({
+            id: w.id,
+            domain: w.domain,
+            name: w.name ?? null,
+          }))}
+          linkedWebsiteId={org.email_domain_id ?? null}
+          emailFromAddress={org.email_from_address ?? null}
+          onUpdated={refresh}
+        />
+      ) : null}
 
       {org.id && org.slug ? (
         <AdminOrganizationResendSection

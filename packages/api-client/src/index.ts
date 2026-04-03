@@ -410,6 +410,17 @@ function createApiClient(baseUrl: string = "") {
       get("/api/admin/analytics/devices", { start, end, limit }),
     enableEmailAccess: (organizationId: string) =>
       post("/api/admin/enable-organization-email-access", { organizationId }),
+    /** Attach org mail to a website row’s domain (platform admin). Enables email for the org and clears DNS verification until Resend verify. */
+    linkOrganizationEmailDomain: (
+      organizationId: string,
+      websiteId: string,
+      email_from_address?: string
+    ) =>
+      post("/api/admin/link-organization-email-domain", {
+        organizationId,
+        websiteId,
+        ...(email_from_address != null && email_from_address !== "" ? { email_from_address } : {}),
+      }),
     disableEmail: (organizationId: string) =>
       post("/api/admin/disable-organization-email", { organizationId }),
     enableWhatsapp: (organizationId: string) =>
