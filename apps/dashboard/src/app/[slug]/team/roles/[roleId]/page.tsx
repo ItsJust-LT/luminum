@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ArrowLeft, Loader2, Trash2 } from "lucide-react"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label"
 import { api } from "@/lib/api"
 import { useTeamHref } from "@/lib/team/use-team-href"
 import type { PermissionDefinition } from "@luminum/org-permissions"
-import { ORG_ROLE_KIND } from "@luminum/org-permissions"
+import { ORG_ROLE_KIND, filterPermissionDefinitionsForOrgFeatures } from "@luminum/org-permissions"
+import { orgFeatureFlagsFromOrganization } from "@/lib/org-feature-flags"
 import { PermissionMatrix } from "@/components/team/permission-matrix"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
 import { toast } from "sonner"
@@ -69,6 +70,12 @@ export default function EditTeamRolePage() {
       cancelled = true
     }
   }, [organization?.id, roleId])
+
+  const orgFlags = useMemo(() => orgFeatureFlagsFromOrganization(organization), [organization])
+  const visiblePerms = useMemo(
+    () => filterPermissionDefinitionsForOrgFeatures(perms, orgFlags),
+    [perms, orgFlags]
+  )
 
   const editable =
     role &&
@@ -222,7 +229,7 @@ export default function EditTeamRolePage() {
             </CardHeader>
             <CardContent>
               <PermissionMatrix
-                definitions={perms}
+                definitions={visiblePerms}
                 selected={selected}
                 onChange={setSelected}
                 disabled={!editable}

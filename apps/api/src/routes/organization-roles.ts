@@ -8,12 +8,48 @@ import {
   ROLE_TEMPLATES,
   validatePermissionSelection,
   expandPermissionSet,
-  getAllGrantablePermissionsSet,
+  filterPermissionIdsForOrgFeatures,
+  getGrantablePermissionsSetForOrgFeatures,
+  permissionSetsEqual,
+  effectiveRolePermissionSetForOrgMatch,
+  type OrgFeatureBooleans,
 } from "@luminum/org-permissions";
 import { ensureBuiltinRolesForOrganization } from "../lib/org-roles-seed.js";
 
 const router = Router();
 router.use(requireAuth);
+
+async function loadOrgFeatureFlags(organizationId: string): Promise<OrgFeatureBooleans> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      emails_enabled: true,
+      whatsapp_enabled: true,
+      analytics_enabled: true,
+      blogs_enabled: true,
+      invoices_enabled: true,
+    },
+  });
+  return org ?? {};
+}
+
+async function maybeDeleteOrphanCustomRole(
+  prevRoleId: string | null | undefined,
+  organizationId: string
+): Promise<void> {
+  if (!prevRoleId) return;
+  const old = await prisma.organization_role.findFirst({
+    where: { id: prevRoleId, organizationId, kind: ORG_ROLE_KIND.custom },
+  });
+  if (!old) return;
+  const [memberCount, invCount] = await Promise.all([
+    prisma.member.count({ where: { organizationRoleId: prevRoleId } }),
+    prisma.invitation.count({ where: { organizationRoleId: prevRoleId } }),
+  ]);
+  if (memberCount > 0 || invCount > 0) return;
+  await prisma.organization_role_permission.deleteMany({ where: { roleId: prevRoleId } });
+  await prisma.organization_role.delete({ where: { id: prevRoleId } });
+}
 
 // GET /api/organization-roles/catalog — permission definitions + role templates (any authenticated user)
 router.get("/catalog", (_req: Request, res: Response) => {
@@ -68,6 +104,8 @@ router.post("/", async (req: Request, res: Response) => {
     if (!organizationId) return res.status(400).json({ success: false, error: "organizationId required" });
     if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:roles:manage"]))) return;
 
+    const flags = await loadOrgFeatureFlags(organizationId);
+
     const body = req.body as {
       name?: string;
       color?: string;
@@ -82,6 +120,7 @@ router.post("/", async (req: Request, res: Response) => {
       if (!t) return res.status(400).json({ success: false, error: "Unknown template" });
       permissionIds = [...t.permissionIds];
     }
+    permissionIds = filterPermissionIdsForOrgFeatures(permissionIds, flags);
 
     const name = (body.name || "Custom role").trim().slice(0, 120);
     const color = (body.color || "#64748b").trim().slice(0, 32);
@@ -89,6 +128,13 @@ router.post("/", async (req: Request, res: Response) => {
 
     const v = validatePermissionSelection([...permissionIds]);
     if (!v.ok) return res.status(400).json({ success: false, error: v.error });
+    const grantableOrg = getGrantablePermissionsSetForOrgFeatures(flags);
+    const expandedCreate = new Set(
+      [...expandPermissionSet(permissionIds)].filter((id) => grantableOrg.has(id))
+    );
+    if (expandedCreate.size === 0) {
+      return res.status(400).json({ success: false, error: "Select at least one permission for an enabled product" });
+    }
 
     const now = new Date();
     const roleId = crypto.randomUUID();
@@ -104,7 +150,7 @@ router.post("/", async (req: Request, res: Response) => {
         createdAt: now,
         updatedAt: now,
         permissions: {
-          create: [...expandPermissionSet(permissionIds)].map((permission) => ({
+          create: [...expandedCreate].map((permission) => ({
             id: crypto.randomUUID(),
             permission,
           })),
@@ -148,55 +194,59 @@ router.get("/member-access", async (req: Request, res: Response) => {
     const name = member.user?.name || member.user?.email || "Member";
     const email = member.user?.email || "";
 
-    // Only the workspace owner is immutable here; admins can be reassigned to other roles or custom permissions.
+    const memberPayload = {
+      id: member.id,
+      userId: member.userId,
+      role: member.role,
+      name,
+      email,
+      organizationRoleId: member.organizationRoleId,
+      organizationRole: member.organization_role
+        ? {
+            id: member.organization_role.id,
+            name: member.organization_role.name,
+            kind: member.organization_role.kind,
+            color: member.organization_role.color,
+            iconKey: member.organization_role.iconKey,
+          }
+        : null,
+    };
+
+    const flags = await loadOrgFeatureFlags(organizationId);
+    const grantableOrg = getGrantablePermissionsSetForOrgFeatures(flags);
+    const grantableOrgList = [...grantableOrg];
+
+    // Workspace owner: UI read-only (transfer ownership to change).
     if (roleStr === "owner") {
-      const all = [...getAllGrantablePermissionsSet()];
       return res.json({
         success: true,
         fullAccess: true,
-        member: {
-          id: member.id,
-          userId: member.userId,
-          role: member.role,
-          name,
-          email,
-          organizationRoleId: member.organizationRoleId,
-          organizationRole: member.organization_role
-            ? {
-                id: member.organization_role.id,
-                name: member.organization_role.name,
-                kind: member.organization_role.kind,
-                color: member.organization_role.color,
-                iconKey: member.organization_role.iconKey,
-              }
-            : null,
-        },
-        permissionIds: all,
+        member: memberPayload,
+        permissionIds: grantableOrgList,
       });
     }
 
-    const raw = member.organization_role?.permissions.map((p) => p.permission) ?? [];
+    // Built-in Admin role has no organization_role_permission rows in DB (implicit full access).
+    // Return org-scoped grantable ids so the matrix matches enabled product modules.
+    const isBuiltinAdmin =
+      roleStr === "admin" || member.organization_role?.kind === ORG_ROLE_KIND.admin;
+    if (isBuiltinAdmin) {
+      return res.json({
+        success: true,
+        fullAccess: false,
+        member: memberPayload,
+        permissionIds: grantableOrgList,
+      });
+    }
+
+    const fromDb = member.organization_role?.permissions.map((p) => p.permission) ?? [];
+    const closed = expandPermissionSet(fromDb);
+    const permissionIdsOut = [...closed].filter((id) => grantableOrg.has(id));
     return res.json({
       success: true,
       fullAccess: false,
-      member: {
-        id: member.id,
-        userId: member.userId,
-        role: member.role,
-        name,
-        email,
-        organizationRoleId: member.organizationRoleId,
-        organizationRole: member.organization_role
-          ? {
-              id: member.organization_role.id,
-              name: member.organization_role.name,
-              kind: member.organization_role.kind,
-              color: member.organization_role.color,
-              iconKey: member.organization_role.iconKey,
-            }
-          : null,
-      },
-      permissionIds: raw,
+      member: memberPayload,
+      permissionIds: permissionIdsOut,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Failed";
@@ -230,11 +280,67 @@ router.patch("/member-permissions", async (req: Request, res: Response) => {
       });
     }
 
-    const v = validatePermissionSelection([...permissionIds]);
+    const flags = await loadOrgFeatureFlags(organizationId);
+    const grantableOrg = getGrantablePermissionsSetForOrgFeatures(flags);
+    const allowedIds = filterPermissionIdsForOrgFeatures(permissionIds, flags);
+    const v = validatePermissionSelection(allowedIds);
     if (!v.ok) return res.status(400).json({ success: false, error: v.error });
-    const expanded = new Set(v.expanded);
+    let expanded = new Set([...v.expanded].filter((id) => grantableOrg.has(id)));
+    const vClosed = validatePermissionSelection([...expanded]);
+    if (!vClosed.ok) return res.status(400).json({ success: false, error: vClosed.error });
+    expanded = new Set([...vClosed.expanded].filter((id) => grantableOrg.has(id)));
+    if (expanded.size === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Select at least one permission for an enabled product in this workspace.",
+      });
+    }
+
     const now = new Date();
     const display = (member.user?.name || member.user?.email || "Member").trim().slice(0, 80);
+    const prevRoleId = member.organizationRoleId;
+
+    // Every permission enabled for this org → Admin (never Owner).
+    if (permissionSetsEqual(expanded, grantableOrg)) {
+      const adminRole = await prisma.organization_role.findFirst({
+        where: { organizationId, kind: ORG_ROLE_KIND.admin },
+      });
+      if (!adminRole) {
+        return res.status(500).json({ success: false, error: "Built-in Admin role is missing for this organization" });
+      }
+      await prisma.member.update({
+        where: { id: memberRowId },
+        data: { role: "admin", organizationRoleId: adminRole.id },
+      });
+      await maybeDeleteOrphanCustomRole(prevRoleId, organizationId);
+      return res.json({ success: true, organizationRoleId: adminRole.id });
+    }
+
+    const roleRows = await prisma.organization_role.findMany({
+      where: { organizationId, kind: { not: ORG_ROLE_KIND.owner } },
+      include: { permissions: true },
+    });
+    const matches = roleRows.filter((r) =>
+      permissionSetsEqual(
+        effectiveRolePermissionSetForOrgMatch(
+          r.kind,
+          r.permissions.map((p) => p.permission),
+          grantableOrg
+        ),
+        expanded
+      )
+    );
+
+    if (matches.length === 1) {
+      const target = matches[0]!;
+      const newRoleStr = target.kind === ORG_ROLE_KIND.admin ? "admin" : "member";
+      await prisma.member.update({
+        where: { id: memberRowId },
+        data: { role: newRoleStr, organizationRoleId: target.id },
+      });
+      await maybeDeleteOrphanCustomRole(prevRoleId, organizationId);
+      return res.json({ success: true, organizationRoleId: target.id });
+    }
 
     const existingRoleId = member.organizationRoleId;
     if (existingRoleId) {
@@ -256,6 +362,10 @@ router.patch("/member-permissions", async (req: Request, res: Response) => {
         await prisma.organization_role.update({
           where: { id: existing.id },
           data: { name: `Access · ${display}`, updatedAt: now },
+        });
+        await prisma.member.update({
+          where: { id: memberRowId },
+          data: { role: "member", organizationRoleId: existing.id },
         });
         return res.json({ success: true, organizationRoleId: existing.id });
       }
@@ -286,6 +396,8 @@ router.patch("/member-permissions", async (req: Request, res: Response) => {
       where: { id: memberRowId },
       data: { role: "member", organizationRoleId: roleId },
     });
+
+    await maybeDeleteOrphanCustomRole(prevRoleId, organizationId);
 
     res.json({ success: true, organizationRoleId: roleId });
   } catch (error: unknown) {
@@ -362,9 +474,15 @@ router.patch("/:id", async (req: Request, res: Response) => {
     if (body.iconKey !== undefined) data.iconKey = body.iconKey.trim().slice(0, 64);
 
     if (body.permissionIds !== undefined) {
-      const v = validatePermissionSelection([...body.permissionIds]);
+      const flags = await loadOrgFeatureFlags(organizationId);
+      const stripped = filterPermissionIdsForOrgFeatures(body.permissionIds, flags);
+      const v = validatePermissionSelection([...stripped]);
       if (!v.ok) return res.status(400).json({ success: false, error: v.error });
-      const expanded = expandPermissionSet(body.permissionIds);
+      const grantableOrg = getGrantablePermissionsSetForOrgFeatures(flags);
+      const expanded = new Set([...expandPermissionSet(stripped)].filter((id) => grantableOrg.has(id)));
+      if (expanded.size === 0) {
+        return res.status(400).json({ success: false, error: "Select at least one permission for an enabled product" });
+      }
       await prisma.organization_role_permission.deleteMany({ where: { roleId } });
       await prisma.organization_role_permission.createMany({
         data: [...expanded].map((permission) => ({ id: crypto.randomUUID(), roleId, permission })),

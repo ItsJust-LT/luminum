@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { useSession } from "@/lib/auth/client"
 import { useOrganization } from "@/lib/contexts/organization-context"
@@ -20,7 +20,8 @@ import {
 import { api } from "@/lib/api"
 import { useTeamHref } from "@/lib/team/use-team-href"
 import type { PermissionDefinition } from "@luminum/org-permissions"
-import { ORG_ROLE_KIND } from "@luminum/org-permissions"
+import { ORG_ROLE_KIND, filterPermissionDefinitionsForOrgFeatures } from "@luminum/org-permissions"
+import { orgFeatureFlagsFromOrganization } from "@/lib/org-feature-flags"
 import { PermissionMatrix } from "@/components/team/permission-matrix"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
 import { toast } from "sonner"
@@ -82,6 +83,12 @@ export default function MemberAccessPage() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load when org + member id stable
   }, [organization?.id, memberRowId])
+
+  const orgFlags = useMemo(() => orgFeatureFlagsFromOrganization(organization), [organization])
+  const visibleCatalog = useMemo(
+    () => filterPermissionDefinitionsForOrgFeatures(catalog, orgFlags),
+    [catalog, orgFlags]
+  )
 
   const onApplyRole = async () => {
     if (!organization?.id || !pickRoleId || !memberRowId) return
@@ -259,7 +266,7 @@ export default function MemberAccessPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <PermissionMatrix definitions={catalog} selected={selected} onChange={setSelected} />
+                  <PermissionMatrix definitions={visibleCatalog} selected={selected} onChange={setSelected} />
                   <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
                     <Button type="button" variant="outline" asChild>
                       <Link href={href("")}>Cancel</Link>

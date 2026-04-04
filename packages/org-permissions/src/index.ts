@@ -338,6 +338,84 @@ export function permissionMeta(id: string): PermissionDefinition | undefined {
   return PERMISSIONS.find((p) => p.id === id);
 }
 
+/** Organization feature toggles (Prisma `organization` columns). */
+export type OrgFeatureBooleans = {
+  emails_enabled?: boolean | null;
+  whatsapp_enabled?: boolean | null;
+  analytics_enabled?: boolean | null;
+  blogs_enabled?: boolean | null;
+  invoices_enabled?: boolean | null;
+};
+
+/** Maps a permission id to the org flag that must be true for it to apply. */
+export function orgFeatureKeyForPermissionId(permissionId: string): keyof OrgFeatureBooleans | null {
+  if (permissionId.startsWith("whatsapp:")) return "whatsapp_enabled";
+  if (permissionId.startsWith("email:")) return "emails_enabled";
+  if (permissionId.startsWith("blog:")) return "blogs_enabled";
+  if (permissionId.startsWith("analytics:")) return "analytics_enabled";
+  if (permissionId.startsWith("invoices:") || permissionId.startsWith("invoice_schedules:")) {
+    return "invoices_enabled";
+  }
+  return null;
+}
+
+export function isPermissionIdAllowedForOrgFeatures(
+  permissionId: string,
+  flags: OrgFeatureBooleans
+): boolean {
+  const key = orgFeatureKeyForPermissionId(permissionId);
+  if (!key) return true;
+  return flags[key] === true;
+}
+
+export function filterPermissionIdsForOrgFeatures(
+  ids: Iterable<string>,
+  flags: OrgFeatureBooleans
+): string[] {
+  return [...ids].filter((id) => isPermissionIdAllowedForOrgFeatures(id, flags));
+}
+
+export function filterPermissionDefinitionsForOrgFeatures(
+  definitions: readonly PermissionDefinition[],
+  flags: OrgFeatureBooleans
+): PermissionDefinition[] {
+  return definitions.filter((d) => isPermissionIdAllowedForOrgFeatures(d.id, flags));
+}
+
+export function getGrantablePermissionIdsForOrgFeatures(flags: OrgFeatureBooleans): string[] {
+  return GRANTABLE_PERMISSION_IDS.filter((id) => isPermissionIdAllowedForOrgFeatures(id, flags));
+}
+
+export function getGrantablePermissionsSetForOrgFeatures(flags: OrgFeatureBooleans): Set<string> {
+  return new Set(getGrantablePermissionIdsForOrgFeatures(flags));
+}
+
+export function filterRoleTemplatesForOrgFeatures<
+  T extends { permissionIds: readonly string[] },
+>(templates: readonly T[], flags: OrgFeatureBooleans): T[] {
+  return templates.map((t) => ({
+    ...t,
+    permissionIds: filterPermissionIdsForOrgFeatures(t.permissionIds, flags),
+  }));
+}
+
+export function permissionSetsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+/** Effective permissions for a stored role when comparing to a user selection (org-scoped). */
+export function effectiveRolePermissionSetForOrgMatch(
+  kind: string,
+  storedPermissionIds: readonly string[],
+  grantableForOrg: Set<string>
+): Set<string> {
+  if (kind === ORG_ROLE_KIND.admin) return new Set(grantableForOrg);
+  const full = expandPermissionSet(storedPermissionIds);
+  return new Set([...full].filter((id) => grantableForOrg.has(id)));
+}
+
 /** Default seed for member_template — full access except team administration (matches typical legacy member). */
 export const DEFAULT_MEMBER_TEMPLATE_PERMISSION_IDS: readonly string[] = GRANTABLE_PERMISSION_IDS.filter(
   (id) =>

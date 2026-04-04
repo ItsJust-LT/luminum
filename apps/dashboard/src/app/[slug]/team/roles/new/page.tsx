@@ -13,6 +13,11 @@ import { Label } from "@/components/ui/label"
 import { api } from "@/lib/api"
 import { useTeamHref } from "@/lib/team/use-team-href"
 import type { PermissionDefinition } from "@luminum/org-permissions"
+import {
+  filterPermissionDefinitionsForOrgFeatures,
+  filterRoleTemplatesForOrgFeatures,
+} from "@luminum/org-permissions"
+import { orgFeatureFlagsFromOrganization } from "@/lib/org-feature-flags"
 import { PermissionMatrix } from "@/components/team/permission-matrix"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
 import { toast } from "sonner"
@@ -47,19 +52,29 @@ function NewTeamRolePageInner() {
       .finally(() => setCatalogLoaded(true))
   }, [])
 
+  const orgFlags = useMemo(() => orgFeatureFlagsFromOrganization(organization), [organization])
+  const visiblePerms = useMemo(
+    () => filterPermissionDefinitionsForOrgFeatures(perms, orgFlags),
+    [perms, orgFlags]
+  )
+  const visibleTemplates = useMemo(
+    () => filterRoleTemplatesForOrgFeatures(templates, orgFlags),
+    [templates, orgFlags]
+  )
+
   useEffect(() => {
-    if (!templateId || !templates.length) return
-    const t = templates.find((x) => x.id === templateId)
+    if (!templateId || !visibleTemplates.length) return
+    const t = visibleTemplates.find((x) => x.id === templateId)
     if (t) {
       setSelected(new Set(t.permissionIds))
       setName((prev) => prev || `${t.name} (copy)`)
     }
-  }, [templateId, templates])
+  }, [templateId, visibleTemplates])
 
-  const templateCards = useMemo(() => templates, [templates])
+  const templateCards = useMemo(() => visibleTemplates, [visibleTemplates])
 
   const onPickTemplate = (id: string) => {
-    const t = templates.find((x) => x.id === id)
+    const t = visibleTemplates.find((x) => x.id === id)
     if (!t) return
     setSelected(new Set(t.permissionIds))
     setName(`${t.name}`)
@@ -176,7 +191,7 @@ function NewTeamRolePageInner() {
               <CardDescription>Turning on advanced actions automatically includes what they depend on.</CardDescription>
             </CardHeader>
             <CardContent>
-              <PermissionMatrix definitions={perms} selected={selected} onChange={setSelected} />
+              <PermissionMatrix definitions={visiblePerms} selected={selected} onChange={setSelected} />
             </CardContent>
           </Card>
 
