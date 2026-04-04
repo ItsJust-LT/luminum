@@ -23,7 +23,7 @@ export function NotificationPreferencesButton() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0"
+          className="h-8 w-8 shrink-0 rounded-lg p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Notification preferences"
         >
           <Settings className="h-4 w-4" />

@@ -3,8 +3,6 @@
  * Provides colors, badges, and styling based on notification type
  */
 
-import { NotificationType } from '@/lib/types/notifications'
-
 export interface NotificationTypeStyle {
   color: string
   bgColor: string
@@ -12,6 +10,8 @@ export interface NotificationTypeStyle {
   badgeColor: string
   badgeTextColor: string
   icon: string
+  /** Solid accent for progress bars, borders (hex). */
+  accentHex: string
 }
 
 /**
@@ -27,6 +27,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-green-500',
       badgeTextColor: 'text-white',
       icon: '👥',
+      accentHex: '#22c55e',
     },
     'invitation_accepted': {
       color: 'text-green-700',
@@ -35,6 +36,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-green-500',
       badgeTextColor: 'text-white',
       icon: '✅',
+      accentHex: '#22c55e',
     },
     'support_ticket_resolved': {
       color: 'text-green-700',
@@ -43,6 +45,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-green-500',
       badgeTextColor: 'text-white',
       icon: '✅',
+      accentHex: '#22c55e',
     },
     'new_user_registered': {
       color: 'text-green-700',
@@ -51,6 +54,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-green-500',
       badgeTextColor: 'text-white',
       icon: '🆕',
+      accentHex: '#22c55e',
     },
     'support_message': {
       color: 'text-green-700',
@@ -59,6 +63,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-green-500',
       badgeTextColor: 'text-white',
       icon: '💬',
+      accentHex: '#22c55e',
     },
     
     // Warning types (orange/yellow)
@@ -69,6 +74,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-orange-500',
       badgeTextColor: 'text-white',
       icon: '👋',
+      accentHex: '#f97316',
     },
     'support_ticket_updated': {
       color: 'text-orange-700',
@@ -77,6 +83,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-orange-500',
       badgeTextColor: 'text-white',
       icon: '✏️',
+      accentHex: '#f97316',
     },
     'maintenance_notice': {
       color: 'text-orange-700',
@@ -85,6 +92,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-orange-500',
       badgeTextColor: 'text-white',
       icon: '🔧',
+      accentHex: '#f97316',
     },
     
     // Error types (red)
@@ -95,6 +103,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-red-500',
       badgeTextColor: 'text-white',
       icon: '❌',
+      accentHex: '#ef4444',
     },
     'organization_deleted': {
       color: 'text-red-700',
@@ -103,6 +112,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-red-500',
       badgeTextColor: 'text-white',
       icon: '🗑️',
+      accentHex: '#ef4444',
     },
     
     // Info types (blue)
@@ -113,6 +123,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '📝',
+      accentHex: '#3b82f6',
     },
     'email_received': {
       color: 'text-blue-700',
@@ -121,6 +132,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '📧',
+      accentHex: '#3b82f6',
     },
     'member_invited': {
       color: 'text-blue-700',
@@ -129,6 +141,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '📧',
+      accentHex: '#3b82f6',
     },
     'member_role_changed': {
       color: 'text-purple-700',
@@ -137,6 +150,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-purple-500',
       badgeTextColor: 'text-white',
       icon: '🔄',
+      accentHex: '#a855f7',
     },
     'new_support_ticket': {
       color: 'text-blue-700',
@@ -145,6 +159,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '🎫',
+      accentHex: '#3b82f6',
     },
     'system_announcement': {
       color: 'text-blue-700',
@@ -153,6 +168,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '📢',
+      accentHex: '#3b82f6',
     },
     'organization_created': {
       color: 'text-blue-700',
@@ -161,6 +177,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '🏢',
+      accentHex: '#3b82f6',
     },
     'invoice_created': {
       color: 'text-blue-700',
@@ -169,6 +186,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-blue-500',
       badgeTextColor: 'text-white',
       icon: '📄',
+      accentHex: '#3b82f6',
     },
     'invoice_paid': {
       color: 'text-green-700',
@@ -177,6 +195,7 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-green-500',
       badgeTextColor: 'text-white',
       icon: '💵',
+      accentHex: '#22c55e',
     },
     'blog_post_published': {
       color: 'text-indigo-700',
@@ -185,17 +204,19 @@ export function getNotificationTypeStyle(type: string): NotificationTypeStyle {
       badgeColor: 'bg-indigo-500',
       badgeTextColor: 'text-white',
       icon: '📰',
+      accentHex: '#6366f1',
     },
   }
 
   // Default styling for unknown types
   return styles[type] || {
-    color: 'text-gray-700',
-    bgColor: 'bg-gray-50',
-    borderColor: 'border-gray-200',
-    badgeColor: 'bg-gray-500',
-    badgeTextColor: 'text-white',
+    color: 'text-gray-700 dark:text-gray-200',
+    bgColor: 'bg-muted/40',
+    borderColor: 'border-border',
+    badgeColor: 'bg-muted',
+    badgeTextColor: 'text-foreground',
     icon: '🔔',
+    accentHex: '#64748b',
   }
 }
 

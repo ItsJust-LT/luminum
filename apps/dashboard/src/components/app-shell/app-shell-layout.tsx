@@ -111,7 +111,7 @@ export function AppShellLayout({
 
         <div className="flex shrink-0 items-center gap-1.5">
           <ThemeToggle />
-          <div className="rounded-xl p-0.5 hover:bg-muted/50 transition-colors">
+          <div className="flex items-center justify-center rounded-full p-0.5 transition-colors hover:bg-muted/60">
             <NotificationBell />
           </div>
           <Badge className={`${roleColor} hidden text-xs sm:inline-flex`} variant="secondary">

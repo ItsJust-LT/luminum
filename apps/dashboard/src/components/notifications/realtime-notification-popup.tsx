@@ -1,259 +1,218 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { X, ExternalLink } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getNotificationTypeStyle, formatRelativeTime } from '@/lib/notifications/utils';
-import { Notification } from '@/lib/notifications/types';
+import type { Notification } from '@/lib/notifications/types';
+import { getNotificationIconForBadge } from '@/components/notifications/notification-icons';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useSession } from '@/lib/auth/client';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface RealtimeNotificationPopupProps {
   notification: Notification;
   onClose: () => void;
-  duration?: number; // Duration in milliseconds (default: 5000ms)
+  duration?: number;
 }
 
+/** @deprecated Prefer EnhancedNotificationPopup — kept for any legacy imports. */
 export function RealtimeNotificationPopup({
   notification,
   onClose,
   duration = 5000,
 }: RealtimeNotificationPopupProps) {
-  const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [progress, setProgress] = useState(100);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const endAtRef = useRef(0);
+  const totalMsRef = useRef(duration);
+  const pausedRemainingRef = useRef<number | null>(null);
+  const isExitingRef = useRef(false);
   const router = useRouter();
   const { data: session } = useSession();
   const userId = session?.user?.id;
 
   const style = getNotificationTypeStyle(notification.type);
+  const accent = style.accentHex;
 
-  // Show animation on mount
-  useEffect(() => {
-    // Trigger enter animation
-    setTimeout(() => setIsVisible(true), 10);
+  const clearTimers = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    closeTimerRef.current = null;
+    progressIntervalRef.current = null;
+  }, []);
 
-    // Auto-close after duration
-    if (duration > 0) {
-      timeoutRef.current = setTimeout(() => {
-        handleClose();
-      }, duration);
-    }
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [duration]);
-
-  const handleClose = async () => {
+  const handleClose = useCallback(async () => {
+    if (isExitingRef.current) return;
+    isExitingRef.current = true;
     setIsExiting(true);
-    
-    // Mark as read if user is logged in and notification has a valid ID
+    clearTimers();
     if (userId && notification.id && !notification.id.startsWith('ably-')) {
       try {
         await api.notifications.markRead(notification.id);
-      } catch (error) {
-        console.error('Error marking notification as read:', error);
+      } catch {
+        /* ignore */
       }
     }
+    setTimeout(() => onClose(), 280);
+  }, [clearTimers, notification.id, onClose, userId]);
 
-    // Wait for exit animation to complete
-    setTimeout(() => {
-      onClose();
-    }, 300); // Match animation duration
-  };
+  const scheduleAutoClose = useCallback(
+    (ms: number) => {
+      clearTimers();
+      if (ms <= 0) return;
+      totalMsRef.current = ms;
+      endAtRef.current = Date.now() + ms;
+      setProgress(100);
+      progressIntervalRef.current = setInterval(() => {
+        const left = Math.max(0, endAtRef.current - Date.now());
+        setProgress(totalMsRef.current > 0 ? (left / totalMsRef.current) * 100 : 0);
+      }, 48);
+      closeTimerRef.current = setTimeout(() => void handleClose(), ms);
+    },
+    [clearTimers, handleClose]
+  );
+
+  useEffect(() => {
+    isExitingRef.current = false;
+    pausedRemainingRef.current = null;
+    if (duration <= 0) {
+      setProgress(0);
+      return;
+    }
+    scheduleAutoClose(duration);
+    return () => clearTimers();
+  }, [duration, notification.id, scheduleAutoClose, clearTimers]);
 
   const handleClick = async () => {
-    // Mark as read
     if (userId && notification.id && !notification.id.startsWith('ably-')) {
       try {
         await api.notifications.markRead(notification.id);
-      } catch (error) {
-        console.error('Error marking notification as read:', error);
+      } catch {
+        /* ignore */
       }
     }
-
-    // Navigate to URL if available
     const url = notification.data?.url;
     if (url) {
-      handleClose();
-      
-      // Use router for internal navigation
-      if (url.startsWith('/')) {
-        router.push(url);
-      } else {
-        // External link
-        window.open(url, '_blank');
-      }
-    } else {
-      // Just close if no URL
-      handleClose();
-    }
+      void handleClose();
+      if (url.startsWith('/')) router.push(url);
+      else window.open(url, '_blank');
+    } else void handleClose();
+  };
+
+  const pause = () => {
+    if (duration <= 0 || isExitingRef.current) return;
+    const left = Math.max(0, endAtRef.current - Date.now());
+    pausedRemainingRef.current = left;
+    clearTimers();
+    setProgress(totalMsRef.current > 0 ? (left / totalMsRef.current) * 100 : 0);
+  };
+
+  const resume = () => {
+    if (duration <= 0 || isExitingRef.current) return;
+    const ms = pausedRemainingRef.current;
+    pausedRemainingRef.current = null;
+    if (ms != null && ms > 0) scheduleAutoClose(ms);
   };
 
   return (
-    <div
-      className={cn(
-        'fixed top-4 right-4 z-50 w-full max-w-sm transition-all duration-300 ease-out',
-        isVisible && !isExiting
-          ? 'translate-x-0 opacity-100'
-          : 'translate-x-full opacity-0'
-      )}
-      style={{
-        transform: isVisible && !isExiting ? 'translateX(0)' : 'translateX(100%)',
-      }}
+    <motion.div
+      initial={{ opacity: 0, x: 24, scale: 0.96 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: 24 }}
+      className="w-full max-w-sm"
+      onMouseEnter={pause}
+      onMouseLeave={resume}
     >
-      <Card
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => void handleClick()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            void handleClick();
+          }
+        }}
         className={cn(
-          'relative overflow-hidden shadow-lg cursor-pointer border-l-4 transition-all hover:shadow-xl',
-          style.bgColor,
-          isExiting && 'opacity-0 scale-95'
+          'relative cursor-pointer overflow-hidden rounded-2xl border border-border/60',
+          'bg-card/95 shadow-xl backdrop-blur-xl ring-1 ring-black/[0.04] dark:ring-white/[0.06]'
         )}
-        style={{
-          borderLeftColor: style.badgeColor.includes('green') ? '#22c55e' :
-                           style.badgeColor.includes('blue') ? '#3b82f6' :
-                           style.badgeColor.includes('orange') ? '#f97316' :
-                           style.badgeColor.includes('red') ? '#ef4444' :
-                           style.badgeColor.includes('purple') ? '#a855f7' : '#6b7280'
-        }}
-        onClick={handleClick}
-        onMouseEnter={() => {
-          // Pause auto-close on hover
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-          }
-        }}
-        onMouseLeave={() => {
-          // Resume auto-close
-          if (duration > 0 && !isExiting) {
-            timeoutRef.current = setTimeout(() => {
-              handleClose();
-            }, duration);
-          }
-        }}
       >
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            {/* Icon */}
+        <div className="absolute left-0 top-0 h-full w-1 rounded-l-2xl" style={{ backgroundColor: accent }} />
+        <div className="relative pl-4 pr-3 py-3">
+          <div className="flex gap-3">
             <div
               className={cn(
-                'flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-lg',
+                'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
                 style.badgeColor,
                 style.badgeTextColor
               )}
             >
-              {style.icon}
+              {getNotificationIconForBadge(notification.type, 'h-5 w-5', notification.iconKey)}
             </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <h4 className={cn('text-sm font-semibold', style.color)}>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <h4 className="text-sm font-semibold leading-snug text-foreground line-clamp-2">
                   {notification.title}
                 </h4>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 flex-shrink-0"
+                  className="h-7 w-7 shrink-0 rounded-full p-0"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleClose();
+                    void handleClose();
                   }}
+                  aria-label="Dismiss"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
-
-              <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                {notification.message}
-              </p>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                {(notification.priority || notification.data?.priority) && (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'text-[10px] px-1.5 py-0 h-4',
-                      notification.priority === 'high' &&
-                        'border-orange-300 text-orange-700 dark:border-orange-600 dark:text-orange-400',
-                      notification.data?.priority === 'urgent' &&
-                        'border-red-300 text-red-700 dark:border-red-600 dark:text-red-400'
-                    )}
-                  >
-                    {notification.data?.priority || notification.priority}
-                  </Badge>
-                )}
-                <span className="text-[10px] text-muted-foreground">
-                  {formatRelativeTime(notification.timestamp)}
-                </span>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{notification.message}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                <span>{formatRelativeTime(notification.timestamp)}</span>
                 {notification.data?.url && (
-                  <span className="text-[10px] text-primary flex items-center gap-1">
-                    <ExternalLink className="h-3 w-3" />
-                    Click to open
+                  <span className="inline-flex items-center gap-0.5 font-medium text-primary">
+                    Open <ArrowUpRight className="h-3 w-3" />
                   </span>
                 )}
               </div>
             </div>
           </div>
-        </CardContent>
-
-        {/* Progress bar */}
+        </div>
         {duration > 0 && !isExiting && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/10">
+          <div className="h-0.5 w-full bg-muted/60">
             <div
-              className={cn('h-full transition-all linear', style.badgeColor)}
-              style={{
-                animation: `shrink ${duration}ms linear forwards`,
-              }}
+              className="h-full transition-[width] duration-75 ease-linear"
+              style={{ width: `${progress}%`, backgroundColor: accent }}
             />
           </div>
         )}
-      </Card>
-
-      <style jsx>{`
-        @keyframes shrink {
-          from {
-            width: 100%;
-          }
-          to {
-            width: 0%;
-          }
-        }
-      `}</style>
-    </div>
+      </div>
+    </motion.div>
   );
 }
 
-/**
- * Container component for managing multiple notification popups
- */
 export function RealtimeNotificationPopupContainer() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
-    // Listen for realtime notifications from the useNotifications hook
     const handleRealtimeNotification = (event: CustomEvent<Notification>) => {
-      const notification = event.detail;
+      const n = event.detail;
       setNotifications((prev) => {
-        // Check if notification already exists
-        const exists = prev.find(n => n.id === notification.id);
-        if (exists) return prev;
-        return [...prev, notification];
+        if (prev.some((x) => x.id === n.id)) return prev;
+        return [...prev, n];
       });
     };
-
-    // Listen for custom event
     window.addEventListener('realtime-notification', handleRealtimeNotification as EventListener);
-
-    return () => {
+    return () =>
       window.removeEventListener('realtime-notification', handleRealtimeNotification as EventListener);
-    };
   }, []);
 
   const removeNotification = (id: string) => {
@@ -261,24 +220,30 @@ export function RealtimeNotificationPopupContainer() {
   };
 
   return (
-    <div className="fixed top-4 right-4 z-[100] pointer-events-none flex flex-col gap-2 max-w-sm w-[calc(100%-2rem)] sm:w-full">
-      {notifications.map((notification, index) => (
-        <div
-          key={notification.id || `${notification.timestamp}-${index}`}
-          className="pointer-events-auto animate-in slide-in-from-right-full duration-300"
-        >
-          <RealtimeNotificationPopup
-            notification={notification}
-            onClose={() => removeNotification(notification.id || `${notification.timestamp}-${index}`)}
-            duration={
-              notification.data?.priority === 'urgent' ? 10000 : 
-              notification.priority === 'high' ? 8000 : 
-              5000
-            }
-          />
-        </div>
-      ))}
+    <div
+      className={cn(
+        'fixed z-[199] flex w-full max-w-sm flex-col gap-2 pointer-events-none',
+        'bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(0.75rem,env(safe-area-inset-right))]',
+        'sm:bottom-auto sm:top-4 sm:right-4'
+      )}
+    >
+      <AnimatePresence mode="popLayout">
+        {notifications.map((notification, index) => (
+          <div key={notification.id || `${notification.timestamp}-${index}`} className="pointer-events-auto">
+            <RealtimeNotificationPopup
+              notification={notification}
+              onClose={() => removeNotification(notification.id || `${notification.timestamp}-${index}`)}
+              duration={
+                notification.data?.priority === 'urgent'
+                  ? 12000
+                  : notification.priority === 'high'
+                    ? 9000
+                    : 5500
+              }
+            />
+          </div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
-

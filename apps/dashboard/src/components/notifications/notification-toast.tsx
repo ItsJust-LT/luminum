@@ -3,9 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { useNotifications } from '@/hooks/use-notifications';
-import { Notification } from '@/lib/notifications/types';
+import type { Notification } from '@/lib/notifications/types';
 import { cn } from '@/lib/utils';
 
 interface NotificationToastProps {
@@ -14,166 +13,154 @@ interface NotificationToastProps {
   onAction?: (action: string) => void;
 }
 
+function toastIcon(type: string) {
+  switch (type) {
+    case 'success':
+      return <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />;
+    case 'warning':
+      return <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />;
+    case 'error':
+      return <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />;
+    case 'system':
+      return <Bell className="h-5 w-5 text-primary" />;
+    default:
+      return <Info className="h-5 w-5 text-muted-foreground" />;
+  }
+}
+
+function toastSurface(type: string) {
+  switch (type) {
+    case 'success':
+      return 'border-emerald-500/25 bg-emerald-500/[0.06] dark:bg-emerald-500/[0.08]';
+    case 'warning':
+      return 'border-amber-500/25 bg-amber-500/[0.06] dark:bg-amber-500/[0.08]';
+    case 'error':
+      return 'border-red-500/25 bg-red-500/[0.06] dark:bg-red-500/[0.08]';
+    case 'system':
+      return 'border-primary/25 bg-primary/[0.06]';
+    default:
+      return 'border-border bg-card';
+  }
+}
+
 export function NotificationToast({ notification, onClose, onAction }: NotificationToastProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
-    // Show toast after a brief delay
-    const showTimer = setTimeout(() => setIsVisible(true), 100);
-    
-    // Auto-hide after 5 seconds (unless persistent)
-    const hideTimer = setTimeout(() => {
-      if (!notification.persistent) {
-        handleClose();
-      }
-    }, 5000);
-
+    const showTimer = setTimeout(() => setIsVisible(true), 80);
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+    if (!notification.persistent) {
+      hideTimer = setTimeout(() => {
+        setIsExiting(true);
+        setTimeout(() => onClose(), 280);
+      }, 5200);
+    }
     return () => {
       clearTimeout(showTimer);
-      clearTimeout(hideTimer);
+      if (hideTimer) clearTimeout(hideTimer);
     };
-  }, [notification.persistent]);
+  }, [notification.persistent, notification.id, onClose]);
 
   const handleClose = () => {
     setIsExiting(true);
-    setTimeout(() => {
-      onClose();
-    }, 300);
+    setTimeout(() => onClose(), 280);
   };
 
   const handleAction = (action: string) => {
-    if (onAction) {
-      onAction(action);
-    }
+    onAction?.(action);
     handleClose();
-  };
-
-  const getNotificationIcon = () => {
-    switch (notification.type) {
-      case 'success':
-        return <CheckCircle className="h-5 w-5 text-green-600" />;
-      case 'warning':
-        return <AlertTriangle className="h-5 w-5 text-yellow-600" />;
-      case 'error':
-        return <AlertCircle className="h-5 w-5 text-red-600" />;
-      case 'system':
-        return <Bell className="h-5 w-5 text-blue-600" />;
-      default:
-        return <Info className="h-5 w-5 text-gray-600" />;
-    }
-  };
-
-  const getNotificationStyles = () => {
-    switch (notification.type) {
-      case 'success':
-        return 'border-green-200 bg-green-50';
-      case 'warning':
-        return 'border-yellow-200 bg-yellow-50';
-      case 'error':
-        return 'border-red-200 bg-red-50';
-      case 'system':
-        return 'border-blue-200 bg-blue-50';
-      default:
-        return 'border-gray-200 bg-white';
-    }
   };
 
   return (
     <div
       className={cn(
-        "fixed top-4 right-4 z-50 w-80 max-w-sm transform transition-all duration-300 ease-in-out",
-        isVisible && !isExiting ? "translate-x-0 opacity-100" : "translate-x-full opacity-0"
+        'pointer-events-auto w-[min(100vw-1.5rem,22rem)] transition-all duration-300 ease-out',
+        isVisible && !isExiting ? 'translate-x-0 opacity-100' : 'translate-x-3 opacity-0'
       )}
     >
-      <Card className={cn("shadow-lg", getNotificationStyles())}>
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 mt-0.5">
-              {getNotificationIcon()}
+      <div
+        className={cn(
+          'overflow-hidden rounded-2xl border shadow-xl backdrop-blur-xl',
+          'ring-1 ring-black/[0.04] dark:ring-white/[0.06]',
+          toastSurface(notification.type)
+        )}
+      >
+        <div className="flex gap-3 p-3.5">
+          <div className="mt-0.5 shrink-0">{toastIcon(notification.type)}</div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <h4 className="text-sm font-semibold leading-snug tracking-tight text-foreground">
+                {notification.title}
+              </h4>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 shrink-0 rounded-full p-0 text-muted-foreground hover:bg-muted"
+                onClick={handleClose}
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-            
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h4 className="text-sm font-semibold text-gray-900">
-                    {notification.title}
-                  </h4>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {notification.message}
-                  </p>
-                </div>
-                
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClose}
-                  className="h-6 w-6 p-0 flex-shrink-0"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{notification.message}</p>
+            {notification.actions && notification.actions.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {notification.actions.map((action) => (
+                  <Button
+                    key={action.id}
+                    variant={
+                      action.style === 'primary' || action.variant === 'primary' ? 'default' : 'outline'
+                    }
+                    size="sm"
+                    className="h-8 rounded-lg px-3 text-xs"
+                    onClick={() => handleAction(action.action ?? action.id ?? 'open')}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
               </div>
-              
-              {notification.actions && notification.actions.length > 0 && (
-                <div className="flex gap-2 mt-3">
-                  {notification.actions.map((action) => (
-                    <Button
-                      key={action.id}
-                      variant={
-                        action.style === 'primary' || action.variant === 'primary'
-                          ? 'default'
-                          : 'outline'
-                      }
-                      size="sm"
-                      onClick={() =>
-                        handleAction(action.action ?? action.id ?? 'open')
-                      }
-                      className="text-xs h-7"
-                    >
-                      {action.label}
-                    </Button>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
 
-// Toast manager component
 export function NotificationToastManager() {
   const { notifications, markAsRead } = useNotifications();
   const [activeToasts, setActiveToasts] = useState<Notification[]>([]);
 
   useEffect(() => {
-    // Get recent unread notifications (last 5 minutes)
     const recentNotifications = notifications
-      .filter(n => !n.read && Date.now() - n.timestamp < 300000) // 5 minutes
-      .slice(0, 3); // Max 3 toasts at once
-
+      .filter((n) => !n.read && Date.now() - n.timestamp < 300000)
+      .slice(0, 3);
     setActiveToasts(recentNotifications);
   }, [notifications]);
 
   const handleToastClose = async (notificationId: string) => {
     await markAsRead(notificationId);
-    setActiveToasts(prev => prev.filter(n => n.id !== notificationId));
+    setActiveToasts((prev) => prev.filter((n) => n.id !== notificationId));
   };
 
   const handleAction = (notificationId: string, action: string) => {
     console.log(`Action ${action} triggered for notification ${notificationId}`);
-    // Handle action logic here
   };
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
+    <div
+      className={cn(
+        'fixed z-[190] flex flex-col gap-2 pointer-events-none',
+        'bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(0.75rem,env(safe-area-inset-right))]',
+        'sm:bottom-auto sm:top-4 sm:right-4'
+      )}
+    >
       {activeToasts.map((notification) => (
         <NotificationToast
           key={notification.id}
           notification={notification}
-          onClose={() => handleToastClose(notification.id)}
+          onClose={() => void handleToastClose(notification.id)}
           onAction={(action) => handleAction(notification.id, action)}
         />
       ))}
