@@ -45,8 +45,12 @@ export function useAnalyticsPresence(websiteId: string | null | undefined) {
     async function connectFallback() {
       if (cancelled) return
       try {
-        const apiBase = typeof process.env.NEXT_PUBLIC_API_URL === "string" ? process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "") : ""
-        const res = await fetch(`${apiBase}/api/analytics/live-ws-token?websiteId=${encodeURIComponent(websiteId!)}`, { credentials: "include" })
+        // Same-origin proxy (see lib/api.ts): session cookies are set for the dashboard host only,
+        // so calling api.luminum.agency directly would omit them and return 401.
+        const res = await fetch(
+          `/api/proxy/api/analytics/live-ws-token?websiteId=${encodeURIComponent(websiteId!)}`,
+          { credentials: "include" },
+        )
         if (!res.ok) return
         const { token, url } = await res.json()
         if (!token || !url) return
