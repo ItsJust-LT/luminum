@@ -1,5 +1,6 @@
 "use client"
 
+import type { Dispatch, SetStateAction } from "react"
 import { createContext, useContext, useMemo, useState } from "react"
 
 export interface CachedChatState<TMessage = any> {
@@ -14,7 +15,7 @@ interface WhatsAppContextValue {
   chatListCache: any[]
   setChatListCache: (items: any[]) => void
   chatStateById: Record<string, CachedChatState>
-  setChatStateById: (next: Record<string, CachedChatState>) => void
+  setChatStateById: Dispatch<SetStateAction<Record<string, CachedChatState>>>
 }
 
 const WhatsAppContext = createContext<WhatsAppContextValue | null>(null)
