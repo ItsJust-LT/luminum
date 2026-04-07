@@ -14,13 +14,26 @@ function apiImageRemotePattern(): { protocol: "http" | "https"; hostname: string
 
 const blogAssetRemote = apiImageRemotePattern();
 
+/** Permissive image policy: allow any http/https host for next/image. */
+const imageRemotePatterns: NonNullable<NonNullable<NextConfig["images"]>["remotePatterns"]> = [
+  {
+    protocol: "https",
+    hostname: "**",
+    pathname: "/**",
+  },
+  {
+    protocol: "http",
+    hostname: "**",
+    pathname: "/**",
+  },
+];
+if (blogAssetRemote) imageRemotePatterns.unshift(blogAssetRemote);
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  images: blogAssetRemote
-    ? {
-        remotePatterns: [blogAssetRemote],
-      }
-    : undefined,
+  images: {
+    remotePatterns: imageRemotePatterns,
+  },
 };
 
 export default nextConfig;

@@ -57,6 +57,8 @@ Mint: `POST /api/blog/posts/{id}/preview-token` (member). Tokens are scoped to t
 
 ## `renderSpec` blocks
 
+For authors: Markdown, allowed HTML, and every blog component prop are documented in **[blog-markdown-authoring.md](./blog-markdown-authoring.md)**.
+
 - `{ "type": "markdown", "html": "<p>...</p>" }` — sanitized HTML.
 - `{ "type": "component", "name": "Callout", "props": { ... }, "childrenBlocks": [ ... ] }` — allowlisted components only; props are JSON-serializable literals.
 
