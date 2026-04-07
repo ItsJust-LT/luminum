@@ -332,7 +332,15 @@ Use `fetchBlogPostDetail` as an alias for `getPublishedPostBySlug` when you want
 
 ### 4. Sitemap
 
-Merge static routes with API-driven blog URLs. If blogs are disabled for the org or the request fails, `getBlogSitemapEntries` returns no blog rows (safe to spread).
+Merge static routes with API-driven blog URLs.
+
+Defaults in `getBlogSitemapEntries`:
+
+- `blogPathPrefix: "/blog"` (post URLs become `/blog/{slug}`)
+- `includeBlogIndex: true` (adds `/blog`)
+- `includeCategories: true` (adds `/blog/category/{slug}`)
+
+If blog/category fetch fails, the helper returns what it can by default (safe to spread). For observability/fail-fast in CI, use `onError` and/or `strict: true`.
 
 ```ts
 // app/sitemap.ts
@@ -343,6 +351,11 @@ export default async function sitemap() {
     websiteId: process.env.LUMINUM_WEBSITE_ID!,
     apiBaseUrl: process.env.LUMINUM_API_URL,
     baseUrl: "https://yoursite.com",
+    // optional:
+    // blogPathPrefix: "/blog",
+    // includeBlogIndex: true,
+    // strict: true,
+    // onError: (err, stage) => console.error("sitemap", stage, err),
   });
 
   return [

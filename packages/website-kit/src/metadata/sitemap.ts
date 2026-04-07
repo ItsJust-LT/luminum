@@ -11,14 +11,29 @@ export interface SitemapEntry {
 export interface BlogSitemapOptions extends BlogFetchOptions {
   /** Your site's base URL, e.g. "https://yoursite.com". */
   baseUrl: string;
-  /** Path prefix for blog post routes. Defaults to "" (posts at /:slug). */
+  /** Path prefix for blog post routes. Defaults to "/blog". */
   blogPathPrefix?: string;
   /** Path prefix for category pages. Defaults to "/blog/category". */
   categoryPathPrefix?: string;
   /** Include category page entries. Defaults to true. */
   includeCategories?: boolean;
+  /** Include the blog index page itself (e.g. /blog). Defaults to true. */
+  includeBlogIndex?: boolean;
   /** Max posts per API page when building sitemap. Defaults to 50. */
   pageSize?: number;
+  /**
+   * Fail fast instead of silently returning empty entries when blog/category fetch fails.
+   * Defaults to false for backwards compatibility.
+   */
+  strict?: boolean;
+  /** Optional callback for observability when a blog/category fetch fails. */
+  onError?: (error: unknown, stage: "posts" | "categories" | "page") => void;
+}
+
+function normalizePrefix(prefix: string, fallback: string): string {
+  const raw = (prefix || fallback).trim();
+  if (!raw || raw === "/") return "";
+  return raw.startsWith("/") ? raw.replace(/\/$/, "") : `/${raw.replace(/\/$/, "")}`;
 }
 
 /**
@@ -45,14 +60,24 @@ export interface BlogSitemapOptions extends BlogFetchOptions {
 export async function getBlogSitemapEntries(
   opts: BlogSitemapOptions
 ): Promise<SitemapEntry[]> {
-  const postPrefix = opts.blogPathPrefix ?? "";
-  const categoryPrefix = opts.categoryPathPrefix ?? "/blog/category";
+  const postPrefix = normalizePrefix(opts.blogPathPrefix ?? "/blog", "/blog");
+  const categoryPrefix = normalizePrefix(opts.categoryPathPrefix ?? "/blog/category", "/blog/category");
   const base = opts.baseUrl.replace(/\/$/, "");
   const pageSize = opts.pageSize ?? 50;
   const includeCategories = opts.includeCategories !== false;
+  const includeBlogIndex = opts.includeBlogIndex !== false;
 
   const entries: SitemapEntry[] = [];
   let page = 1;
+
+  if (includeBlogIndex && postPrefix) {
+    entries.push({
+      url: `${base}${postPrefix}`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.8,
+    });
+  }
 
   try {
     while (true) {
@@ -68,7 +93,9 @@ export async function getBlogSitemapEntries(
       if (page >= data.totalPages) break;
       page++;
     }
-  } catch {
+  } catch (error) {
+    opts.onError?.(error, "posts");
+    if (opts.strict) throw error;
     // Blogs disabled, network error, or 404 from API — omit blog URLs from sitemap.
     return entries;
   }
@@ -84,7 +111,9 @@ export async function getBlogSitemapEntries(
           priority: 0.5,
         });
       }
-    } catch {
+    } catch (error) {
+      opts.onError?.(error, "categories");
+      if (opts.strict) throw error;
       // categories endpoint may not exist yet on older backends
     }
   }
@@ -98,7 +127,7 @@ export async function getBlogSitemapEntries(
 export async function getBlogSitemapEntriesPage(
   opts: BlogSitemapOptions & { page: number }
 ): Promise<{ entries: SitemapEntry[]; totalPages: number }> {
-  const postPrefix = opts.blogPathPrefix ?? "";
+  const postPrefix = normalizePrefix(opts.blogPathPrefix ?? "/blog", "/blog");
   const base = opts.baseUrl.replace(/\/$/, "");
   const pageSize = opts.pageSize ?? 50;
 
@@ -111,7 +140,9 @@ export async function getBlogSitemapEntriesPage(
       priority: 0.7,
     }));
     return { entries, totalPages: data.totalPages };
-  } catch {
+  } catch (error) {
+    opts.onError?.(error, "page");
+    if (opts.strict) throw error;
     return { entries: [], totalPages: 1 };
   }
 }
