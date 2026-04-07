@@ -19,6 +19,17 @@ marked.use({
   breaks: true,
 });
 
+/**
+ * Normalize pasted AI/citation artifacts before markdown parsing.
+ * Example removed token: `:contentReference[oaicite:0]{index=0}`
+ */
+function normalizeMarkdownInput(input: string): string {
+  return input
+    .replace(/:contentReference\[[^\]]+\]\{[^}]*\}/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
 /** Only these style properties (TipTap alignment → inline style in saved markdown). */
 const ALIGN_STYLE: Record<string, RegExp[]> = {
   "text-align": [/^(?:left|right|center|justify)$/i],
@@ -300,7 +311,7 @@ async function markdownToSafeHtml(
   organizationId: string,
   ctx: string
 ): Promise<string> {
-  const trimmed = segment.trim();
+  const trimmed = normalizeMarkdownInput(segment).trim();
   if (!trimmed) return "";
   const html = await marked.parse(trimmed);
   const safe = sanitizeHtml(html, SANITIZE);
