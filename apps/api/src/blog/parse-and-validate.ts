@@ -374,6 +374,19 @@ async function parseInnerToBlocks(inner: string, organizationId: string): Promis
   return parseDocumentToBlocks(inner, organizationId);
 }
 
+/** Next `<` index that starts an allowlisted blog component (PascalCase tags only). */
+function findNextBlogComponentOpenTag(source: string, fromIndex: number): number {
+  let scan = fromIndex;
+  while (scan < source.length) {
+    const lt = source.indexOf("<", scan);
+    if (lt === -1) return -1;
+    const ot = readOpenTag(source, lt);
+    if (ot && BLOG_COMPONENT_NAMES.has(ot.name)) return lt;
+    scan = lt + 1;
+  }
+  return -1;
+}
+
 async function parseDocumentToBlocks(source: string, organizationId: string): Promise<RenderSpecBlock[]> {
   const blocks: RenderSpecBlock[] = [];
   let cursor = 0;
@@ -387,7 +400,17 @@ async function parseDocumentToBlocks(source: string, organizationId: string): Pr
     }
     const ot = readOpenTag(source, lt);
     if (!ot || !BLOG_COMPONENT_NAMES.has(ot.name)) {
-      cursor = lt + 1;
+      const nextComp = findNextBlogComponentOpenTag(source, lt + 1);
+      if (nextComp === -1) {
+        const rest = source.slice(cursor);
+        const html = await markdownToSafeHtml(rest, organizationId, "Markdown");
+        if (html) blocks.push({ type: "markdown", html });
+        break;
+      }
+      const mdChunk = source.slice(cursor, nextComp);
+      const html = await markdownToSafeHtml(mdChunk, organizationId, "Markdown");
+      if (html) blocks.push({ type: "markdown", html });
+      cursor = nextComp;
       continue;
     }
     const before = source.slice(cursor, lt);

@@ -17,8 +17,15 @@
 }
 
 # Primary dashboard domain (explicit cert, not on-demand)
+# WebSockets for Express live updates must hit the API (port 4000). Session cookies are on app.* only,
+# so the dashboard opens wss://app…/ws/* (same-origin); Caddy forwards these paths to the API.
 app.luminum.agency {
-  reverse_proxy 127.0.0.1:3000
+  handle /ws/* {
+    reverse_proxy 127.0.0.1:4000
+  }
+  handle {
+    reverse_proxy 127.0.0.1:3000
+  }
 }
 
 api.luminum.agency {
@@ -35,5 +42,10 @@ https:// {
   tls {
     on_demand
   }
-  reverse_proxy 127.0.0.1:3000
+  handle /ws/* {
+    reverse_proxy 127.0.0.1:4000
+  }
+  handle {
+    reverse_proxy 127.0.0.1:3000
+  }
 }

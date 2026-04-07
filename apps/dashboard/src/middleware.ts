@@ -116,6 +116,12 @@ function isAnonymousStaticPath(pathname: string): boolean {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+
+  // Express handles WS auth on upgrade. Do not redirect to sign-in (HTML) on these paths.
+  if (pathname.startsWith("/ws/")) {
+    return NextResponse.next()
+  }
+
   const hostname = stripHostPort(request.headers.get("host") || "localhost")
 
   // ─── Custom domain handling ──────────────────────────────────────────

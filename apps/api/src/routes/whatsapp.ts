@@ -270,7 +270,7 @@ router.get("/profile-photo", async (req: Request, res: Response) => {
     const jid = getQueryParam(req, "jid");
     if (!jid?.trim()) return res.status(400).json({ error: "jid required" });
     const lower = jid.toLowerCase();
-    if (lower.endsWith("@lid") || lower.includes("status")) return res.status(404).end();
+    if (lower.endsWith("@lid") || lower === "status@broadcast") return res.status(404).end();
 
     const managed = getManagedClientIfReady(organizationId);
     if (!managed) return res.status(404).end();
@@ -354,10 +354,11 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     if (!(await requireOrgPermissions(organizationId, req.user, res, ["whatsapp:read"]))) return;
 
     const cid = contactId.toLowerCase();
-    if (cid.endsWith("@lid") || cid.includes("status")) return res.status(404).json({ success: false, error: "Chat not found" });
+    // Avoid matching group JIDs that happen to contain the substring "status"
+    if (cid.endsWith("@lid") || cid === "status@broadcast") return res.status(404).json({ success: false, error: "Chat not found" });
 
     const cursor = getQueryParam(req, "cursor");
-    const limit = Math.min(parseInt(getQueryParam(req, "limit") || "100", 10), 100);
+    const limit = Math.min(parseInt(getQueryParam(req, "limit") || "100", 10), 150);
 
     const chat = await getChatMeta(organizationId, contactId);
 
@@ -369,13 +370,15 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
     // Filter out lid messages
     messages = messages.filter((m) => !(m.from_number ?? "").toLowerCase().includes("@lid"));
 
+    let historyBackfilled = false;
     // Backfill from WhatsApp when Redis does not have enough history yet.
-    // We progressively increase fetch depth so users can page older chats.
+    // Paginated fetch with media disabled — downloading media for thousands of msgs was the main latency source.
     if (messages.length < limit) {
       const currentCount = await getChatMessageCount(organizationId, contactId);
       const target = Math.min(5000, Math.max(limit + 100, currentCount + limit + 100));
       if (target > currentCount) {
-        await fetchChatHistory(organizationId, contactId, target, { includeMedia: true });
+        await fetchChatHistory(organizationId, contactId, target, { includeMedia: false });
+        historyBackfilled = true;
         const refreshed = await redisGetMessages(organizationId, contactId, { limit, beforeTimestamp });
         messages = refreshed.messages.filter((m) => !(m.from_number ?? "").toLowerCase().includes("@lid"));
         hasMore = refreshed.hasMore;
@@ -398,6 +401,7 @@ router.get("/chats/:id", async (req: Request, res: Response) => {
       messages: messagesWithNames,
       hasMore,
       nextCursor,
+      historyBackfilled,
     });
   } catch (error: any) {
     logger.logError(error, "GET /api/whatsapp/chats/:id");

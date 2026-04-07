@@ -1284,6 +1284,7 @@ async function enrichChatForBroadcast(
 
 async function safeGetProfilePictureUrl(managed: ManagedClient, jid: string): Promise<string | null> {
   if (!jid || jid.toLowerCase().includes("@lid")) return null;
+  const lower = jid.toLowerCase();
   try {
     const fromClient = await (managed.client as any).getProfilePicUrl?.(jid);
     if (typeof fromClient === "string" && fromClient.trim()) return fromClient.trim();
@@ -1298,6 +1299,21 @@ async function safeGetProfilePictureUrl(managed: ManagedClient, jid: string): Pr
     if (typeof fromContact === "string" && fromContact.trim()) return fromContact.trim();
   } catch {
     /* no picture / unavailable */
+  }
+  // Groups (@g.us): Contact APIs often fail or return empty; profile icon comes from Chat.
+  if (lower.endsWith("@g.us")) {
+    try {
+      const chat: any = await managed.client.getChatById(jid);
+      if (chat) {
+        const fromChat =
+          (typeof chat.getProfilePicUrl === "function" ? await chat.getProfilePicUrl().catch(() => null) : null) ??
+          (typeof chat.profilePicUrl === "string" ? chat.profilePicUrl : null) ??
+          (typeof chat.pictureUrl === "string" ? chat.pictureUrl : null);
+        if (typeof fromChat === "string" && fromChat.trim()) return fromChat.trim();
+      }
+    } catch {
+      /* no group icon */
+    }
   }
   return null;
 }
@@ -1375,7 +1391,8 @@ async function handleAckUpdate(managed: ManagedClient, msg: WAWebJS.Message, ack
   const now = new Date().toISOString();
 
   const updates: Partial<RedisMessage> = { ack };
-  if (ack >= 1 && !msg.fromMe) updates.sent_at = now;
+  // whatsapp-web.js ack: 0 pending, 1 server, 2 device (delivered), 3 read, 4 played
+  if (ack >= 1) updates.sent_at = now;
   if (ack >= 2) updates.delivered_at = now;
   if (ack >= 3) updates.read_at = now;
 
@@ -1529,7 +1546,7 @@ export async function setContactBlocked(organizationId: string, jid: string, blo
   } catch { return null; }
 }
 
-/** Fetch recent message history from WhatsApp and cache in Redis. */
+/** Fetch message history from WhatsApp and cache in Redis (paginated — WhatsApp caps each fetch). */
 export async function fetchChatHistory(
   organizationId: string,
   contactId: string,
@@ -1543,18 +1560,38 @@ export async function fetchChatHistory(
     if (e instanceof WhatsAppNotReadyError) return [];
     throw e;
   }
+  const maxTotal = Math.min(Math.max(1, limit), 5000);
+  /** Inline media is extremely slow for bulk history; only when explicitly requested for small windows. */
+  const includeMedia = opts?.includeMedia === true && maxTotal <= 50;
   try {
     const waChat = await managed.client.getChatById(contactId);
-    const waMessages = await waChat.fetchMessages({ limit });
     const saved: RedisMessage[] = [];
-    for (const msg of waMessages) {
-      const from = (msg as any).from ?? (msg as any).author ?? "";
-      if (typeof from === "string" && from.toLowerCase().includes("@lid")) continue;
-      const mappedBase = mapWaMessageToRedis(msg, contactId);
-      const mapped = opts?.includeMedia ? await attachInlineMediaIfSmall(msg, mappedBase) : mappedBase;
-      const stored = await upsertMessage(organizationId, contactId, mapped);
-      saved.push(stored);
+    let fetchedTotal = 0;
+    let beforeMsg: WAWebJS.Message | undefined;
+    const chunk = 100;
+
+    while (fetchedTotal < maxTotal) {
+      const need = Math.min(chunk, maxTotal - fetchedTotal);
+      const waMessages: WAWebJS.Message[] = await waChat.fetchMessages({
+        limit: need,
+        ...(beforeMsg ? { before: beforeMsg } : {}),
+      } as any);
+      if (!waMessages.length) break;
+
+      for (const msg of waMessages) {
+        const from = (msg as any).from ?? (msg as any).author ?? "";
+        if (typeof from === "string" && from.toLowerCase().includes("@lid")) continue;
+        const mappedBase = mapWaMessageToRedis(msg, contactId);
+        const mapped = includeMedia ? await attachInlineMediaIfSmall(msg, mappedBase) : mappedBase;
+        const stored = await upsertMessage(organizationId, contactId, mapped);
+        saved.push(stored);
+      }
+
+      beforeMsg = waMessages[waMessages.length - 1];
+      fetchedTotal += waMessages.length;
+      if (waMessages.length < need) break;
     }
+
     return saved;
   } catch (err) {
     logger.logError(err, "WhatsApp fetch chat history failed", { organizationId, contactId });

@@ -10,7 +10,7 @@ All public blog JSON and public blog assets require `organization.blogs_enabled 
 - `GET /api/blog/posts?websiteId={id}&page=1&limit=12` — same as above, resolving organization from website.
 - `GET /api/blog/posts/{slug}?organizationId={id}` — published post with `post`, `renderSpec`, and `seo`.
 - `GET /api/blog/posts/{slug}?websiteId={id}` — same as above, resolving organization from website.
-- `GET /api/public/blog-assets/{key}` — streams an image/file if the key is under `org/{organizationId}/blog/...` and referenced by a **published** post (cover or linked `blog_asset` row).
+- `GET /api/public/blog-assets/{key}` — streams an image/file if the key is under `org/{organizationId}/blog/...` and referenced by a **published** post (cover or linked `blog_asset` row). With `?previewToken=` (valid minted token for that org), draft-only assets are allowed so marketing previews can load images; **preview** post/detail/list responses append this query to `coverImageUrl`, SEO images, and blog-asset URLs inside `renderSpec`.
 - `GET /api/blog/asset?key={key}` — **authenticated** members only; streams any org blog object under `org/{orgId}/blog/...` (covers drafts in the dashboard). Prefer the dashboard Next.js proxy `/api/blog-asset?key=` so cookies work same-origin.
 
 ## Response shapes

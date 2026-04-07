@@ -33,13 +33,20 @@ export function useRealtime() {
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000").replace(/\/$/, "")
 
 /**
- * WebSocket URL for org-scoped events (mail, forms, etc.).
- * Prefer NEXT_PUBLIC_REALTIME_WS_URL when the API is on another host than the dashboard
- * (cookies + TLS must still allow the upgrade).
- * Otherwise derive from NEXT_PUBLIC_API_URL; in the browser, if that host differs from the
- * page host, still use the API host (cross-origin WS with credentials).
- * If NEXT_PUBLIC_API_URL is unset in the browser, use same origin so a reverse proxy can route /ws/realtime to the API.
+ * WebSocket URL for org-scoped events (mail, forms, WhatsApp fan-out, etc.).
+ *
+ * - **Default:** If `NEXT_PUBLIC_API_URL` points at another host than the page (e.g. app.* vs api.*),
+ *   use **`wss://<page-host>/ws/realtime`** so Better Auth cookies are sent. The edge proxy (see
+ *   `deploy/caddy/Caddyfile`) must forward **`/ws/*`** on the dashboard host to Express (:4000).
+ * - **Local:** Dashboard and API both on loopback with the same hostname → `ws://host:4000/ws/realtime`.
+ * - **Override:** `NEXT_PUBLIC_REALTIME_WS_URL` — in split-host production, set it to the **same**
+ *   host as the dashboard (e.g. `wss://app.example.com/ws/realtime`), not `wss://api.*`, or cookies
+ *   will not authenticate the upgrade.
  */
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
+}
+
 function getWsUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_REALTIME_WS_URL?.trim()
   if (explicit) return explicit.replace(/\/$/, "")
@@ -50,9 +57,22 @@ function getWsUrl(): string {
         const apiUrl = new URL(API_URL)
         const pageHost = window.location.hostname
         const apiHost = apiUrl.hostname
-        const apiIsLoopback = apiHost === "localhost" || apiHost === "127.0.0.1"
-        const pageIsLoopback = pageHost === "localhost" || pageHost === "127.0.0.1"
+        const apiIsLoopback = isLoopbackHost(apiHost)
+        const pageIsLoopback = isLoopbackHost(pageHost)
+        /** Remote dashboard hitting a dev API URL baked into the build — use same-origin + edge proxy. */
         if (apiIsLoopback && !pageIsLoopback) {
+          const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+          return `${protocol}//${window.location.host}/ws/realtime`
+        }
+        /**
+         * Production: dashboard is app.* and API is api.* — session cookies are host-bound, so a WS to
+         * api.* would not send them and auth upgrade fails. Use same-origin /ws/realtime (Caddy forwards).
+         */
+        if (apiHost !== pageHost) {
+          if (apiIsLoopback && pageIsLoopback) {
+            const protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:"
+            return `${protocol}//${apiUrl.host}/ws/realtime`
+          }
           const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
           return `${protocol}//${window.location.host}/ws/realtime`
         }

@@ -37,12 +37,15 @@ export function buildBlogSeo(args: {
   updatedAt: Date;
   /** Draft/share preview — minimal JSON-LD and noindex. */
   preview?: boolean;
+  /** When set with preview, OG/cover image URLs include this so public asset proxy allows draft assets. */
+  previewToken?: string;
 }): BlogSeoPayload {
   const siteBase = getOrgPublicSiteBase(args.organizationMetadata) ?? config.appUrl.replace(/\/$/, "");
   const canonicalUrl = `${siteBase}/blog/${encodeURIComponent(args.slug)}`;
   const title = (args.seoTitle?.trim() || args.title).trim();
   const description = (args.seoDescription?.trim() || title).trim();
-  const ogImageUrl = publicBlogAssetUrl(args.coverImageKey);
+  const previewTok = args.preview && args.previewToken?.trim() ? args.previewToken.trim() : undefined;
+  const ogImageUrl = publicBlogAssetUrl(args.coverImageKey, previewTok ? { previewToken: previewTok } : undefined);
   const publishedTime = args.publishedAt?.toISOString();
   const modifiedTime = args.updatedAt.toISOString();
 

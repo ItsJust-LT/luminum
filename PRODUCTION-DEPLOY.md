@@ -194,6 +194,8 @@ sudo systemctl enable caddy && sudo systemctl start caddy
 
 Caddy will listen on 80 and 443 and obtain Let’s Encrypt certificates for `app.luminum.agency`, `api.luminum.agency`, and `analytics.luminum.agency`, and proxy to the Docker ports on 127.0.0.1 (3000, 4000, 8080).
 
+**Realtime WebSocket:** The dashboard uses **`wss://app.…/ws/realtime`** (same host as the app). The repo `deploy/caddy/Caddyfile` forwards **`/ws/*`** on the app vhost (and on-demand custom domains) to **127.0.0.1:4000**. Copy that file to the server and run **`sudo systemctl reload caddy`** after updates, or live updates will not reach the API.
+
 ---
 
 ## Step 6: Log in to GHCR and start the stack
@@ -262,6 +264,8 @@ The workflow creates the server `.env` from PROD_* secrets and variables, copies
 
 - **Cloudflare 522 (Connection timed out):** Nothing on the server is listening on port 80/443. Install and start **Caddy** (Step 3.2 and Step 5) so it can accept traffic from Cloudflare and proxy to the containers on 127.0.0.1.
 - **502 Bad Gateway:** Usually the API container is not running (e.g. crash loop). Run `docker ps` and `docker logs luminum-api-1`. Fix the API so it stays up; then Caddy and the dashboard will succeed.
+
+- **Dashboard realtime / `wss://…/ws/realtime` fails or no live events:** Ensure production uses the **`deploy/caddy/Caddyfile`** that proxies **`handle /ws/*`** to the API (port 4000) on the app vhost, then `sudo systemctl reload caddy`. Redeploy the dashboard so the client opens same-origin `/ws/realtime` (not `wss://api.*` unless you share cookies across subdomains). Cloudflare: use **Full** or **Full (strict)**; WebSocket proxying is on by default.
 - **Auth/API requests go to app.luminum.agency:** That is intentional. The browser sends requests to the same origin (app) for cookies/sessions; the dashboard (Next.js) then proxies `/api/*` to the API container internally (e.g. `http://api:4000`). You do not need to change this to api.luminum.agency for auth. Run `docker compose -f docker-compose.prod.yml ps` and `curl -v http://127.0.0.1:4000/api/health`.
 - **SSL errors:** In Cloudflare, use SSL mode **Full** or **Full (strict)**. Ensure Caddy is running and can listen on 80/443 (`sudo systemctl status caddy`).
 - **Deploy job fails on SSH:** Check `PROD_SERVER_HOST`, `PROD_SERVER_USER`, and `PROD_SERVER_SSH_KEY` in GitHub Secrets. Test SSH from your machine: `ssh -i /path/to/key PROD_SERVER_USER@PROD_SERVER_HOST`.

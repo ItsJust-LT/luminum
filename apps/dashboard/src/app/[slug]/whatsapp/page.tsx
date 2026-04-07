@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, type ReactNode } from "react"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { api } from "@/lib/api"
@@ -169,10 +169,35 @@ function messageTime(date: string | Date): string {
 
 function AckIcon({ ack }: { ack: number | null }) {
   if (ack === null || ack === undefined) return null
-  if (ack >= 3) return <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
-  if (ack >= 2) return <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
-  if (ack >= 1) return <Check className="h-3.5 w-3.5 text-muted-foreground" />
-  return <Check className="h-3.5 w-3.5 text-muted-foreground/50" />
+  const label =
+    ack >= 4 ? "Played"
+    : ack >= 3 ? "Read"
+    : ack >= 2 ? "Delivered to their device"
+    : ack >= 1 ? "Sent to WhatsApp"
+    : "Sending…"
+  let icon: ReactNode
+  if (ack >= 4) {
+    icon = <CheckCheck className="h-3.5 w-3.5 text-sky-400 drop-shadow-[0_0_6px_rgba(56,189,248,0.45)]" />
+  } else if (ack >= 3) {
+    icon = <CheckCheck className="h-3.5 w-3.5 text-[#5bd0ff] drop-shadow-[0_0_5px_rgba(91,208,255,0.35)]" />
+  } else if (ack >= 2) {
+    icon = <CheckCheck className="h-3.5 w-3.5 text-white/85" />
+  } else if (ack >= 1) {
+    icon = <Check className="h-3.5 w-3.5 text-white/75" />
+  } else {
+    icon = <Check className="h-3.5 w-3.5 text-white/45 animate-pulse" />
+  }
+  return (
+    <span title={label} aria-label={label} className="inline-flex items-center transition-all duration-300">
+      {icon}
+    </span>
+  )
+}
+
+/** WhatsApp JID for API calls — list rows should expose contact_id, but always fall back to id. */
+function whatsappChatJid(chat: Pick<WhatsAppChat, "id" | "contact_id">): string {
+  const c = chat.contact_id?.trim()
+  return c || chat.id
 }
 
 /** Format chat for display: use name if set, else friendly fallback from contact_id (e.g. +1234567890 or "Group"). */
@@ -588,6 +613,8 @@ export default function WhatsAppPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
+  /** Skip auto-scroll to bottom once after prepending older messages (preserve scroll position). */
+  const skipAutoScrollOnceRef = useRef(false)
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const chatsRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const loadingOlderRef = useRef(false)
@@ -626,31 +653,37 @@ export default function WhatsAppPage() {
   }, [orgId, searchQuery, setChatListCache])
 
   const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [historySyncedHint, setHistorySyncedHint] = useState(false)
 
   const loadMessages = useCallback(async (chatId: string, cursor?: string) => {
     if (!orgId) return
-    if (cursor) setLoadingOlder(true)
-    else setMessagesLoading(true)
+    if (cursor) {
+      skipAutoScrollOnceRef.current = true
+      setLoadingOlder(true)
+    } else {
+      setMessagesLoading(true)
+    }
     try {
-      const res = await api.whatsapp.getChat(chatId, orgId, { limit: 100, cursor }) as any
+      const res = await api.whatsapp.getChat(chatId, orgId, { limit: 120, cursor }) as any
       if (res.success) {
         const list = Array.isArray(res.messages) ? res.messages : []
+        if (!cursor) setHistorySyncedHint(!!res.historyBackfilled)
         if (cursor) {
           setMessages((prev) => {
             const next = dedupeMessages([...list, ...prev])
-            setChatStateById({
-              ...chatStateById,
+            setChatStateById((s) => ({
+              ...s,
               [chatId]: { messages: next, nextCursor: res.nextCursor ?? null, hasLoaded: true },
-            })
+            }))
             return next
           })
         } else {
           const next = dedupeMessages(list)
           setMessages(next)
-          setChatStateById({
-            ...chatStateById,
+          setChatStateById((s) => ({
+            ...s,
             [chatId]: { messages: next, nextCursor: res.nextCursor ?? null, hasLoaded: true },
-          })
+          }))
         }
         setNextCursor(res.nextCursor ?? null)
         if (res.chat) setSelectedChat((prev) => (prev ? { ...prev, ...res.chat } : res.chat))
@@ -659,7 +692,7 @@ export default function WhatsAppPage() {
       if (cursor) setLoadingOlder(false)
       else setMessagesLoading(false)
     }
-  }, [orgId, chatStateById, setChatStateById])
+  }, [orgId, setChatStateById])
 
   // Route guard: fetch WhatsApp access from API so direct URL access is blocked when disabled
   useEffect(() => {
@@ -730,8 +763,12 @@ export default function WhatsAppPage() {
     }
   }, [account?.status, orgId, whatsappAccess, loadChats])
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change (not when older messages were just prepended)
   useEffect(() => {
+    if (skipAutoScrollOnceRef.current) {
+      skipAutoScrollOnceRef.current = false
+      return
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
@@ -763,10 +800,14 @@ export default function WhatsAppPage() {
         if (selectedChat?.id === data.chatId) {
           setMessages((prev) => {
             const next = dedupeMessages([...prev, data.message])
-            setChatStateById({
-              ...chatStateById,
-              [data.chatId]: { messages: next, nextCursor, hasLoaded: true },
-            })
+            setChatStateById((s) => ({
+              ...s,
+              [data.chatId]: {
+                messages: next,
+                nextCursor: s[data.chatId]?.nextCursor ?? nextCursor,
+                hasLoaded: true,
+              },
+            }))
             return next
           })
         }
@@ -805,17 +846,17 @@ export default function WhatsAppPage() {
         })
       }
 
-      // Handle ack updates
-      if (data?.messageId && data?.ack !== undefined) {
+      // Handle ack updates (id matches Redis message id / wa_message_id)
+      if (data?.messageId != null && data?.ack !== undefined && data?.message == null) {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === data.messageId ? { ...m, ack: data.ack } : m
+            m.id === data.messageId || m.wa_message_id === data.messageId ? { ...m, ack: data.ack } : m
           )
         )
       }
     })
     return unsub
-  }, [onMessage, selectedChat?.id, chatStateById, nextCursor, setChatStateById, setChatListCache])
+  }, [onMessage, selectedChat?.id, nextCursor, setChatStateById, setChatListCache])
 
   // Real-time reaction handling
   useEffect(() => {
@@ -850,23 +891,26 @@ export default function WhatsAppPage() {
   }, [onMessage, loadAccount, loadChats])
 
   const handleSelectChat = async (chat: WhatsAppChat) => {
-    setSelectedChat(chat)
-    setCachedSelectedChatId(chat.id)
+    const jid = whatsappChatJid(chat)
+    const normalized = { ...chat, id: jid, contact_id: chat.contact_id?.trim() || jid }
+    setSelectedChat(normalized)
+    setCachedSelectedChatId(jid)
+    setHistorySyncedHint(false)
 
-    const cached = chatStateById[chat.id]
+    const cached = chatStateById[jid]
     if (cached?.hasLoaded) {
       setMessages(cached.messages)
       setNextCursor(cached.nextCursor)
     } else {
-      await loadMessages(chat.id)
+      await loadMessages(jid)
     }
 
     // Mark as read
     if (chat.unread_count > 0 && orgId) {
       try {
-        await api.whatsapp.markChatRead(chat.id, orgId)
+        await api.whatsapp.markChatRead(jid, orgId)
         setChats((prev) =>
-          prev.map((c) => (c.id === chat.id ? { ...c, unread_count: 0 } : c))
+          prev.map((c) => (whatsappChatJid(c) === jid ? { ...c, unread_count: 0 } : c))
         )
       } catch {}
     }
@@ -874,10 +918,11 @@ export default function WhatsAppPage() {
 
   useEffect(() => {
     if (!cachedSelectedChatId || !chats.length || selectedChat) return
-    const chat = chats.find((c) => c.id === cachedSelectedChatId)
+    const chat = chats.find((c) => whatsappChatJid(c) === cachedSelectedChatId)
     if (chat) {
-      setSelectedChat(chat)
-      const cached = chatStateById[chat.id]
+      const jid = whatsappChatJid(chat)
+      setSelectedChat({ ...chat, id: jid, contact_id: chat.contact_id?.trim() || jid })
+      const cached = chatStateById[jid]
       if (cached?.hasLoaded) {
         setMessages(cached.messages)
         setNextCursor(cached.nextCursor)
@@ -890,14 +935,15 @@ export default function WhatsAppPage() {
     if (!orgId || chats.length === 0) return
     const targets = chats.filter((c) => !c.messages?.length).slice(0, 8)
     targets.forEach((chat, i) => {
-      if (hydratedPreviewRef.current.has(chat.id)) return
-      hydratedPreviewRef.current.add(chat.id)
+      const jid = whatsappChatJid(chat)
+      if (hydratedPreviewRef.current.has(jid)) return
+      hydratedPreviewRef.current.add(jid)
       setTimeout(async () => {
         try {
-          const res = await api.whatsapp.getChat(chat.id, orgId, { limit: 1 }) as any
+          const res = await api.whatsapp.getChat(jid, orgId, { limit: 1 }) as any
           const latest = Array.isArray(res?.messages) && res.messages.length > 0 ? res.messages[res.messages.length - 1] : null
           if (!latest) return
-          setChats((prev) => prev.map((c) => c.id === chat.id ? {
+          setChats((prev) => prev.map((c) => whatsappChatJid(c) === jid ? {
             ...c,
             last_message_at: latest.timestamp || c.last_message_at,
             messages: [{
@@ -1199,7 +1245,7 @@ export default function WhatsAppPage() {
             <div className="divide-y divide-border/50">
               {chats.filter((c) => !c.contact_id?.toLowerCase().includes("@lid")).map((chat) => {
                 const lastMsg = chat.messages?.[0]
-                const isActive = selectedChat?.id === chat.id
+                const isActive = selectedChat != null && whatsappChatJid(chat) === selectedChat.id
                 return (
                   <button
                     key={chat.id}
@@ -1217,8 +1263,14 @@ export default function WhatsAppPage() {
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-sm truncate">
-                          {chat.display_name || formatChatDisplayName(chat)}
+                        <span className="font-medium text-sm truncate inline-flex items-center gap-1.5 min-w-0">
+                          {chat.is_group && (
+                            <span className="inline-flex items-center rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 shrink-0">
+                              <Users className="h-3 w-3" aria-hidden />
+                              Group
+                            </span>
+                          )}
+                          <span className="truncate">{chat.display_name || formatChatDisplayName(chat)}</span>
                         </span>
                         {chat.last_message_at && (
                           <span className={cn(
@@ -1344,6 +1396,24 @@ export default function WhatsAppPage() {
               </div>
             ) : (
               <div className="space-y-2.5 max-w-3xl mx-auto pb-4">
+                {historySyncedHint && (
+                  <div
+                    role="status"
+                    className="mb-1 flex items-start justify-between gap-3 rounded-xl border border-emerald-500/35 bg-emerald-500/[0.11] px-3 py-2.5 text-xs text-emerald-950 dark:text-emerald-100 animate-in fade-in slide-in-from-top-1 duration-300"
+                  >
+                    <span className="leading-snug">
+                      <span className="font-semibold">History loaded from WhatsApp.</span>{" "}
+                      Scroll up for older messages. Thumbnails for past media may load when you open or forward a message.
+                    </span>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium text-emerald-800 underline underline-offset-2 hover:bg-emerald-500/15 dark:text-emerald-200"
+                      onClick={() => setHistorySyncedHint(false)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
                 {loadingOlder && (
                   <div className="sticky top-0 z-10 flex justify-center py-2">
                     <div className="inline-flex items-center gap-2 rounded-full border bg-background/95 px-3 py-1 text-xs text-muted-foreground shadow-sm animate-in fade-in">
@@ -1393,7 +1463,7 @@ export default function WhatsAppPage() {
                           <div className={cn("flex items-start gap-1 max-w-[80%]", msg.from_me ? "flex-row-reverse" : "flex-row")}>
                             <div
                               className={cn(
-                                "relative rounded-2xl px-3.5 py-2.5 shadow-md transition-all duration-200",
+                                "relative rounded-2xl px-3.5 py-2.5 shadow-md transition-all duration-200 ease-out will-change-transform motion-safe:hover:scale-[1.008]",
                                 msg.from_me
                                   ? "rounded-br-sm border border-emerald-400/40 bg-gradient-to-br from-emerald-500 via-green-500 to-lime-500 text-white"
                                   : "rounded-bl-sm border border-border/70 bg-card/95 text-card-foreground",

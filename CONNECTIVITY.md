@@ -30,6 +30,13 @@ So:
 - Server: `serverGet("/api/analytics/overview", { websiteId, start, end })` → `GET ${API_URL}/api/analytics/overview?...` with cookies.
 - Client: `api.get("/api/me")` → `GET /api/me` (rewritten to Express) with cookies.
 
+### 2.1b Realtime WebSocket (`/ws/realtime`)
+
+- The dashboard opens **`wss://<dashboard-host>/ws/realtime`** (same origin as the app) so the browser sends **Better Auth session cookies** on the upgrade request.
+- Connecting directly to **`wss://api.…/ws/realtime`** from a page on **`app.…`** usually **fails**: cookies are not sent cross-host, so Express returns **401** on upgrade and no messages flow.
+- **Production (Caddy):** Route **`/ws/*`** on the dashboard vhost to the **Express** upstream (`127.0.0.1:4000`), as in `deploy/caddy/Caddyfile`. Custom-org on-demand vhosts use the same rule.
+- **Local dev:** With dashboard and API both on loopback but different ports, the client uses **`ws://localhost:4000/ws/realtime`** (or matching API host/port) so the handshake reaches Express without extra proxying.
+
 ### 2.2 Auth
 
 - Better Auth runs on the **Express** app (`/api/auth/*`). The dashboard does **not** implement auth routes; it only rewrites `/api/auth/*` to the API.

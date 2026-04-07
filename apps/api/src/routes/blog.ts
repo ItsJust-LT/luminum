@@ -12,7 +12,7 @@ import { orgBlogAssetKey, isOrgBlogKey, getOrganizationIdFromKey } from "../lib/
 import { updateOrganizationStorage } from "../lib/utils/storage.js";
 import { cacheGet, cacheSet } from "../lib/redis-cache.js";
 import { invalidatePublishedBlogCache } from "../blog/blog-cache.js";
-import { publicBlogAssetUrl } from "../blog/urls.js";
+import { deepAppendPreviewTokenToPublicBlogAssetUrls, publicBlogAssetUrl } from "../blog/urls.js";
 import { buildRenderSpecForPublish } from "../blog/parse-and-validate.js";
 import { collectReferencedBlogKeys, syncBlogAssetsToPost } from "../blog/sync-assets.js";
 import {
@@ -161,20 +161,24 @@ router.get("/asset", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-function postToPublicSummary(p: {
-  id: string;
-  slug: string;
-  title: string;
-  cover_image_key: string;
-  published_at: Date | null;
-  categories?: unknown;
-}) {
+function postToPublicSummary(
+  p: {
+    id: string;
+    slug: string;
+    title: string;
+    cover_image_key: string;
+    published_at: Date | null;
+    categories?: unknown;
+  },
+  previewToken?: string
+) {
   const cats = Array.isArray(p.categories) ? (p.categories as string[]) : [];
+  const tok = previewToken?.trim();
   return {
     id: p.id,
     slug: p.slug,
     title: p.title,
-    coverImageUrl: publicBlogAssetUrl(p.cover_image_key),
+    coverImageUrl: publicBlogAssetUrl(p.cover_image_key, tok ? { previewToken: tok } : undefined),
     publishedAt: p.published_at?.toISOString() ?? null,
     categories: cats,
   };
@@ -229,7 +233,7 @@ router.get("/posts", optionalAuth, async (req: Request, res: Response) => {
     ]);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const body = {
-      posts: rows.map(postToPublicSummary),
+      posts: rows.map((p) => postToPublicSummary(p)),
       page,
       total,
       totalPages,
@@ -391,19 +395,26 @@ router.get("/posts/:slug", optionalAuth, async (req: Request, res: Response) => 
       publishedAt: post.published_at,
       updatedAt: post.updated_at,
       preview: true,
+      previewToken: previewToken!,
     });
     const cats = Array.isArray(post.categories) ? (post.categories as string[]) : [];
+    const specWithPreviewUrls =
+      spec && previewToken
+        ? deepAppendPreviewTokenToPublicBlogAssetUrls(spec, previewToken)
+        : spec;
     res.json({
       post: {
         id: post.id,
         slug: post.slug,
         title: post.title,
-        coverImageUrl: post.cover_image_key ? publicBlogAssetUrl(post.cover_image_key) : null,
+        coverImageUrl: post.cover_image_key
+          ? publicBlogAssetUrl(post.cover_image_key, { previewToken: previewToken! })
+          : null,
         publishedAt: post.published_at?.toISOString() ?? null,
         categories: cats,
         status: post.status,
       },
-      renderSpec: spec,
+      renderSpec: specWithPreviewUrls,
       seo,
       preview: true,
     });
@@ -535,7 +546,7 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
     ]);
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const body = {
-      posts: rows.map(postToPublicSummary),
+      posts: rows.map((p) => postToPublicSummary(p, isPreview ? previewToken : undefined)),
       page,
       total,
       totalPages,
@@ -581,7 +592,7 @@ router.get("/posts/search", optionalAuth, async (req: Request, res: Response) =>
   const paged = matching.slice((page - 1) * limit, page * limit);
 
   const body = {
-    posts: paged.map(postToPublicSummary),
+    posts: paged.map((p) => postToPublicSummary(p, isPreview ? previewToken : undefined)),
     page,
     total,
     totalPages,
@@ -746,7 +757,7 @@ router.get("/posts/by-category", optionalAuth, async (req: Request, res: Respons
       : categorySlug;
 
   const body = {
-    posts: paged.map(postToPublicSummary),
+    posts: paged.map((p) => postToPublicSummary(p, isPreview ? previewToken : undefined)),
     page,
     total,
     totalPages,

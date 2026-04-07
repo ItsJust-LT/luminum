@@ -1,9 +1,43 @@
 import { config } from "../config.js";
 
 /** Public URL for crawlers/clients to load a private blog object key. */
-export function publicBlogAssetUrl(key: string): string {
+export function publicBlogAssetUrl(key: string, options?: { previewToken?: string }): string {
   const base = config.apiUrl.replace(/\/$/, "");
-  return `${base}/api/public/blog-assets/${encodeURIComponent(key)}`;
+  let u = `${base}/api/public/blog-assets/${encodeURIComponent(key)}`;
+  const t = options?.previewToken?.trim();
+  if (t) {
+    u += `?previewToken=${encodeURIComponent(t)}`;
+  }
+  return u;
+}
+
+function appendPreviewTokenToString(s: string, previewToken: string): string {
+  const base = config.apiUrl.replace(/\/$/, "");
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const absRe = new RegExp(`${escaped}/api/public/blog-assets/[^?\\s"'<>]+`, "g");
+  return s.replace(absRe, (url) => {
+    if (url.includes("previewToken=")) return url;
+    return `${url}${url.includes("?") ? "&" : "?"}previewToken=${encodeURIComponent(previewToken)}`;
+  });
+}
+
+/** Rewrite absolute/relative blog-asset URLs inside strings (e.g. renderSpec HTML) for draft preview. */
+export function deepAppendPreviewTokenToPublicBlogAssetUrls<T>(value: T, previewToken: string): T {
+  const t = previewToken.trim();
+  if (!t) return value;
+  if (typeof value === "string") return appendPreviewTokenToString(value, t) as T;
+  if (Array.isArray(value)) {
+    return value.map((v) => deepAppendPreviewTokenToPublicBlogAssetUrls(v, t)) as T;
+  }
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = deepAppendPreviewTokenToPublicBlogAssetUrls(v, t);
+    }
+    return out as T;
+  }
+  return value;
 }
 
 /**

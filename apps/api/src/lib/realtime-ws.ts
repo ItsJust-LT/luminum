@@ -127,9 +127,7 @@ export function attachRealtimeWS(httpServer: HttpServer): void {
 
     try {
       const session = await auth.api.getSession({
-        headers: fromNodeHeaders(Object.fromEntries(
-          Object.entries(request.headers).filter(([, v]) => v !== undefined) as [string, string][]
-        )),
+        headers: fromNodeHeaders(request.headers),
       });
       if (!session?.user?.id) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");

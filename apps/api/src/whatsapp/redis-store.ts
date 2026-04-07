@@ -323,9 +323,12 @@ export async function getMessages(orgId: string, contactId: string, opts: {
   const hasMore = ids.length > opts.limit;
   if (hasMore) ids.pop();
 
+  const keys = ids.map((wid) => msgDataKey(orgId, wid));
+  const raws = keys.length > 0 ? await redis.mGet(keys) : [];
+
   const messages: RedisMessage[] = [];
-  for (const wid of ids) {
-    const raw = await redis.get(msgDataKey(orgId, wid));
+  for (let i = 0; i < ids.length; i++) {
+    const raw = raws[i];
     if (raw) messages.push(JSON.parse(raw));
   }
 
