@@ -509,7 +509,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
   const toggleHeaders = (id: string) => setExpandedId((prev) => (prev === id ? null : id))
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="bg-background flex min-h-0 flex-1 flex-col overflow-hidden">
       <Dialog open={!!preview} onOpenChange={handlePreviewOpenChange}>
         <DialogContent
           className={cn(

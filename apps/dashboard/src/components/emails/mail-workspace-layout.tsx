@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { orgNavPath } from "@/lib/org-nav-path"
 import { useCustomDomain } from "@/lib/hooks/use-custom-domain"
@@ -14,6 +15,7 @@ function MailWorkspaceChrome({ children }: { children: React.ReactNode }) {
   const { organization } = useOrganization()
   const { isCustomDomain } = useCustomDomain()
   const pathname = usePathname() ?? ""
+  const router = useRouter()
   const slug = organization?.slug ?? ""
   const flatRoutes = isCustomDomain
   const emailsBase = orgNavPath(slug, flatRoutes, "emails")
@@ -33,6 +35,10 @@ function MailWorkspaceChrome({ children }: { children: React.ReactNode }) {
         onSelect={(m) => {
           setMailbox(m)
           refreshFolderCounts()
+          // Folder selection should always open inbox list view, even from detail/compose/settings routes.
+          if (pathname !== emailsBase) {
+            router.push(emailsBase)
+          }
         }}
         counts={folderCounts}
         emailsBasePath={emailsBase}
@@ -55,11 +61,13 @@ export function MailWorkspaceLayout({ children }: { children: React.ReactNode })
     void api.emails.getSetupStatus(organization.id).then((s) => setSetupStatus(s as EmailSetupStatus))
   }, [organization?.id])
 
+  // Render the mail shell immediately to avoid first-paint flicker/jump from no-sidebar -> sidebar.
+  // If setup later resolves to unavailable/disabled, child routes handle that state.
   const showShell =
-    setupStatus != null &&
-    setupStatus.access !== false &&
-    setupStatus.setupComplete === true &&
-    setupStatus.emailSystemUnavailable !== true
+    setupStatus == null ||
+    (setupStatus.access !== false &&
+      setupStatus.setupComplete === true &&
+      setupStatus.emailSystemUnavailable !== true)
 
   return (
     <MailWorkspaceProvider>

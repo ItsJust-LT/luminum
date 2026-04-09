@@ -820,7 +820,7 @@ export default function EmailsPage() {
           </div>
         ) : (
           <div ref={listContainerRef} className="h-full">
-          <ScrollArea className="min-h-[240px] flex-1 md:min-h-[320px]">
+          <ScrollArea className="h-full min-h-[240px] flex-1 md:min-h-[320px]">
             <div className="divide-y divide-border/60">
               <AnimatePresence initial={false}>
                 {emails.map((email) => (
