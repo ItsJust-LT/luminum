@@ -694,23 +694,25 @@ export default function SlugLayout({
                 <div className="bg-primary/10 ring-primary/20 flex-shrink-0 rounded-2xl p-2 ring-1">
                   <Image
                     src={
-                      isCustomDomain && state.organization
+                      state.organization
                         ? orgLogoOrBrandProxy(state.organization.logo, state.organization.name)
                         : "/images/logo.png"
                     }
-                    alt={isCustomDomain && state.organization?.name ? state.organization.name : "Luminum"}
+                    alt={state.organization?.name || "Workspace"}
                     width={20}
                     height={20}
                     className="h-4 w-4 md:h-5 md:w-5 object-contain"
-                    unoptimized={isCustomDomain && !!state.organization}
+                    unoptimized={!!state.organization}
                   />
                 </div>
                 <div className="flex min-w-0 flex-col">
                   <span className="font-semibold text-foreground text-sm md:text-base tracking-tight truncate">
-                    {isCustomDomain ? (state.organization?.name || "Dashboard") : "Luminum Agency"}
+                    {state.organization?.name || "Dashboard"}
                   </span>
                   {!isCustomDomain && (
-                    <span className="text-xs text-muted-foreground/80 font-medium hidden sm:block">Dashboard</span>
+                    <span className="text-muted-foreground/80 hidden text-xs font-medium sm:block">
+                      Dashboard
+                    </span>
                   )}
                 </div>
               </div>
