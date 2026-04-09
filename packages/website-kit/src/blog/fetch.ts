@@ -15,7 +15,13 @@ export interface BlogFetchOptions {
   revalidateTags?: string[];
   /** Extra fetch options such as headers, signal, or next tags. */
   fetchOptions?: RequestInit;
+  /** Abort request after this many seconds (default: 15). */
+  timeoutSeconds?: number;
 }
+
+type NextRequestInit = RequestInit & {
+  next?: { revalidate?: number; tags?: string[] };
+};
 
 function baseUrl(opts: BlogFetchOptions): string {
   return (opts.apiBaseUrl ?? "https://api.luminum.app").replace(/\/$/, "");
@@ -32,10 +38,9 @@ function resolvedWebsiteId(
 function buildRequestInit(
   opts: BlogFetchOptions,
   fallbackRevalidate: number
-): RequestInit {
-  const nextFromCaller = (opts.fetchOptions as RequestInit & {
-    next?: { revalidate?: number; tags?: string[] };
-  } | undefined)?.next;
+): NextRequestInit {
+  const caller = (opts.fetchOptions ?? {}) as NextRequestInit;
+  const nextFromCaller = caller.next;
   const shouldNoStore = Boolean(opts.noStore || opts.previewToken);
   const revalidate =
     typeof opts.revalidateSeconds === "number"
@@ -46,7 +51,7 @@ function buildRequestInit(
   const autoTags = [`luminum-blog-${wid}`, ...(opts.revalidateTags ?? [])];
   const uniqueAutoTags = [...new Set(autoTags)];
 
-  let next: RequestInit["next"];
+  let next: NextRequestInit["next"];
   if (shouldNoStore) {
     next = nextFromCaller;
   } else if (nextFromCaller && typeof nextFromCaller === "object") {
@@ -67,10 +72,44 @@ function buildRequestInit(
   }
 
   return {
-    ...(opts.fetchOptions ?? {}),
+    ...caller,
     ...(shouldNoStore ? { cache: "no-store" as const } : {}),
     ...(next ? { next } : {}),
   };
+}
+
+function withTimeoutSignal(
+  signal: AbortSignal | null | undefined,
+  timeoutMs: number
+): AbortSignal | undefined {
+  if (timeoutMs <= 0) return signal ?? undefined;
+  // Node 18+/modern runtimes support AbortSignal.timeout.
+  if (typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === "function") {
+    const timeoutSignal = (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(timeoutMs);
+    if (!signal) return timeoutSignal;
+    const ac = new AbortController();
+    const abort = () => ac.abort();
+    signal.addEventListener("abort", abort, { once: true });
+    timeoutSignal.addEventListener("abort", abort, { once: true });
+    return ac.signal;
+  }
+  return signal ?? undefined;
+}
+
+async function fetchJson<T>(
+  url: string,
+  opts: BlogFetchOptions,
+  fallbackRevalidate: number,
+  context: string
+): Promise<T> {
+  const requestInit = buildRequestInit(opts, fallbackRevalidate);
+  const timeoutMs = Math.max(1, opts.timeoutSeconds ?? 15) * 1000;
+  const signal = withTimeoutSignal(requestInit.signal ?? null, timeoutMs);
+  const res = await fetch(url, { ...requestInit, signal });
+  if (!res.ok) {
+    throw new Error(`${context} (${res.status}) for websiteId "${normalizeWebsiteId(opts.websiteId)}".`);
+  }
+  return res.json() as Promise<T>;
 }
 
 /**
@@ -86,15 +125,12 @@ export async function getPublishedPosts(
   if (opts.page) url.searchParams.set("page", String(opts.page));
   if (opts.limit) url.searchParams.set("limit", String(opts.limit));
 
-  const res = await fetch(url.toString(), {
-    ...buildRequestInit(opts, 300),
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to fetch blog posts (${res.status}) for websiteId "${websiteId}".`
-    );
-  }
-  return res.json();
+  return fetchJson<BlogPostListResponse>(
+    url.toString(),
+    opts,
+    300,
+    "Failed to fetch blog posts"
+  );
 }
 
 /**
@@ -130,9 +166,10 @@ export async function getPublishedPostBySlug(
   url.searchParams.set("websiteId", websiteId);
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
 
-  const res = await fetch(url.toString(), {
-    ...buildRequestInit(opts, 300),
-  });
+  const requestInit = buildRequestInit(opts, 300);
+  const timeoutMs = Math.max(1, opts.timeoutSeconds ?? 15) * 1000;
+  const signal = withTimeoutSignal(requestInit.signal ?? null, timeoutMs);
+  const res = await fetch(url.toString(), { ...requestInit, signal });
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(
@@ -160,15 +197,12 @@ export async function searchPosts(
   if (opts.page) url.searchParams.set("page", String(opts.page));
   if (opts.limit) url.searchParams.set("limit", String(opts.limit));
 
-  const res = await fetch(url.toString(), {
-    ...buildRequestInit(opts, 300),
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to search blog posts (${res.status}) for websiteId "${websiteId}".`
-    );
-  }
-  return res.json();
+  return fetchJson<BlogPostListResponse>(
+    url.toString(),
+    opts,
+    300,
+    "Failed to search blog posts"
+  );
 }
 
 export interface BlogCategory {
@@ -187,15 +221,12 @@ export async function getCategories(
   url.searchParams.set("websiteId", websiteId);
   if (opts.previewToken) url.searchParams.set("previewToken", opts.previewToken);
 
-  const res = await fetch(url.toString(), {
-    ...buildRequestInit(opts, 300),
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to fetch categories (${res.status}) for websiteId "${websiteId}".`
-    );
-  }
-  return res.json();
+  return fetchJson<{ categories: BlogCategory[] }>(
+    url.toString(),
+    opts,
+    300,
+    "Failed to fetch categories"
+  );
 }
 
 /**
@@ -212,13 +243,10 @@ export async function getPostsByCategory(
   if (opts.page) url.searchParams.set("page", String(opts.page));
   if (opts.limit) url.searchParams.set("limit", String(opts.limit));
 
-  const res = await fetch(url.toString(), {
-    ...buildRequestInit(opts, 300),
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to fetch posts by category "${opts.categorySlug}" (${res.status}) for websiteId "${websiteId}".`
-    );
-  }
-  return res.json();
+  return fetchJson<BlogPostListResponse>(
+    url.toString(),
+    opts,
+    300,
+    `Failed to fetch posts by category "${opts.categorySlug}"`
+  );
 }
