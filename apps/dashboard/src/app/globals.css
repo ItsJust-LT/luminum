@@ -10,6 +10,37 @@
   }
 }
 
+/* Boneyard-style wave (background-position) — pairs with `.skeleton-boneyard` */
+@keyframes skeleton-boneyard-wave {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-boneyard {
+  background-color: var(--muted);
+  background-image: linear-gradient(
+    90deg,
+    var(--muted) 22%,
+    color-mix(in oklch, var(--foreground) 10%, var(--muted)) 50%,
+    var(--muted) 78%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-boneyard-wave 2.4s linear infinite;
+}
+
+.dark .skeleton-boneyard {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted) 22%,
+    color-mix(in oklch, var(--foreground) 16%, var(--muted)) 50%,
+    var(--muted) 78%
+  );
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -185,18 +185,18 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-3">
-                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-20" staggerIndex={0} />
                   <div className="flex gap-1 p-1 bg-muted rounded-lg">
-                    {[1, 2, 3, 4].map((i) => (
-                      <Skeleton key={i} className="h-8 w-12 rounded" />
+                    {[0, 1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-8 w-12 rounded" staggerIndex={1 + i} />
                     ))}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Skeleton className="h-6 w-20 rounded-full" />
-                <Skeleton className="h-6 w-24 rounded-full" />
-                <Skeleton className="h-8 w-20 rounded" />
+                <Skeleton className="h-6 w-20 rounded-full" staggerIndex={5} />
+                <Skeleton className="h-6 w-24 rounded-full" staggerIndex={6} />
+                <Skeleton className="h-8 w-20 rounded" staggerIndex={7} />
               </div>
             </div>
           </CardContent>
@@ -204,12 +204,12 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
 
         {/* Stats cards skeleton */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
-          {[1, 2, 3, 4, 5].map((i) => (
+          {[0, 1, 2, 3, 4].map((i) => (
             <Card key={i} className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/50 dark:to-slate-900/30">
               <CardContent className="p-6 text-center">
-                <Skeleton className="h-14 w-14 rounded-xl mx-auto mb-4" />
-                <Skeleton className="h-8 w-16 mx-auto mb-2" />
-                <Skeleton className="h-4 w-20 mx-auto" />
+                <Skeleton className="h-14 w-14 rounded-xl mx-auto mb-4" staggerIndex={8 + i} />
+                <Skeleton className="h-8 w-16 mx-auto mb-2" staggerIndex={8 + i} />
+                <Skeleton className="h-4 w-20 mx-auto" staggerIndex={8 + i} />
               </CardContent>
             </Card>
           ))}
@@ -218,11 +218,11 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
         {/* Chart skeleton */}
         <Card className="bg-card/50 backdrop-blur-sm">
           <CardHeader>
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-4 w-64" />
+            <Skeleton className="h-6 w-48" staggerIndex={13} />
+            <Skeleton className="h-4 w-64" staggerIndex={14} />
           </CardHeader>
           <CardContent>
-            <Skeleton className="h-80 w-full rounded-lg" />
+            <Skeleton className="h-80 w-full rounded-lg" staggerIndex={15} />
           </CardContent>
         </Card>
 
@@ -230,15 +230,15 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="bg-card/50 backdrop-blur-sm">
             <CardHeader>
-              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-6 w-32" staggerIndex={16} />
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {[1, 2, 3, 4, 5].map((i) => (
+                {[0, 1, 2, 3, 4].map((i) => (
                   <div key={i} className="flex items-center space-x-4">
-                    <Skeleton className="h-4 w-4 rounded-full" />
-                    <Skeleton className="h-4 w-48" />
-                    <Skeleton className="h-4 w-16 ml-auto" />
+                    <Skeleton className="h-4 w-4 rounded-full" staggerIndex={17 + i} />
+                    <Skeleton className="h-4 w-48" staggerIndex={17 + i} />
+                    <Skeleton className="h-4 w-16 ml-auto" staggerIndex={17 + i} />
                   </div>
                 ))}
               </div>
@@ -247,18 +247,18 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
 
           <Card className="bg-card/50 backdrop-blur-sm">
             <CardHeader>
-              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-6 w-40" staggerIndex={22} />
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
+                {[0, 1, 2].map((i) => (
                   <div key={i} className="flex items-center space-x-4">
-                    <Skeleton className="h-12 w-12 rounded-full" />
+                    <Skeleton className="h-12 w-12 rounded-full" staggerIndex={23 + i} />
                     <div className="space-y-2 flex-1">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-3 w-24" />
+                      <Skeleton className="h-4 w-32" staggerIndex={23 + i} />
+                      <Skeleton className="h-3 w-24" staggerIndex={23 + i} />
                     </div>
-                    <Skeleton className="h-6 w-16" />
+                    <Skeleton className="h-6 w-16" staggerIndex={23 + i} />
                   </div>
                 ))}
               </div>

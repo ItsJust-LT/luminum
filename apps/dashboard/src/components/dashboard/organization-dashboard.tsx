@@ -60,12 +60,12 @@ export function OrganizationDashboard() {
   const DashboardSkeleton = () => (
     <div className="space-y-5 sm:space-y-6 md:space-y-8">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
-        {[1, 2, 3, 4].map((i) => (
+        {[0, 1, 2, 3].map((i) => (
           <Card key={i} className="border-0 bg-card/50 shadow-sm app-card overflow-hidden">
             <CardContent className="p-4 sm:p-5 md:p-6">
-              <Skeleton className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl mb-3 sm:mb-4" />
-              <Skeleton className="h-6 sm:h-8 w-14 sm:w-20 mb-2" />
-              <Skeleton className="h-3 sm:h-4 w-16 sm:w-24" />
+              <Skeleton className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl mb-3 sm:mb-4" staggerIndex={i} />
+              <Skeleton className="h-6 sm:h-8 w-14 sm:w-20 mb-2" staggerIndex={i} />
+              <Skeleton className="h-3 sm:h-4 w-16 sm:w-24" staggerIndex={i} />
             </CardContent>
           </Card>
         ))}
@@ -73,22 +73,22 @@ export function OrganizationDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <Card className="border-0 bg-card/50 shadow-sm app-card">
           <CardContent className="p-4 sm:p-6">
-            <Skeleton className="h-5 w-28 mb-2" />
-            <Skeleton className="h-4 w-40 mb-4" />
+            <Skeleton className="h-5 w-28 mb-2" staggerIndex={4} />
+            <Skeleton className="h-4 w-40 mb-4" staggerIndex={5} />
             <div className="space-y-3">
-              {[1, 2, 3].map((j) => (
-                <Skeleton key={j} className="h-11 sm:h-12 w-full rounded-lg" />
+              {[0, 1, 2].map((j) => (
+                <Skeleton key={j} className="h-11 sm:h-12 w-full rounded-lg" staggerIndex={6 + j} />
               ))}
             </div>
           </CardContent>
         </Card>
         <Card className="border-0 bg-card/50 shadow-sm app-card">
           <CardContent className="p-4 sm:p-6">
-            <Skeleton className="h-5 w-32 mb-2" />
-            <Skeleton className="h-4 w-36 mb-4" />
+            <Skeleton className="h-5 w-32 mb-2" staggerIndex={9} />
+            <Skeleton className="h-4 w-36 mb-4" staggerIndex={10} />
             <div className="space-y-3">
-              {[1, 2, 3, 4].map((j) => (
-                <Skeleton key={j} className="h-10 w-full rounded-lg" />
+              {[0, 1, 2, 3].map((j) => (
+                <Skeleton key={j} className="h-10 w-full rounded-lg" staggerIndex={11 + j} />
               ))}
             </div>
           </CardContent>
