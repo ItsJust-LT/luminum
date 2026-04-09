@@ -1,11 +1,17 @@
 'use client';
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { Bell, BellRing, Inbox } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { Bell, BellRing, BellOff, Inbox, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useNotifications } from '@/hooks/use-notifications';
-import { isPushEnabled, subscribeToPush, unsubscribeFromPush } from '@/lib/notifications/push-client';
+import {
+  isPushEnabled,
+  isPushSupported,
+  getPushPermissionState,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from '@/lib/notifications/push-client';
 import { api } from '@/lib/api';
 import { useSession } from '@/lib/auth/client';
 import {
@@ -22,6 +28,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getNotificationIconForBadge } from '@/components/notifications/notification-icons';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
+import { toast } from 'sonner';
 
 function defaultOpenHref(n: Notification): string | undefined {
   const actions = n.actions || [];
@@ -84,6 +91,9 @@ function groupNotifications(items: Notification[]) {
 export function EnhancedNotificationBell() {
   const [open, setOpen] = useState(false);
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
+  const [pushSupported, setPushSupported] = useState(true);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | null>(null);
+  const [pushError, setPushError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const {
     notifications,
@@ -100,17 +110,34 @@ export function EnhancedNotificationBell() {
   const [justBumped, setJustBumped] = useState(false);
   const prevUnreadRef = useRef(0);
 
-  useEffect(() => {
-    let mounted = true;
-    isPushEnabled()
-      .then((enabled) => {
-        if (mounted) setPushEnabled(enabled);
-      })
-      .catch(() => setPushEnabled(false));
-    return () => {
-      mounted = false;
-    };
+  const refreshPushState = useCallback(async () => {
+    const supported = isPushSupported();
+    setPushSupported(supported);
+    if (!supported) {
+      setPushEnabled(false);
+      setPushPermission(null);
+      return;
+    }
+    try {
+      const [enabled, permission] = await Promise.all([isPushEnabled(), getPushPermissionState()]);
+      setPushEnabled(enabled);
+      setPushPermission(permission);
+    } catch {
+      setPushEnabled(false);
+      setPushPermission(null);
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshPushState();
+  }, [refreshPushState]);
+
+  useEffect(() => {
+    if (open) {
+      setPushError(null);
+      void refreshPushState();
+    }
+  }, [open, refreshPushState]);
 
   useEffect(() => {
     if (unreadCount > prevUnreadRef.current && unreadCount > 0) {
@@ -124,16 +151,54 @@ export function EnhancedNotificationBell() {
 
   const sections = useMemo(() => groupNotifications(notifications), [notifications]);
 
-  const onTogglePush = async () => {
-    if (!session?.user?.id) return;
+  const onSubscribePush = async () => {
+    if (!session?.user?.id) {
+      toast.error('Sign in to enable browser notifications.');
+      return;
+    }
+    if (!pushSupported) {
+      toast.error('Push notifications are not supported in this browser.');
+      return;
+    }
+    const perm = await getPushPermissionState();
+    setPushPermission(perm);
+    if (perm === 'denied') {
+      toast.error('Notifications are blocked for this site. Enable them in your browser settings, then try again.');
+      return;
+    }
+    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+      setPushError('Push is not configured for this environment.');
+      toast.error('Push notifications are not configured on this deployment.');
+      return;
+    }
+    setPushError(null);
     setToggling(true);
     try {
-      if (pushEnabled) {
-        const ok = await unsubscribeFromPush(session.user.id);
-        if (ok) setPushEnabled(false);
+      const ok = await subscribeToPush(session.user.id);
+      await refreshPushState();
+      if (ok) {
+        toast.success('You will receive browser notifications for important updates.');
       } else {
-        const ok = await subscribeToPush(session.user.id);
-        if (ok) setPushEnabled(true);
+        setPushError('Could not subscribe. Check notification permission and try again.');
+        toast.error('Could not enable push notifications.');
+      }
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const onUnsubscribePush = async () => {
+    if (!session?.user?.id) return;
+    setPushError(null);
+    setToggling(true);
+    try {
+      const ok = await unsubscribeFromPush(session.user.id);
+      await refreshPushState();
+      if (ok) {
+        toast.success('Browser notifications are turned off for this device.');
+      } else {
+        setPushError('Could not unsubscribe from push on this device.');
+        toast.error('Could not disable push notifications. Try again.');
       }
     } finally {
       setToggling(false);
@@ -152,8 +217,17 @@ export function EnhancedNotificationBell() {
     }
   };
 
+  const pushStatusLabel =
+    !pushSupported
+      ? 'Unavailable'
+      : pushEnabled
+        ? 'Subscribed'
+        : pushPermission === 'denied'
+          ? 'Blocked'
+          : 'Off';
+
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -177,7 +251,7 @@ export function EnhancedNotificationBell() {
               initial={false}
               animate={{ scale: justBumped ? [1, 1.2, 1] : 1 }}
               transition={{ duration: 0.5, ease: 'easeOut' }}
-              className="absolute -right-0.5 -top-0.5 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-red-600 px-1 text-[10px] font-bold leading-none text-white shadow-md ring-2 ring-background tabular-nums dark:from-rose-500 dark:to-red-600"
+              className="bg-destructive text-destructive-foreground ring-background absolute -right-0.5 -top-0.5 flex min-h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none shadow-md ring-2 tabular-nums"
             >
               {unreadCount > 99 ? '99+' : unreadCount}
             </motion.span>
@@ -187,35 +261,35 @@ export function EnhancedNotificationBell() {
 
       <DropdownMenuContent
         align="end"
-        sideOffset={10}
+        side="bottom"
+        sideOffset={8}
+        collisionPadding={12}
         className={cn(
-          'w-[min(100vw-1.25rem,26rem)] overflow-hidden rounded-2xl p-0',
-          'max-h-[min(85vh,36rem)] border border-border/60 shadow-2xl',
+          'z-[100] flex max-h-[min(90dvh,var(--radix-dropdown-menu-content-available-height))] w-[min(calc(100vw-1rem),26rem)] flex-col overflow-hidden p-0',
+          'rounded-2xl border border-border/60 shadow-2xl',
           'bg-popover/95 backdrop-blur-2xl dark:bg-popover/98',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95'
         )}
       >
-        {/* Header */}
-        <div className="relative border-b border-border/50 bg-gradient-to-b from-muted/50 to-muted/20 px-4 py-3.5 dark:from-muted/30 dark:to-muted/10">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-0.5">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Inbox className="h-4 w-4" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold tracking-tight text-foreground">Notifications</h2>
-                  <p className="text-[11px] text-muted-foreground">
-                    {unreadCount > 0
-                      ? `${unreadCount} unread`
-                      : notifications.length === 0
-                        ? 'Nothing new yet'
-                        : 'All caught up'}
-                  </p>
-                </div>
+        {/* Header — stays above the scroll region */}
+        <div className="relative shrink-0 border-b border-border/50 bg-muted/30 px-3 py-3 sm:px-4 dark:bg-muted/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Inbox className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold tracking-tight text-foreground">Notifications</h2>
+                <p className="text-[11px] text-muted-foreground">
+                  {unreadCount > 0
+                    ? `${unreadCount} unread`
+                    : notifications.length === 0
+                      ? 'Nothing new yet'
+                      : 'All caught up'}
+                </p>
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:justify-start">
               <NotificationPreferencesButton />
               {notifications.length > 0 && unreadCount > 0 && (
                 <Button
@@ -231,7 +305,8 @@ export function EnhancedNotificationBell() {
           </div>
         </div>
 
-        <ScrollArea className="max-h-[min(65vh,28rem)]">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <ScrollArea className="h-[min(58dvh,26rem)] max-h-[min(58dvh,26rem)] min-h-[11rem] w-full sm:h-[min(52dvh,24rem)] sm:max-h-[min(52dvh,24rem)] sm:min-h-[12rem]">
           <AnimatePresence initial={false}>
             {isLoading && notifications.length === 0 && (
               <div className="space-y-3 p-4">
@@ -254,7 +329,7 @@ export function EnhancedNotificationBell() {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex flex-col items-center px-6 py-14 text-center"
               >
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-muted to-muted/50 ring-1 ring-border/50">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/80 ring-1 ring-border/50">
                   <Bell className="h-8 w-8 text-muted-foreground/50" />
                 </div>
                 <p className="text-sm font-medium text-foreground">You&apos;re all set</p>
@@ -268,8 +343,8 @@ export function EnhancedNotificationBell() {
               <div className="space-y-1 py-2">
                 {sections.map((section) => (
                   <div key={section.label}>
-                    <div className="sticky top-0 z-[1] px-4 pb-1 pt-2">
-                      <span className="inline-flex rounded-full bg-muted/80 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur-sm">
+                    <div className="bg-popover/95 sticky top-0 z-10 px-3 pb-1 pt-2 backdrop-blur-md sm:px-4">
+                      <span className="inline-flex rounded-full bg-muted/90 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                         {section.label}
                       </span>
                     </div>
@@ -291,7 +366,7 @@ export function EnhancedNotificationBell() {
                                 'hover:bg-muted/70 dark:hover:bg-muted/40',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                                 isUnread &&
-                                  'border-border/30 bg-gradient-to-r from-muted/60 to-transparent shadow-sm dark:from-muted/25'
+                                  'border-border/30 bg-muted/50 shadow-sm dark:bg-muted/30'
                               )}
                               style={
                                 isUnread
@@ -339,7 +414,7 @@ export function EnhancedNotificationBell() {
                                         n.data.priority === 'urgent' &&
                                           'bg-destructive/12 text-destructive',
                                         n.data.priority === 'high' &&
-                                          'bg-amber-500/12 text-amber-700 dark:text-amber-400'
+                                          'bg-secondary/80 text-secondary-foreground'
                                       )}
                                     >
                                       {n.data.priority}
@@ -397,30 +472,89 @@ export function EnhancedNotificationBell() {
             </div>
           )}
         </ScrollArea>
+        </div>
 
-        <DropdownMenuSeparator className="my-0" />
+        <DropdownMenuSeparator className="m-0 shrink-0" />
 
-        <div className="flex items-center justify-between gap-3 bg-muted/25 px-4 py-2.5 dark:bg-muted/15">
-          <span className="text-[11px] text-muted-foreground">
-            Browser push{' '}
-            <span
-              className={cn(
-                'font-semibold',
-                pushEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+        <div className="bg-muted/20 shrink-0 border-t border-border/40 px-3 py-3 sm:px-4 dark:bg-muted/10">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-2">
+              <div className="mt-0.5 text-muted-foreground">
+                {pushEnabled ? (
+                  <BellRing className="h-4 w-4 text-primary" />
+                ) : (
+                  <BellOff className="h-4 w-4" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-foreground">Browser push</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Get alerts on this device when you are not in the app.
+                </p>
+                {(() => {
+                  const msg =
+                    pushError ??
+                    (!pushSupported ? 'This browser cannot use push notifications.' : null);
+                  if (!msg) return null;
+                  return (
+                    <p className="text-destructive mt-1 flex items-start gap-1 text-[11px]">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>{msg}</span>
+                    </p>
+                  );
+                })()}
+                {pushPermission === 'denied' && pushSupported && !pushEnabled && (
+                  <p className="text-muted-foreground mt-1 text-[11px] leading-snug">
+                    Notifications are blocked for this site. Allow them in your browser site settings, then try
+                    Subscribe again.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Badge
+                variant="secondary"
+                className={cn(
+                  'rounded-md px-2 py-0.5 text-[10px] font-medium',
+                  pushEnabled && 'border-primary/25 bg-primary/15 text-primary',
+                  pushPermission === 'denied' && pushSupported && 'border-destructive/30 bg-destructive/10 text-destructive'
+                )}
+              >
+                {pushEnabled === null ? '…' : pushStatusLabel}
+              </Badge>
+              {pushEnabled ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 rounded-lg px-3 text-xs"
+                  onClick={() => void onUnsubscribePush()}
+                  disabled={toggling || !pushSupported}
+                >
+                  {toggling ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <BellOff className="h-3.5 w-3.5" />
+                  )}
+                  Unsubscribe
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-9 gap-1.5 rounded-lg px-3 text-xs"
+                  onClick={() => void onSubscribePush()}
+                  disabled={toggling || pushEnabled === null || !pushSupported || pushPermission === 'denied'}
+                >
+                  {toggling ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Bell className="h-3.5 w-3.5" />
+                  )}
+                  Subscribe
+                </Button>
               )}
-            >
-              {pushEnabled === null ? '…' : pushEnabled ? 'on' : 'off'}
-            </span>
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 rounded-lg px-3 text-xs"
-            onClick={() => void onTogglePush()}
-            disabled={toggling || pushEnabled === null}
-          >
-            {pushEnabled ? 'Turn off' : 'Turn on'}
-          </Button>
+            </div>
+          </div>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

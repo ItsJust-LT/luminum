@@ -89,10 +89,14 @@ export async function unsubscribeFromPush(userId: string): Promise<boolean> {
 	try {
 		const { api } = await import('@/lib/api');
 		await api.notifications.removePushSubscription(endpoint);
-		await sub.unsubscribe();
-		return true;
 	} catch (e) {
-		console.error("Unsubscribe failed", e);
+		console.warn("Remove push subscription from server failed; continuing local unsubscribe", e);
+	}
+	try {
+		const ok = await sub.unsubscribe();
+		return ok;
+	} catch (e) {
+		console.error("Local push unsubscribe failed", e);
 		return false;
 	}
 }
