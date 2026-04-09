@@ -51,6 +51,12 @@ Until **steps 3–4** finish successfully, `pnpm add @itsjust-lt/website-kit` in
 
 When `website-kit` is published, the workflow tooling turns the internal `workspace:*` link to `blog-renderer` into a normal semver dependency pointing at the **published** `blog-renderer`. The workflow always publishes **blog-renderer first**, then **website-kit**.
 
+### If installs fail: “No matching version for `@itsjust-lt/blog-renderer@…`”
+
+Consumers resolve `website-kit`’s dependency on a **published** `blog-renderer` version. If `website-kit` was published while that `blog-renderer` version was missing from GitHub Packages, install fails (for example requesting `0.3.0` when only `0.1.0` exists).
+
+**Fix:** publish `@itsjust-lt/blog-renderer` at the required version first, or run the repo **Publish npm packages** workflow (publishes both in order). Then reinstall `website-kit`.
+
 ---
 
 ## 4. Run the publish workflow (upload packages to GitHub)
