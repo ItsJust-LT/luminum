@@ -14,7 +14,6 @@ import {
   MessageCircle,
   Search,
   Send,
-  Phone,
   QrCode,
   Wifi,
   WifiOff,
@@ -72,6 +71,9 @@ import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useWhatsAppCache } from "@/lib/contexts/whatsapp-context"
+import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import { Separator } from "@/components/ui/separator"
+import { Card, CardContent } from "@/components/ui/card"
 
 interface WhatsAppAccount {
   id: string
@@ -177,15 +179,15 @@ function AckIcon({ ack }: { ack: number | null }) {
     : "Sending…"
   let icon: ReactNode
   if (ack >= 4) {
-    icon = <CheckCheck className="h-3.5 w-3.5 text-sky-400 drop-shadow-[0_0_6px_rgba(56,189,248,0.45)]" />
+    icon = <CheckCheck className="h-3.5 w-3.5 text-chart-1" />
   } else if (ack >= 3) {
-    icon = <CheckCheck className="h-3.5 w-3.5 text-[#5bd0ff] drop-shadow-[0_0_5px_rgba(91,208,255,0.35)]" />
+    icon = <CheckCheck className="h-3.5 w-3.5 text-chart-2" />
   } else if (ack >= 2) {
-    icon = <CheckCheck className="h-3.5 w-3.5 text-white/85" />
+    icon = <CheckCheck className="h-3.5 w-3.5 text-primary-foreground/90" />
   } else if (ack >= 1) {
-    icon = <Check className="h-3.5 w-3.5 text-white/75" />
+    icon = <Check className="h-3.5 w-3.5 text-primary-foreground/80" />
   } else {
-    icon = <Check className="h-3.5 w-3.5 text-white/45 animate-pulse" />
+    icon = <Check className="h-3.5 w-3.5 text-primary-foreground/50 animate-pulse" />
   }
   return (
     <span title={label} aria-label={label} className="inline-flex items-center transition-all duration-300">
@@ -241,7 +243,7 @@ function renderMediaContent(msg: WhatsAppMessage, fromMe: boolean) {
   const mime = (msg.mime_type || "").toLowerCase()
   const shellClass = cn(
     "mt-2 overflow-hidden rounded-xl border backdrop-blur-sm",
-    fromMe ? "border-white/30 bg-white/10" : "border-border/80 bg-background/80"
+    fromMe ? "border-primary-foreground/25 bg-primary-foreground/10" : "border-border/80 bg-background/80"
   )
 
   if (mime.startsWith("image/")) {
@@ -291,7 +293,7 @@ function renderMediaContent(msg: WhatsAppMessage, fromMe: boolean) {
             <FileText className="h-4 w-4" />
             {label}
           </p>
-          <p className={cn("truncate text-[11px]", fromMe ? "text-white/80" : "text-muted-foreground")}>
+          <p className={cn("truncate text-[11px]", fromMe ? "text-primary-foreground/85" : "text-muted-foreground")}>
             {msg.mime_type || "Unknown type"}
           </p>
         </div>
@@ -302,7 +304,9 @@ function renderMediaContent(msg: WhatsAppMessage, fromMe: boolean) {
           rel="noreferrer"
           className={cn(
             "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
-            fromMe ? "bg-white/20 text-white hover:bg-white/30" : "bg-muted hover:bg-muted/80"
+            fromMe
+              ? "bg-primary-foreground/18 text-primary-foreground hover:bg-primary-foreground/26"
+              : "bg-muted hover:bg-muted/80"
           )}
         >
           <Download className="h-3.5 w-3.5" />
@@ -368,12 +372,12 @@ function ContactAvatar({
   return (
     <Avatar className="h-10 w-10 flex-shrink-0">
       <AvatarImage src={src || undefined} alt={displayName} className="object-cover" referrerPolicy="no-referrer" />
-      <AvatarFallback className={cn(
-        "text-white font-semibold text-sm",
-        isGroup
-          ? "bg-gradient-to-br from-emerald-500 to-teal-600"
-          : "bg-gradient-to-br from-blue-500 to-indigo-600"
-      )}>
+      <AvatarFallback
+        className={cn(
+        "font-semibold text-sm text-primary-foreground",
+        isGroup ? "bg-chart-2" : "bg-primary"
+      )}
+      >
         {initial || "?"}
       </AvatarFallback>
     </Avatar>
@@ -417,27 +421,24 @@ function QrSetup({ account, organizationId, onRefresh }: {
 
   if (!account) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-6 max-w-md px-4">
-          <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg">
-            <MessageCircle className="h-10 w-10 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Connect WhatsApp</h2>
-            <p className="text-muted-foreground mt-2">
-              Link your WhatsApp number to start receiving and sending messages.
-            </p>
-          </div>
-          <Button
-            onClick={handleConnect}
-            disabled={loading}
-            size="lg"
-            className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
-          >
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}
-            Connect WhatsApp
-          </Button>
-        </div>
+      <div className="flex flex-1 items-center justify-center p-4">
+        <Card className="app-card w-full max-w-md border-dashed">
+          <CardContent className="flex flex-col items-center gap-5 py-10 text-center">
+            <div className="bg-primary/12 text-primary flex h-14 w-14 items-center justify-center rounded-2xl">
+              <MessageCircle className="h-7 w-7" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-foreground text-xl font-semibold tracking-tight">Connect WhatsApp</h2>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Link your number to send and receive messages from the dashboard.
+              </p>
+            </div>
+            <Button onClick={handleConnect} disabled={loading} size="lg" className="w-full sm:w-auto">
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}
+              Connect WhatsApp
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -445,138 +446,133 @@ function QrSetup({ account, organizationId, onRefresh }: {
   // QR code expired or not ready (e.g. stale after 5 min, or client not emitting)
   if (account.status === "QR_PENDING" && !account.qr_code) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-6 max-w-md px-4">
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg">
-            <RefreshCw className="h-8 w-8 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold">QR code expired or not ready</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              The previous QR code is no longer valid. Click below to get a new one, then scan it with WhatsApp.
-            </p>
-          </div>
-          <Button
-            onClick={handleReconnect}
-            disabled={loading}
-            size="lg"
-            className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
-          >
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Get new QR code
-          </Button>
-        </div>
+      <div className="flex flex-1 items-center justify-center p-4">
+        <Card className="app-card w-full max-w-md">
+          <CardContent className="flex flex-col items-center gap-5 py-10 text-center">
+            <div className="bg-chart-3/15 text-chart-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-chart-3/30">
+              <RefreshCw className="h-7 w-7" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-foreground text-lg font-semibold">QR code expired or not ready</h2>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Generate a fresh code, then scan it in WhatsApp → Settings → Linked devices.
+              </p>
+            </div>
+            <Button onClick={handleReconnect} disabled={loading} size="lg" className="w-full sm:w-auto">
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              New QR code
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   if (account.status === "QR_PENDING" && account.qr_code) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-6 max-w-md px-4">
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg">
-            <QrCode className="h-8 w-8 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold">Scan QR Code</h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Open WhatsApp on your phone, go to Settings &gt; Linked Devices, and scan this code.
-            </p>
-          </div>
-          <div className="bg-white p-4 rounded-xl inline-block shadow-md">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(account.qr_code)}`}
-              alt="WhatsApp QR Code"
-              className="w-64 h-64"
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">QR code refreshes automatically</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              onRefresh()
-              toast.info("Checking connection status…")
-            }}
-            className="mt-2"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            I've scanned — check status
-          </Button>
-        </div>
+      <div className="flex flex-1 items-center justify-center p-4">
+        <Card className="app-card w-full max-w-lg">
+          <CardContent className="flex flex-col items-center gap-5 py-8 text-center sm:py-10">
+            <div className="bg-primary/12 text-primary flex h-12 w-12 items-center justify-center rounded-xl">
+              <QrCode className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-foreground text-lg font-semibold">Scan QR code</h2>
+              <p className="text-muted-foreground text-sm leading-relaxed px-2">
+                WhatsApp → Settings → Linked devices → Link a device. Point your camera at the code below.
+              </p>
+            </div>
+            <div className="bg-background rounded-xl border p-3 shadow-inner">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(account.qr_code)}`}
+                alt="WhatsApp QR Code"
+                className="mx-auto h-56 w-56 sm:h-64 sm:w-64"
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">This code may refresh automatically.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onRefresh()
+                toast.info("Checking connection status…")
+              }}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              I scanned — check status
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   if (account.status === "CONNECTING") {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-5 max-w-md px-4">
-          <Loader2 className="h-12 w-12 animate-spin text-green-500 mx-auto" />
-          <div>
-            <h2 className="text-xl font-bold">Connecting...</h2>
-            <p className="text-muted-foreground text-sm mt-1">Please wait while we establish the connection.</p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            <Button variant="outline" size="sm" onClick={() => { onRefresh(); toast.info("Checking status…") }}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Check status
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleReconnect}
-              disabled={loading}
-              className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/40"
-            >
-              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Link removed? Get new QR code
-            </Button>
-          </div>
-        </div>
+      <div className="flex flex-1 items-center justify-center p-4">
+        <Card className="app-card w-full max-w-md">
+          <CardContent className="flex flex-col items-center gap-5 py-10 text-center">
+            <Loader2 className="text-primary h-10 w-10 animate-spin" />
+            <div className="space-y-2">
+              <h2 className="text-foreground text-lg font-semibold">Connecting…</h2>
+              <p className="text-muted-foreground text-sm">Finishing the link with WhatsApp.</p>
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
+              <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => { onRefresh(); toast.info("Checking status…") }}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Check status
+              </Button>
+              <Button variant="secondary" size="sm" className="w-full sm:w-auto" onClick={handleReconnect} disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <QrCode className="mr-2 h-4 w-4" />}
+                New QR code
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   if (account.status === "ERROR") {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md px-4">
-          <WifiOff className="h-12 w-12 text-destructive mx-auto" />
-          <h2 className="text-xl font-bold">Connection Error</h2>
-          <p className="text-muted-foreground text-sm">{account.last_error || "An error occurred."}</p>
-          <Button onClick={handleReconnect} disabled={loading}>
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Retry Connection
-          </Button>
-        </div>
+      <div className="flex flex-1 items-center justify-center p-4">
+        <Card className="app-card border-destructive/30 w-full max-w-md">
+          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+            <WifiOff className="text-destructive h-11 w-11" />
+            <div className="space-y-2">
+              <h2 className="text-foreground text-lg font-semibold">Connection error</h2>
+              <p className="text-muted-foreground text-sm">{account.last_error || "Something went wrong."}</p>
+            </div>
+            <Button onClick={handleReconnect} disabled={loading} variant="outline" className="w-full sm:w-auto">
+              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   // DISCONNECTED or any other status: show reconnect so we never render nothing
   return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-center space-y-6 max-w-md px-4">
-        <div className="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg">
-          <MessageCircle className="h-10 w-10 text-white" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Reconnect WhatsApp</h2>
-          <p className="text-muted-foreground mt-2">
-            The connection is not active. Click below to generate a new QR code and link your number again.
-          </p>
-        </div>
-        <Button
-          onClick={handleReconnect}
-          disabled={loading}
-          size="lg"
-          className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
-        >
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          Reconnect WhatsApp
-        </Button>
-      </div>
+    <div className="flex flex-1 items-center justify-center p-4">
+      <Card className="app-card w-full max-w-md">
+        <CardContent className="flex flex-col items-center gap-5 py-10 text-center">
+          <div className="bg-primary/12 text-primary flex h-14 w-14 items-center justify-center rounded-2xl">
+            <MessageCircle className="h-7 w-7" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-foreground text-xl font-semibold tracking-tight">Reconnect WhatsApp</h2>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              The session is not active. Generate a new QR code to link this workspace again.
+            </p>
+          </div>
+          <Button onClick={handleReconnect} disabled={loading} size="lg" className="w-full sm:w-auto">
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Reconnect
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -1136,100 +1132,137 @@ export default function WhatsAppPage() {
   // Route guard: WhatsApp not enabled (direct URL access blocked)
   if (whatsappAccessChecked && whatsappAccess === false) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh] px-4">
-        <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-sm">
-          <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-foreground mb-2">WhatsApp not enabled</h3>
-          <p className="text-muted-foreground mb-4">
-            WhatsApp is not enabled for this organization. Contact an administrator if you need access.
-          </p>
-          <Button onClick={() => router.push(`/${slug}/dashboard`)} variant="outline" className="w-full">
-            Back to Dashboard
-          </Button>
-        </div>
-      </div>
+      <AppPageContainer fullWidth className="flex min-h-[50vh] flex-1 items-center justify-center p-4">
+        <Card className="app-card w-full max-w-md">
+          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+            <MessageCircle className="text-muted-foreground mx-auto h-11 w-11" />
+            <div className="space-y-2">
+              <h2 className="text-foreground text-lg font-semibold">WhatsApp not enabled</h2>
+              <p className="text-muted-foreground text-sm">
+                This workspace does not have WhatsApp. Ask an administrator if you need it.
+              </p>
+            </div>
+            <Button type="button" variant="outline" className="w-full" onClick={() => router.push(`/${slug}/dashboard`)}>
+              Back to dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </AppPageContainer>
     )
   }
 
   // Wait for access check
   if (!whatsappAccessChecked || whatsappAccess !== true) {
     return (
-      <div className="flex items-center justify-center min-h-[40vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <AppPageContainer fullWidth className="flex min-h-[40vh] flex-1 items-center justify-center">
+        <Loader2 className="text-primary h-8 w-8 animate-spin" />
+      </AppPageContainer>
     )
   }
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
-        <div className="w-80 border-r p-4 space-y-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3">
-              <Skeleton className="h-10 w-10 rounded-full" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-3 w-32" />
+      <AppPageContainer
+        fullWidth
+        className="flex h-[calc(100vh-4rem)] min-h-0 flex-1 flex-col overflow-hidden space-y-0 px-0 pt-0 sm:pt-0 md:pt-0"
+      >
+        <div className="bg-background flex h-full min-h-0 flex-1 overflow-hidden">
+          <div className="bg-card/40 w-full space-y-3 border-r p-4 md:w-80 lg:w-96">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-3 w-32" />
+                </div>
               </div>
+            ))}
+          </div>
+          <div className="bg-muted/15 flex flex-1 items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="text-primary h-8 w-8 animate-spin" />
+              <p className="text-muted-foreground text-sm">Loading chats…</p>
             </div>
-          ))}
+          </div>
         </div>
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </div>
+      </AppPageContainer>
     )
   }
 
   // Not connected — show setup (Settings always reachable)
   if (!account || account.status !== "CONNECTED") {
     return (
-      <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
-        <div className="flex items-center justify-end border-b px-3 py-2">
-          <Link href={`/${slug}/whatsapp/settings`}>
-            <Button variant="ghost" size="icon" className="h-9 w-9">
+      <AppPageContainer fullWidth className="flex h-[calc(100vh-4rem)] min-h-0 flex-1 flex-col overflow-hidden">
+        <header className="bg-background flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="bg-primary/10 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+              <MessageCircle className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-foreground truncate text-sm font-semibold">WhatsApp</h1>
+              <p className="text-muted-foreground truncate text-xs">Connect your number</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" className="shrink-0 gap-2" asChild>
+            <Link href={`/${slug}/whatsapp/settings`}>
               <Settings className="h-4 w-4" />
-            </Button>
-          </Link>
-        </div>
-        <div className="flex-1 min-h-0 flex">
+              Settings
+            </Link>
+          </Button>
+        </header>
+        <Separator />
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
           <QrSetup account={account} organizationId={orgId!} onRefresh={loadAccount} />
         </div>
-      </div>
+      </AppPageContainer>
     )
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+    <AppPageContainer
+      fullWidth
+      className="flex h-[calc(100vh-4rem)] min-h-0 flex-1 flex-col overflow-hidden space-y-0 px-0 pt-0 sm:pt-0 md:pt-0"
+    >
+      <header className="bg-background flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="bg-primary/10 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+            <MessageCircle className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-foreground truncate text-sm font-semibold sm:text-base">WhatsApp</h1>
+            <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 truncate text-xs">
+              <Wifi className="text-chart-2 h-3 w-3 shrink-0" />
+              <span>
+                Connected{account.phone_number ? ` · ${account.phone_number}` : ""}
+              </span>
+            </p>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" className="shrink-0 gap-2" asChild>
+          <Link href={`/${slug}/whatsapp/settings`}>
+            <Settings className="h-4 w-4" />
+            <span className="hidden sm:inline">Settings</span>
+          </Link>
+        </Button>
+      </header>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* ── Chat List (left panel) ────────────────────────────────────── */}
       <div className={cn(
         "w-full md:w-80 lg:w-96 border-r flex flex-col bg-background",
         selectedChat ? "hidden md:flex" : "flex"
       )}>
-        {/* Header */}
-        <div className="p-3 border-b flex items-center gap-2">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        {/* Search */}
+        <div className="flex items-center gap-2 border-b p-3">
+          <div className="relative flex-1">
+            <Search className="text-muted-foreground absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
             <Input
-              placeholder="Search chats..."
-              className="pl-9 h-9 rounded-lg"
+              placeholder="Search chats…"
+              className="h-9 rounded-lg pl-9"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Link href={`/${slug}/whatsapp/settings`}>
-            <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0">
-              <Settings className="h-4 w-4" />
-            </Button>
-          </Link>
-        </div>
-
-        {/* Connection status */}
-        <div className="px-3 py-1.5 flex items-center gap-2 border-b bg-green-50/50 dark:bg-green-950/20">
-          <Wifi className="h-3.5 w-3.5 text-green-600" />
-          <span className="text-xs text-green-700 dark:text-green-400 font-medium">
-            Connected{account.phone_number ? ` · ${account.phone_number}` : ""}
-          </span>
         </div>
 
         {/* Chat list */}
@@ -1265,7 +1298,7 @@ export default function WhatsAppPage() {
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium text-sm truncate inline-flex items-center gap-1.5 min-w-0">
                           {chat.is_group && (
-                            <span className="inline-flex items-center rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400 shrink-0">
+                            <span className="bg-chart-2/15 text-chart-2 inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
                               <Users className="h-3 w-3" aria-hidden />
                               Group
                             </span>
@@ -1275,7 +1308,7 @@ export default function WhatsAppPage() {
                         {chat.last_message_at && (
                           <span className={cn(
                             "text-xs flex-shrink-0",
-                            chat.unread_count > 0 ? "text-green-600 font-medium" : "text-muted-foreground"
+                            chat.unread_count > 0 ? "text-primary font-medium" : "text-muted-foreground"
                           )}>
                             {smartDate(chat.last_message_at)}
                           </span>
@@ -1299,7 +1332,7 @@ export default function WhatsAppPage() {
                         {chat.is_pinned && <Pin className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                         {chat.is_muted && <BellOff className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
                         {chat.unread_count > 0 && (
-                          <Badge className="bg-green-500 text-white text-[10px] h-5 min-w-[20px] px-1.5 rounded-full flex-shrink-0">
+                          <Badge className="bg-primary text-primary-foreground h-5 min-w-[20px] flex-shrink-0 rounded-full px-1.5 text-[10px]">
                             {chat.unread_count}
                           </Badge>
                         )}
@@ -1317,11 +1350,11 @@ export default function WhatsAppPage() {
       {/* ── Chat Detail (right panel) ─────────────────────────────────── */}
       {selectedChat ? (
         <div className={cn(
-          "flex-1 flex flex-col bg-background",
+          "flex flex-1 flex-col bg-background",
           selectedChat ? "flex" : "hidden md:flex"
         )}>
           {/* Chat header */}
-          <div className="h-14 px-4 border-b flex items-center gap-3 bg-background/95 backdrop-blur-sm">
+          <div className="bg-background/95 flex h-14 items-center gap-3 border-b px-4 backdrop-blur-sm">
             <Button
               variant="ghost"
               size="icon"
@@ -1382,7 +1415,7 @@ export default function WhatsAppPage() {
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <div
               ref={messagesScrollRef}
-              className="flex-1 h-full min-h-0 overflow-auto bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.08),transparent_45%),radial-gradient(circle_at_bottom,rgba(59,130,246,0.08),transparent_45%)] px-4 py-3"
+              className="from-background via-muted/35 to-muted/20 flex h-full min-h-0 flex-1 overflow-auto bg-gradient-to-b px-3 py-3 sm:px-4"
               onScroll={handleMessagesScroll}
             >
             {messagesLoading && messages.length === 0 ? (
@@ -1399,7 +1432,7 @@ export default function WhatsAppPage() {
                 {historySyncedHint && (
                   <div
                     role="status"
-                    className="mb-1 flex items-start justify-between gap-3 rounded-xl border border-emerald-500/35 bg-emerald-500/[0.11] px-3 py-2.5 text-xs text-emerald-950 dark:text-emerald-100 animate-in fade-in slide-in-from-top-1 duration-300"
+                    className="border-primary/25 bg-primary/10 text-foreground mb-1 flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs animate-in fade-in slide-in-from-top-1 duration-300"
                   >
                     <span className="leading-snug">
                       <span className="font-semibold">History loaded from WhatsApp.</span>{" "}
@@ -1407,7 +1440,7 @@ export default function WhatsAppPage() {
                     </span>
                     <button
                       type="button"
-                      className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium text-emerald-800 underline underline-offset-2 hover:bg-emerald-500/15 dark:text-emerald-200"
+                      className="text-primary hover:bg-primary/10 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium underline underline-offset-2"
                       onClick={() => setHistorySyncedHint(false)}
                     >
                       Dismiss
@@ -1465,7 +1498,7 @@ export default function WhatsAppPage() {
                               className={cn(
                                 "relative rounded-2xl px-3.5 py-2.5 shadow-md transition-all duration-200 ease-out will-change-transform motion-safe:hover:scale-[1.008]",
                                 msg.from_me
-                                  ? "rounded-br-sm border border-emerald-400/40 bg-gradient-to-br from-emerald-500 via-green-500 to-lime-500 text-white"
+                                  ? "from-primary to-primary/88 text-primary-foreground rounded-br-sm border border-primary/35 bg-gradient-to-br shadow-sm"
                                   : "rounded-bl-sm border border-border/70 bg-card/95 text-card-foreground",
                                 msg.is_deleted && "opacity-60 italic"
                               )}
@@ -1477,8 +1510,8 @@ export default function WhatsAppPage() {
                                 <div className={cn(
                                   "mb-1.5 px-2.5 py-1.5 rounded-lg border-l-[3px] text-xs",
                                   msg.from_me
-                                    ? "bg-white/15 border-l-white/50"
-                                    : "bg-background/80 border-l-green-500"
+                                    ? "border-l-primary-foreground/45 bg-primary-foreground/12"
+                                    : "border-l-primary bg-background/80"
                                 )}>
                                   {msg.quoted_from && (
                                     <p className="font-semibold text-[11px] mb-0.5 opacity-80">
@@ -1493,7 +1526,7 @@ export default function WhatsAppPage() {
                               ) : (
                                 <>
                                   {msg.from_number && !msg.from_me && formatContactIdAsNumber(msg.from_number) !== "Status" && (
-                                    <p className="text-xs font-semibold text-green-600 mb-0.5">
+                                    <p className="text-primary mb-0.5 text-xs font-semibold">
                                       {selectedChat?.is_group
                                         ? (msg.sender_display_name ?? selectedChat?.display_name ?? selectedChat?.name ?? formatContactIdAsNumber(msg.from_number))
                                         : (selectedChat?.display_name ?? selectedChat?.name ?? msg.sender_display_name ?? formatContactIdAsNumber(msg.from_number))}
@@ -1519,16 +1552,16 @@ export default function WhatsAppPage() {
                                     if (!preview) return null
                                     return (
                                       <a href={preview.url || url} target="_blank" rel="noreferrer"
-                                        className={cn("mt-2 block rounded-lg border overflow-hidden no-underline", msg.from_me ? "border-white/30 bg-white/10" : "border-border bg-background")}>
+                                        className={cn("mt-2 block overflow-hidden rounded-lg border no-underline", msg.from_me ? "border-primary-foreground/25 bg-primary-foreground/10" : "border-border bg-background")}>
                                         {preview.image && (
                                           // eslint-disable-next-line @next/next/no-img-element
                                           <img src={preview.image} alt={preview.title || "Link preview"} className="w-full max-h-40 object-cover" />
                                         )}
                                         <div className="p-2">
-                                          {preview.siteName && <p className={cn("text-[10px] uppercase tracking-wide", msg.from_me ? "text-white/70" : "text-muted-foreground")}>{preview.siteName}</p>}
+                                          {preview.siteName && <p className={cn("text-[10px] uppercase tracking-wide", msg.from_me ? "text-primary-foreground/75" : "text-muted-foreground")}>{preview.siteName}</p>}
                                           {preview.title && <p className="text-xs font-semibold line-clamp-2">{preview.title}</p>}
-                                          {preview.description && <p className={cn("text-[11px] line-clamp-2", msg.from_me ? "text-white/80" : "text-muted-foreground")}>{preview.description}</p>}
-                                          <p className={cn("mt-1 inline-flex items-center gap-1 text-[11px]", msg.from_me ? "text-white/75" : "text-muted-foreground")}>
+                                          {preview.description && <p className={cn("line-clamp-2 text-[11px]", msg.from_me ? "text-primary-foreground/85" : "text-muted-foreground")}>{preview.description}</p>}
+                                          <p className={cn("mt-1 inline-flex items-center gap-1 text-[11px]", msg.from_me ? "text-primary-foreground/80" : "text-muted-foreground")}>
                                             Open link <ExternalLink className="h-3 w-3" />
                                           </p>
                                         </div>
@@ -1542,7 +1575,7 @@ export default function WhatsAppPage() {
                                   {Object.entries(groupedReactions).map(([emoji, count]) => (
                                     <span key={emoji} className={cn(
                                       "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs border",
-                                      msg.from_me ? "border-white/30 bg-white/15" : "border-border bg-background/80"
+                                      msg.from_me ? "border-primary-foreground/28 bg-primary-foreground/14" : "border-border bg-background/80"
                                     )}>
                                       {emoji}{count > 1 && <span className="text-[10px]">{count}</span>}
                                     </span>
@@ -1550,7 +1583,7 @@ export default function WhatsAppPage() {
                                 </div>
                               )}
                               <div className={cn("flex items-center gap-1 mt-0.5", msg.from_me ? "justify-end" : "justify-start")}>
-                                <span className={cn("text-[10px]", msg.from_me ? "text-white/70" : "text-muted-foreground")}>
+                                <span className={cn("text-[10px]", msg.from_me ? "text-primary-foreground/75" : "text-muted-foreground")}>
                                   {messageTime(msg.timestamp)}
                                 </span>
                                 {msg.from_me && <AckIcon ack={msg.ack} />}
@@ -1628,9 +1661,9 @@ export default function WhatsAppPage() {
           {/* Reply pill */}
           {replyingTo && (
             <div className="px-3 pt-2 pb-0 border-t bg-background">
-              <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/80 border-l-4 border-l-green-500 max-w-3xl mx-auto">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-green-600">
+              <div className="bg-muted/80 mx-auto flex max-w-3xl items-center gap-2 rounded-lg border-l-4 border-l-primary p-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-primary text-xs font-semibold">
                     {replyingTo.from_me ? "You" : (replyingTo.sender_display_name || formatContactIdAsNumber(replyingTo.from_number || ""))}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">{replyingTo.body || mediaLabel(replyingTo.type)}</p>
@@ -1690,7 +1723,7 @@ export default function WhatsAppPage() {
                 type="submit"
                 size="icon"
                 disabled={(!messageInput.trim() && !selectedImage) || sending}
-                className="h-10 w-10 rounded-full bg-green-500 hover:bg-green-600 text-white flex-shrink-0"
+                className="h-10 w-10 shrink-0 rounded-full"
               >
                 {sending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1713,6 +1746,7 @@ export default function WhatsAppPage() {
           </div>
         </div>
       )}
+      </div>
 
       {/* Forward dialog */}
       <Dialog open={forwardModalOpen} onOpenChange={setForwardModalOpen}>
@@ -1742,7 +1776,7 @@ export default function WhatsAppPage() {
             <div className="space-y-3 text-sm">
               {messageInfoData.read?.length > 0 && (
                 <div>
-                  <p className="font-semibold text-blue-600 flex items-center gap-1"><CheckCheck className="h-3.5 w-3.5" /> Read by</p>
+                  <p className="text-chart-1 flex items-center gap-1 font-semibold"><CheckCheck className="h-3.5 w-3.5" /> Read by</p>
                   {messageInfoData.read.map((r: any, i: number) => (
                     <p key={i} className="text-muted-foreground ml-5">{r.id?._serialized || r.t || "—"}</p>
                   ))}
@@ -1758,7 +1792,7 @@ export default function WhatsAppPage() {
               )}
               {messageInfoData.played?.length > 0 && (
                 <div>
-                  <p className="font-semibold text-green-600 flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> Played by</p>
+                  <p className="text-chart-2 flex items-center gap-1 font-semibold"><Eye className="h-3.5 w-3.5" /> Played by</p>
                   {messageInfoData.played.map((r: any, i: number) => (
                     <p key={i} className="text-muted-foreground ml-5">{r.id?._serialized || r.t || "—"}</p>
                   ))}
@@ -1773,7 +1807,7 @@ export default function WhatsAppPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPageContainer>
   )
 }
 
@@ -1810,7 +1844,7 @@ function ForwardChatPicker({ organizationId, chats, onConfirm, onCancel }: {
               }}
               className={cn(
                 "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm hover:bg-muted/50 transition-colors",
-                selected.has(chat.id) && "bg-green-50 dark:bg-green-950/30"
+                selected.has(chat.id) && "bg-primary/10"
               )}
             >
               <ContactAvatar
@@ -1820,15 +1854,14 @@ function ForwardChatPicker({ organizationId, chats, onConfirm, onCancel }: {
                 avatarSrc={whatsappAvatarSrc(organizationId, chat.contact_id)}
               />
               <span className="flex-1 truncate">{chat.display_name || formatChatDisplayName(chat)}</span>
-              {selected.has(chat.id) && <Check className="h-4 w-4 text-green-600 flex-shrink-0" />}
+              {selected.has(chat.id) && <Check className="text-primary h-4 w-4 shrink-0" />}
             </button>
           ))}
         </div>
       </ScrollArea>
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" disabled={selected.size === 0} onClick={() => onConfirm(Array.from(selected))}
-          className="bg-green-500 hover:bg-green-600 text-white">
+        <Button size="sm" disabled={selected.size === 0} onClick={() => onConfirm(Array.from(selected))}>
           Forward{selected.size > 0 && ` (${selected.size})`}
         </Button>
       </div>

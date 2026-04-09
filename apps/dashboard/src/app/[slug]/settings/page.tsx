@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
-import Image from "next/image"
+import { useRouter, useParams } from "next/navigation"
+import Link from "next/link"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -10,12 +10,9 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { SkeletonLoader, FormSkeleton } from "@/components/ui/skeleton-loader"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,14 +33,10 @@ import {
   Upload,
   Trash2,
   Edit3,
-  Eye,
-  EyeOff,
   AlertCircle,
-  CheckCircle,
   Loader2,
   Image as ImageIcon,
   Mail,
-  MapPin,
   CreditCard,
   Settings as SettingsIcon,
   Lock,
@@ -62,9 +55,32 @@ import { useOrganizationUpdates } from "@/hooks/use-organization-updates"
 import { countries } from "@/lib/countries"
 import { currencies } from "@/lib/currencies"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import { cn } from "@/lib/utils"
+
+function roleBadgeClasses(role: string) {
+  switch (role) {
+    case "owner":
+      return "border-chart-1/40 bg-chart-1/12 text-chart-1"
+    case "admin":
+      return "border-border bg-muted/60 text-muted-foreground"
+    default:
+      return "border-chart-2/40 bg-chart-2/12 text-chart-2"
+  }
+}
+
+function RoleBadge({ role }: { role: string }) {
+  const r = (role || "member").toLowerCase()
+  return (
+    <Badge variant="outline" className={cn("shrink-0 text-xs font-medium capitalize", roleBadgeClasses(role))}>
+      {r}
+    </Badge>
+  )
+}
 
 export default function OrganizationSettingsPage() {
   const router = useRouter()
+  const params = useParams()
+  const workspaceSlug = params.slug as string
   const { organization, userRole, loading, error, refreshOrganization } = useOrganization()
   const { updateOrganizationData, updateOrganizationLogo } = useOrganizationUpdates()
   const [settings, setSettings] = useState<OrganizationSettings | null>(null)
@@ -237,41 +253,31 @@ export default function OrganizationSettingsPage() {
     })
   }
 
-  const getRoleBadge = (role: string) => {
-    switch (role) {
-      case "owner":
-        return <Badge className="bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 dark:from-violet-950/50 dark:to-purple-950/50 dark:text-violet-300 ring-1 ring-violet-200/50 dark:ring-violet-800/30" variant="secondary">owner</Badge>
-      case "admin":
-        return <Badge className="bg-gradient-to-r from-slate-50 to-gray-50 text-slate-700 dark:from-slate-900/50 dark:to-gray-900/50 dark:text-slate-300 ring-1 ring-slate-200/50 dark:ring-slate-700/30" variant="secondary">admin</Badge>
-      default:
-        return <Badge className="bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 dark:from-emerald-950/50 dark:to-green-950/50 dark:text-emerald-300 ring-1 ring-emerald-200/50 dark:ring-emerald-800/30" variant="secondary">member</Badge>
-    }
-  }
-
   // Skeleton loading component
   const SettingsSkeleton = () => (
-    <div className="space-y-6">
-      {/* Header Skeleton */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-9 w-9 rounded-xl" />
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-64" />
-            <Skeleton className="h-4 w-20" />
+    <div className="space-y-6 sm:space-y-8">
+      <div className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Skeleton className="h-10 w-10 rounded-xl" />
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-52 sm:w-64" />
+              <Skeleton className="h-4 w-full max-w-xl" />
+            </div>
           </div>
+          <Skeleton className="h-10 w-full rounded-md sm:w-36" />
         </div>
-        <Skeleton className="h-10 w-32" />
+        <Separator />
       </div>
 
       <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid h-11 w-full grid-cols-2 sm:h-12">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="space-y-6">
-          {/* Organization Overview Skeleton */}
-          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+          <Card className="app-card">
             <CardHeader>
               <Skeleton className="h-6 w-48" />
               <Skeleton className="h-4 w-64" />
@@ -300,8 +306,7 @@ export default function OrganizationSettingsPage() {
             </CardContent>
           </Card>
 
-          {/* General Information Skeleton */}
-          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+          <Card className="app-card">
             <CardHeader>
               <Skeleton className="h-6 w-48" />
               <Skeleton className="h-4 w-64" />
@@ -331,10 +336,10 @@ export default function OrganizationSettingsPage() {
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-10 w-full" />
               </div>
-              <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
                 <div className="flex items-start gap-3">
                   <Skeleton className="h-5 w-5 rounded-full" />
-                  <div className="space-y-2 flex-1">
+                  <div className="flex-1 space-y-2">
                     <Skeleton className="h-4 w-32" />
                     <Skeleton className="h-3 w-full" />
                   </div>
@@ -343,8 +348,7 @@ export default function OrganizationSettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Organization Logo Skeleton */}
-          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+          <Card className="app-card">
             <CardHeader>
               <Skeleton className="h-6 w-40" />
               <Skeleton className="h-4 w-56" />
@@ -366,7 +370,7 @@ export default function OrganizationSettingsPage() {
         </TabsContent>
 
         <TabsContent value="billing" className="space-y-6">
-          <Card className="bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+          <Card className="app-card">
             <CardHeader>
               <Skeleton className="h-6 w-48" />
               <Skeleton className="h-4 w-64" />
@@ -396,141 +400,122 @@ export default function OrganizationSettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Quick links skeleton */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[1, 2, 3].map((i) => (
-          <Card key={i} className="border-0 bg-gradient-to-br from-background to-muted/10 shadow-sm">
-            <CardHeader>
-              <Skeleton className="h-5 w-20" />
-              <Skeleton className="h-4 w-32" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-10 w-32" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
     </div>
   )
 
   if (loading || isLoadingSettings) {
     return (
-      <div className="min-h-[50vh] flex items-center justify-center">
-        <div className="text-center space-y-6">
-          <div className="space-y-4">
-            <div className="flex flex-col items-center space-y-3">
-              <div className="p-3 bg-gradient-to-br from-primary/15 to-primary/5 rounded-xl flex-shrink-0 ring-1 ring-primary/10">
-                <Image
-                  src="/images/logo.png"
-                  alt="Luminum Agency"
-                  width={32}
-                  height={32}
-                  className="h-8 w-8"
-                />
-              </div>
-              <h3 className="text-lg font-semibold text-foreground">Luminum Agency</h3>
-            </div>
-            <FormSkeleton />
-          </div>
-        </div>
-      </div>
+      <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-6 sm:space-y-8">
+        <SettingsSkeleton />
+      </AppPageContainer>
     )
   }
 
   if (error || !organization) {
     return (
-      <div className="min-h-[50vh] flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Organization Settings</CardTitle>
-            <CardDescription>{error || "Organization not found"}</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
+      <AppPageContainer fullWidth className="mx-auto max-w-[1600px]">
+        <div className="flex min-h-[50vh] items-center justify-center p-4">
+          <Card className="app-card w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="text-lg">Workspace settings</CardTitle>
+              <CardDescription>{error || "This workspace could not be loaded."}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full" asChild>
+                <Link href={workspaceSlug ? `/${workspaceSlug}/dashboard` : "/"}>Back to dashboard</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppPageContainer>
     )
   }
 
   return (
-    <AppPageContainer>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="p-2 bg-primary/10 rounded-xl shrink-0">
-            <Building2 className="h-5 w-5 text-primary" />
+    <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-6 sm:space-y-8">
+      <header className="space-y-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="bg-primary/10 text-primary mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
+              <Building2 className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">Workspace settings</h1>
+                <RoleBadge role={userRole || "member"} />
+              </div>
+              <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed sm:text-base">
+                Name, logo, identifiers, storage, and billing for{" "}
+                <span className="text-foreground font-medium">{organization.name}</span>.
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-3 min-w-0">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-foreground truncate">Organization Settings</h1>
-            {getRoleBadge(userRole || "member")}
-          </div>
+          {canEdit ? (
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+              {isEditing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    onClick={() => {
+                      setIsEditing(false)
+                      setFormData({
+                        name: settings?.name,
+                        slug: settings?.slug,
+                        billing_email: settings?.billing_email,
+                        tax_id: settings?.tax_id,
+                        billing_address: settings?.billing_address,
+                        metadata: settings?.metadata,
+                      })
+                    }}
+                    disabled={isSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button className="w-full gap-2 sm:w-auto" onClick={handleSave} disabled={isSaving}>
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Saving…
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        Save changes
+                      </>
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <Button className="w-full gap-2 sm:w-auto" onClick={() => setIsEditing(true)}>
+                  <Edit3 className="h-4 w-4" />
+                  Edit settings
+                </Button>
+              )}
+            </div>
+          ) : null}
         </div>
-        
-        {canEdit && (
-          <div className="flex items-center gap-2">
-            {isEditing ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsEditing(false)
-                    setFormData({
-                      name: settings?.name,
-                      slug: settings?.slug,
-                      billing_email: settings?.billing_email,
-                      tax_id: settings?.tax_id,
-                      billing_address: settings?.billing_address,
-                      metadata: settings?.metadata
-                    })
-                  }}
-                  disabled={isSaving}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleSave} disabled={isSaving}>
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Changes
-                    </>
-                  )}
-                </Button>
-              </>
-            ) : (
-              <Button onClick={() => setIsEditing(true)}>
-                <Edit3 className="h-4 w-4 mr-2" />
-                Edit Settings
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+        <Separator />
+      </header>
 
-      <Tabs defaultValue="general" className="space-y-4 sm:space-y-6">
-        <TabsList className="grid w-full grid-cols-2 h-11 sm:h-12 app-touch">
+      <Tabs defaultValue="general" className="space-y-6">
+        <TabsList className="grid h-11 w-full max-w-md grid-cols-2 sm:h-12">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
         </TabsList>
 
         {/* General Settings */}
-        <TabsContent value="general" className="space-y-4 sm:space-y-6">
-          {/* Organization Overview */}
-          <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
-            <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
-              <CardTitle>Organization Overview</CardTitle>
-              <CardDescription>
-                Current organization information and statistics
-              </CardDescription>
+        <TabsContent value="general" className="space-y-6">
+          <Card className="app-card">
+            <CardHeader className="px-4 pt-4 sm:px-6 sm:pt-6">
+              <CardTitle className="text-base">Overview</CardTitle>
+              <CardDescription>Workspace profile, quick facts, and identifiers.</CardDescription>
             </CardHeader>
             <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-4 sm:mb-6">
-                <Avatar className="h-16 w-16 ring-2 ring-primary/20">
+              <div className="mb-4 flex flex-col gap-4 sm:mb-6 sm:flex-row sm:items-center">
+                <Avatar className="ring-primary/20 h-16 w-16 ring-2">
                   <AvatarImage src={settings?.logo || ""} />
-                  <AvatarFallback className="bg-gradient-to-br from-primary/80 to-primary text-primary-foreground font-bold text-xl">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xl font-semibold">
                     {settings?.name?.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
@@ -541,39 +526,40 @@ export default function OrganizationSettingsPage() {
                     Created {formatDate(organization.createdAt)}
                   </p>
                 </div>
-                <div className="ml-auto">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => fetchSettings()}
+                <div className="sm:ml-auto">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2 sm:w-auto"
+                    onClick={() => void fetchSettings()}
                     disabled={isLoadingSettings}
                   >
                     {isLoadingSettings ? (
-                      <SkeletonLoader variant="button" className="mr-2" />
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
+                      <RefreshCw className="h-4 w-4" />
                     )}
-                    {isLoadingSettings ? 'Refreshing...' : 'Refresh'}
+                    {isLoadingSettings ? "Refreshing…" : "Refresh data"}
                   </Button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="bg-muted/35 flex items-center gap-3 rounded-xl border border-border/50 p-4">
                   <Hash className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <div className="text-xs text-muted-foreground">Slug</div>
                     <div className="font-medium">@{settings?.slug}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30">
+                <div className="bg-muted/35 flex items-center gap-3 rounded-xl border border-border/50 p-4">
                   <CalendarDays className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <div className="text-xs text-muted-foreground">Created</div>
                     <div className="font-medium">{formatDate(organization.createdAt)}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30">
+                <div className="bg-muted/35 flex items-center gap-3 rounded-xl border border-border/50 p-4">
                   <Users className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <div className="text-xs text-muted-foreground">Members</div>
@@ -646,13 +632,18 @@ export default function OrganizationSettingsPage() {
 
           {/* Storage Usage */}
           {settings?.max_storage_bytes && (
-            <Card className={`app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm ${settings?.storage_warning ? 'border-amber-500/50' : ''}`}>
+            <Card
+              className={cn(
+                "app-card",
+                settings?.storage_warning && "border-chart-3/45 ring-1 ring-chart-3/20"
+              )}
+            >
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <HardDrive className="h-5 w-5" />
-                  Storage Usage
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <HardDrive className="text-primary h-5 w-5" />
+                  Storage
                   {settings?.storage_warning && (
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <AlertTriangle className="text-chart-3 h-4 w-4" />
                   )}
                 </CardTitle>
                 <CardDescription>
@@ -671,23 +662,24 @@ export default function OrganizationSettingsPage() {
                       {settings.max_storage_bytes / (1024 * 1024 * 1024)} GB
                     </span>
                   </div>
-                  <div className="w-full bg-muted rounded-full h-3 overflow-hidden flex">
+                  <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className={`h-full transition-all ${
+                      className={cn(
+                        "h-full transition-all",
                         settings.storage_warning
-                          ? "bg-gradient-to-r from-amber-500 to-amber-600"
-                          : "bg-gradient-to-r from-primary to-primary/80"
-                      }`}
+                          ? "bg-gradient-to-r from-chart-3 to-chart-3/80"
+                          : "bg-gradient-to-r from-primary to-primary/85"
+                      )}
                       style={{
                         width: `${Math.min(settings.storage_usage_percent || 0, 100)}%`,
                       }}
                     />
                   </div>
                   {settings.storage_warning && (
-                    <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
-                      <AlertTriangle className="h-4 w-4" />
+                    <div className="text-chart-3 flex gap-2 text-sm">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                       <span>
-                        Storage usage is above 80%. Consider cleaning up old files or upgrading your plan.
+                        Usage is above 80%. Remove old files or ask about a higher storage limit.
                       </span>
                     </div>
                   )}
@@ -695,11 +687,11 @@ export default function OrganizationSettingsPage() {
                     const b = storageBreakdown.byCategory
                     const blogBytes = b.blog ?? 0
                     const parts = [
-                      { key: "images", label: "Images & logos", bytes: b.images, color: "bg-sky-500" },
-                      { key: "blog", label: "Blog media", bytes: blogBytes, color: "bg-violet-500" },
-                      { key: "support", label: "Support", bytes: b.attachments.support, color: "bg-emerald-500" },
-                      { key: "emails", label: "Emails", bytes: b.attachments.emails, color: "bg-amber-500" },
-                      { key: "forms", label: "Forms", bytes: b.attachments.forms, color: "bg-rose-500" },
+                      { key: "images", label: "Images & logos", bytes: b.images, color: "bg-chart-1" },
+                      { key: "blog", label: "Blog media", bytes: blogBytes, color: "bg-chart-2" },
+                      { key: "support", label: "Support", bytes: b.attachments.support, color: "bg-chart-3" },
+                      { key: "emails", label: "Emails", bytes: b.attachments.emails, color: "bg-chart-4" },
+                      { key: "forms", label: "Forms", bytes: b.attachments.forms, color: "bg-chart-5" },
                     ]
                     const sumParts = parts.reduce((a, p) => a + p.bytes, 0) || 1
                     const fmt = (n: number) =>
@@ -741,7 +733,7 @@ export default function OrganizationSettingsPage() {
             </Card>
           )}
 
-          <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+          <Card className="app-card">
             <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
               <CardTitle className="flex items-center gap-2">
                 <SettingsIcon className="h-5 w-5" />
@@ -763,7 +755,7 @@ export default function OrganizationSettingsPage() {
                       placeholder="Enter organization name"
                     />
                   ) : (
-                    <div className="p-3 rounded-lg bg-muted/30 border">
+                    <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                       <span className="font-medium">{settings?.name || "Not set"}</span>
                     </div>
                   )}
@@ -779,7 +771,7 @@ export default function OrganizationSettingsPage() {
                       placeholder="organization-slug"
                     />
                   ) : (
-                    <div className="p-3 rounded-lg bg-muted/30 border">
+                    <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                       <span className="font-medium">@{settings?.slug || "Not set"}</span>
                     </div>
                   )}
@@ -792,8 +784,8 @@ export default function OrganizationSettingsPage() {
                     Country
                     <Lock className="h-3 w-3 text-muted-foreground" />
                   </Label>
-                  <div className="p-3 rounded-lg bg-muted/30 border border-amber-200 dark:border-amber-800">
-                    <div className="flex items-center justify-between">
+                  <div className="rounded-lg border border-chart-3/35 bg-chart-3/10 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <span className="font-medium">
                         {settings?.country && settings.country in countries
                           ? `${countries[settings.country as keyof typeof countries].emoji} ${countries[settings.country as keyof typeof countries].name}`
@@ -801,13 +793,13 @@ export default function OrganizationSettingsPage() {
                         }
                       </span>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
+                        className="h-8 shrink-0 gap-1 text-xs"
                         onClick={() => router.push(`/${organization.slug}/support`)}
-                        className="text-xs text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
                       >
-                        <HelpCircle className="h-3 w-3 mr-1" />
-                        Contact Support
+                        <HelpCircle className="h-3.5 w-3.5" />
+                        Contact support
                       </Button>
                     </div>
                   </div>
@@ -818,19 +810,19 @@ export default function OrganizationSettingsPage() {
                     Currency
                     <Lock className="h-3 w-3 text-muted-foreground" />
                   </Label>
-                  <div className="p-3 rounded-lg bg-muted/30 border border-amber-200 dark:border-amber-800">
-                    <div className="flex items-center justify-between">
+                  <div className="rounded-lg border border-chart-3/35 bg-chart-3/10 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <span className="font-medium">
                         {settings?.currency && settings.currency in currencies ? `${currencies[settings.currency as keyof typeof currencies]?.symbol} ${settings.currency}` : "Not set"}
                       </span>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
+                        className="h-8 shrink-0 gap-1 text-xs"
                         onClick={() => router.push(`/${organization.slug}/support`)}
-                        className="text-xs text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
                       >
-                        <HelpCircle className="h-3 w-3 mr-1" />
-                        Contact Support
+                        <HelpCircle className="h-3.5 w-3.5" />
+                        Contact support
                       </Button>
                     </div>
                   </div>
@@ -842,32 +834,37 @@ export default function OrganizationSettingsPage() {
                   Payment Provider
                   <Lock className="h-3 w-3 text-muted-foreground" />
                 </Label>
-                <div className="p-3 rounded-lg bg-muted/30 border border-amber-200 dark:border-amber-800">
-                  <div className="flex items-center justify-between">
+                <div className="rounded-lg border border-chart-3/35 bg-chart-3/10 p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <span className="font-medium capitalize">{settings?.payment_provider || "Not set"}</span>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
+                      className="h-8 shrink-0 gap-1 text-xs"
                       onClick={() => router.push(`/${organization.slug}/support`)}
-                      className="text-xs text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
                     >
-                      <HelpCircle className="h-3 w-3 mr-1" />
-                      Contact Support
+                      <HelpCircle className="h-3.5 w-3.5" />
+                      Contact support
                     </Button>
                   </div>
                 </div>
               </div>
 
-              <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                  <AlertCircle className="text-primary mt-0.5 h-5 w-5 shrink-0" />
                   <div className="space-y-1">
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                      Restricted Settings
-                    </p>
-                    <p className="text-xs text-amber-700 dark:text-amber-300">
-                      Country, currency, and payment provider settings are managed by our support team. 
-                      Contact support if you need to make changes to these settings.
+                    <p className="text-foreground text-sm font-medium">Restricted fields</p>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Country, currency, and payment provider are set by support. Open{" "}
+                      <button
+                        type="button"
+                        className="text-primary font-medium underline-offset-4 hover:underline"
+                        onClick={() => router.push(`/${organization.slug}/support`)}
+                      >
+                        Support
+                      </button>{" "}
+                      to request a change.
                     </p>
                   </div>
                 </div>
@@ -876,7 +873,7 @@ export default function OrganizationSettingsPage() {
           </Card>
 
           {/* Organization Logo */}
-          <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+          <Card className="app-card">
             <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
               <CardTitle className="flex items-center gap-2">
                 <ImageIcon className="h-5 w-5" />
@@ -887,15 +884,15 @@ export default function OrganizationSettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center gap-6">
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
                 {isUploading ? (
-                  <div className="h-20 w-20 flex items-center justify-center">
-                    <SkeletonLoader variant="avatar" className="h-16 w-16" />
+                  <div className="flex h-20 w-20 items-center justify-center">
+                    <Skeleton className="h-16 w-16 rounded-full" />
                   </div>
                 ) : (
-                  <Avatar className="h-20 w-20 ring-2 ring-primary/20">
+                  <Avatar className="ring-primary/20 h-20 w-20 ring-2">
                     <AvatarImage src={settings?.logo || ""} />
-                    <AvatarFallback className="bg-gradient-to-br from-primary/80 to-primary text-primary-foreground font-bold text-2xl">
+                    <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-semibold">
                       {settings?.name?.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -977,8 +974,8 @@ export default function OrganizationSettingsPage() {
         </TabsContent>
 
         {/* Billing Settings */}
-        <TabsContent value="billing" className="space-y-4 sm:space-y-6">
-          <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
+        <TabsContent value="billing" className="space-y-6">
+          <Card className="app-card">
             <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
               <CardTitle className="flex items-center gap-2">
                 <CreditCard className="h-5 w-5" />
@@ -1000,7 +997,7 @@ export default function OrganizationSettingsPage() {
                     placeholder="billing@organization.com"
                   />
                 ) : (
-                  <div className="p-3 rounded-lg bg-muted/30 border">
+                  <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                     <span className="font-medium">{settings?.billing_email || "Not set"}</span>
                   </div>
                 )}
@@ -1016,7 +1013,7 @@ export default function OrganizationSettingsPage() {
                     placeholder="Enter tax ID or VAT number"
                   />
                 ) : (
-                  <div className="p-3 rounded-lg bg-muted/30 border">
+                  <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                     <span className="font-medium">{settings?.tax_id || "Not set"}</span>
                   </div>
                 )}
@@ -1040,7 +1037,7 @@ export default function OrganizationSettingsPage() {
                         placeholder="123 Main Street"
                       />
                     ) : (
-                      <div className="p-3 rounded-lg bg-muted/30 border">
+                      <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                         <span className="font-medium">{settings?.billing_address?.street || "Not set"}</span>
                       </div>
                     )}
@@ -1059,7 +1056,7 @@ export default function OrganizationSettingsPage() {
                         placeholder="City"
                       />
                     ) : (
-                      <div className="p-3 rounded-lg bg-muted/30 border">
+                      <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                         <span className="font-medium">{settings?.billing_address?.city || "Not set"}</span>
                       </div>
                     )}
@@ -1078,7 +1075,7 @@ export default function OrganizationSettingsPage() {
                         placeholder="State or Province"
                       />
                     ) : (
-                      <div className="p-3 rounded-lg bg-muted/30 border">
+                      <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                         <span className="font-medium">{settings?.billing_address?.state || "Not set"}</span>
                       </div>
                     )}
@@ -1097,7 +1094,7 @@ export default function OrganizationSettingsPage() {
                         placeholder="12345"
                       />
                     ) : (
-                      <div className="p-3 rounded-lg bg-muted/30 border">
+                      <div className="rounded-lg border border-border/60 bg-muted/35 p-3">
                         <span className="font-medium">{settings?.billing_address?.postal_code || "Not set"}</span>
                       </div>
                     )}

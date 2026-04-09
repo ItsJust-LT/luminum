@@ -1,20 +1,40 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useParams } from "next/navigation"
+import { useCallback, useEffect, useState } from "react"
 import { useOrganization } from "@/lib/contexts/organization-context"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Users, Shield, User2, UserMinus, Mail, KeyRound, Sparkles } from "lucide-react"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Separator } from "@/components/ui/separator"
+import {
+  Users,
+  Shield,
+  User2,
+  UserMinus,
+  Mail,
+  KeyRound,
+  UserPlus,
+  Crown,
+} from "lucide-react"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { TransferOwnershipDialog } from "@/components/dashboard/transfer-ownership-dialog"
 import { useSession } from "@/lib/auth/client"
 import { api } from "@/lib/api"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
 import { useTeamHref } from "@/lib/team/use-team-href"
+import { cn } from "@/lib/utils"
 
 interface MemberUser {
   id: string
@@ -42,7 +62,33 @@ interface OrganizationInvitation {
   ownershipTransfer?: boolean
 }
 
+function roleBadgeClasses(role: string) {
+  switch (role) {
+    case "owner":
+      return "border-chart-1/40 bg-chart-1/12 text-chart-1"
+    case "admin":
+      return "border-border bg-muted/60 text-muted-foreground"
+    default:
+      return "border-chart-2/40 bg-chart-2/12 text-chart-2"
+  }
+}
+
+function RoleBadge({ role, label }: { role: string; label: string }) {
+  const text = label.toLowerCase()
+  return (
+    <Badge variant="outline" className={cn("shrink-0 text-[10px] font-medium sm:text-xs", roleBadgeClasses(role))}>
+      {text}
+    </Badge>
+  )
+}
+
+function memberDisplayName(m: OrganizationMember) {
+  return m.user?.name || m.user?.email || "User"
+}
+
 export default function TeamPage() {
+  const params = useParams()
+  const slug = params.slug as string
   const { data: session } = useSession()
   const { organization, userRole, loading: orgLoading, error: orgError, hasAllPermissions } = useOrganization()
   const { href } = useTeamHref()
@@ -56,14 +102,7 @@ export default function TeamPage() {
   const [invitations, setInvitations] = useState<OrganizationInvitation[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    if (!orgLoading && organization) {
-      fetchMembers()
-      fetchInvitations()
-    }
-  }, [orgLoading, organization?.id])
-
-  const fetchMembers = async () => {
+  const fetchMembers = useCallback(async () => {
     if (!organization) return
     try {
       setLoading(true)
@@ -75,12 +114,16 @@ export default function TeamPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [organization])
 
-  const fetchInvitations = async () => {
+  const fetchInvitations = useCallback(async () => {
     if (!organization) return
     try {
-      const result = await api.organizationActions.getInvitations(organization.id) as { success?: boolean; invitations?: OrganizationInvitation[]; error?: string }
+      const result = (await api.organizationActions.getInvitations(organization.id)) as {
+        success?: boolean
+        invitations?: OrganizationInvitation[]
+        error?: string
+      }
       if (result.success) {
         setInvitations(result.invitations || [])
       } else {
@@ -89,27 +132,19 @@ export default function TeamPage() {
     } catch (error) {
       console.error("Failed to load invitations:", error)
     }
-  }
+  }, [organization])
 
-  const getRoleBadge = (m: OrganizationMember) => {
-    const label = (m.organization_role?.name || m.role || "member").toLowerCase()
-    switch (m.role) {
-      case "owner":
-        return <Badge className="bg-violet-500/15 text-violet-600 dark:text-violet-300 border border-violet-500/30" variant="secondary">{label}</Badge>
-      case "admin":
-        return <Badge className="bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/30" variant="secondary">{label}</Badge>
-      default:
-        return <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30" variant="secondary">{label}</Badge>
+  useEffect(() => {
+    if (!orgLoading && organization) {
+      void fetchMembers()
+      void fetchInvitations()
     }
-  }
+  }, [orgLoading, organization?.id, fetchMembers, fetchInvitations])
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+    return new Date(dateString).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
     })
   }
 
@@ -117,9 +152,14 @@ export default function TeamPage() {
     return new Date(expiresAt) < new Date()
   }
 
+  const refreshAll = () => {
+    void fetchMembers()
+    void fetchInvitations()
+  }
+
   if (orgLoading || loading) {
     return (
-      <AppPageContainer>
+      <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-6 sm:space-y-8">
         <TeamSkeleton />
       </AppPageContainer>
     )
@@ -127,178 +167,307 @@ export default function TeamPage() {
 
   if (orgError || !organization) {
     return (
-      <AppPageContainer className="min-h-[50vh] flex items-center justify-center">
-        <Card className="w-full max-w-md app-card">
-          <CardHeader className="px-4 sm:px-6">
-            <CardTitle>Team</CardTitle>
-            <CardDescription>{orgError || "Organization not found"}</CardDescription>
-          </CardHeader>
-        </Card>
+      <AppPageContainer fullWidth className="mx-auto max-w-[1600px]">
+        <div className="flex min-h-[50vh] flex-1 items-center justify-center p-4">
+          <Card className="app-card w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="text-foreground text-lg">Team</CardTitle>
+              <CardDescription>{orgError || "This organization could not be loaded."}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full" asChild>
+                <Link href={slug ? `/${slug}/dashboard` : "/"}>Back to dashboard</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </AppPageContainer>
     )
   }
 
+  const pendingInviteCount = invitations.filter((i) => !isInvitationExpired(i.expiresAt)).length
+
   return (
-    <AppPageContainer>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-          <div className="p-2 sm:p-2.5 bg-primary/10 rounded-xl shrink-0">
-            <Users className="h-5 w-5 text-primary" />
+    <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-6 sm:space-y-8">
+      <header className="space-y-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="bg-primary/10 text-primary mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
+              <Users className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">Team</h1>
+              <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed sm:text-base">
+                People with access to <span className="text-foreground font-medium">{organization.name}</span>. Invite
+                collaborators, adjust roles, and review pending invitations.
+              </p>
+              <p className="text-muted-foreground text-xs">
+                {members.length} member{members.length === 1 ? "" : "s"}
+                {canInvite && invitations.length > 0
+                  ? ` · ${pendingInviteCount} pending invitation${pendingInviteCount === 1 ? "" : "s"}`
+                  : ""}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-foreground">Team</h1>
-            <p className="text-muted-foreground text-sm truncate">Members of {organization.name}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 justify-end">
-          {canTransferOwnership && (
-            <TransferOwnershipDialog
-              organizationId={organization.id}
-              organizationName={organization.name}
-              onSent={() => {
-                fetchInvitations()
-                fetchMembers()
-              }}
-            />
-          )}
-          {canInvite && (
-            <Button asChild className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-md">
-              <Link href={href("invite")}>
-                <Users className="w-4 h-4 mr-2" />
-                Invite member
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+            <Button variant="outline" size="sm" className="w-full gap-2 sm:w-auto" asChild>
+              <Link href={href("roles")}>
+                <KeyRound className="h-4 w-4" />
+                Roles & permissions
               </Link>
             </Button>
-          )}
+            {canTransferOwnership && (
+              <TransferOwnershipDialog
+                organizationId={organization.id}
+                organizationName={organization.name}
+                onSent={refreshAll}
+              />
+            )}
+            {canInvite && (
+              <Button size="sm" className="w-full gap-2 sm:w-auto" asChild>
+                <Link href={href("invite")}>
+                  <UserPlus className="h-4 w-4" />
+                  Invite member
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+        <Separator />
+      </header>
 
-      <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm border-primary/10">
-        <CardHeader className="px-4 sm:px-6 pb-2">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Roles & permissions
-          </CardTitle>
-          <CardDescription>
-            Choose who can do what: saved roles, default member access, or per-person permissions—all on dedicated pages (no popups).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-4 sm:px-6 pt-0">
-          <Button variant="secondary" size="sm" asChild>
-            <Link href={href("roles")}>
-              <KeyRound className="h-4 w-4 mr-2" />
-              Open roles & permissions
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
-        <CardHeader className="px-4 sm:px-6">
+      <Card className="app-card overflow-hidden">
+        <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">Members</CardTitle>
-          <CardDescription>View team members and their roles</CardDescription>
+          <CardDescription>Everyone who can sign in to this workspace.</CardDescription>
         </CardHeader>
-        <CardContent className="px-4 sm:px-6">
+        <CardContent className="px-0 pt-0 sm:px-6">
           {members.length === 0 ? (
-            <div className="py-12 sm:py-16 text-center text-muted-foreground text-sm">No members found.</div>
-          ) : (
-            <div className="divide-y divide-border/50">
-              {members.map((m) => {
-                const isOnline = m.userId ? onlineUsers.has(m.userId) : false
-                return (
-                <div key={m.id} className="flex items-center gap-3 sm:gap-4 py-3.5 sm:py-4">
-                  <div className="relative">
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={m.user?.image || ""} />
-                      <AvatarFallback>{(m.user?.name?.[0] || m.user?.email?.[0] || "U").toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-background ${isOnline ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600"}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground truncate">{m.user?.name || m.user?.email || "User"}</span>
-                      {m.role === "owner" ? <Shield className="h-4 w-4 text-violet-500" /> : m.role === "admin" ? <Shield className="h-4 w-4 text-slate-500" /> : <User2 className="h-4 w-4 text-emerald-500" />}
-                      {isOnline && <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">Online</span>}
-                    </div>
-                    {m.user?.email && (
-                      <div className="text-xs text-muted-foreground truncate">{m.user.email}</div>
-                    )}
-                  </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                    {getRoleBadge(m)}
-                    <div className="flex flex-wrap items-center gap-2 justify-end">
-                      {canAssignRoles && m.role !== "owner" && (
-                        <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                          <Link href={href(`members/${m.id}/access`)}>Manage access</Link>
-                        </Button>
-                      )}
-                      {canRemove && m.role !== "owner" && (
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" asChild>
-                          <Link href={href(`members/${m.id}/remove`)} aria-label="Remove member">
-                            <UserMinus className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                )
-              })}
+            <div className="flex flex-col items-center gap-3 px-4 py-14 text-center sm:px-6">
+              <Users className="text-muted-foreground h-10 w-10" />
+              <p className="text-muted-foreground max-w-sm text-sm">No members loaded.</p>
+              {canInvite && (
+                <Button size="sm" className="gap-2" asChild>
+                  <Link href={href("invite")}>
+                    <UserPlus className="h-4 w-4" />
+                    Invite someone
+                  </Link>
+                </Button>
+              )}
             </div>
+          ) : (
+            <>
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[40%]">Member</TableHead>
+                      <TableHead className="hidden lg:table-cell">Email</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead className="hidden sm:table-cell">Presence</TableHead>
+                      <TableHead className="text-right">{canAssignRoles || canRemove ? "Actions" : ""}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {members.map((m) => {
+                      const isOnline = m.userId ? onlineUsers.has(m.userId) : false
+                      const name = memberDisplayName(m)
+                      const roleLabel = m.organization_role?.name || m.role
+                      return (
+                        <TableRow key={m.id} className="hover:bg-muted/40">
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <div className="relative shrink-0">
+                                <Avatar className="h-9 w-9">
+                                  <AvatarImage src={m.user?.image || ""} alt="" />
+                                  <AvatarFallback className="text-xs font-medium">
+                                    {(m.user?.name?.[0] || m.user?.email?.[0] || "U").toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span
+                                  className={cn(
+                                    "ring-background absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2",
+                                    isOnline ? "bg-chart-2" : "bg-muted-foreground/40"
+                                  )}
+                                  aria-hidden
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-foreground truncate font-medium">{name}</span>
+                                  {m.role === "owner" ? (
+                                    <Shield className="text-chart-1 h-3.5 w-3.5 shrink-0" aria-hidden />
+                                  ) : m.role === "admin" ? (
+                                    <Shield className="text-muted-foreground h-3.5 w-3.5 shrink-0" aria-hidden />
+                                  ) : (
+                                    <User2 className="text-chart-2 h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                                  )}
+                                </div>
+                                <div className="text-muted-foreground truncate text-xs lg:hidden">{m.user?.email || "—"}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground hidden max-w-[220px] truncate text-sm lg:table-cell">
+                            {m.user?.email || "—"}
+                          </TableCell>
+                          <TableCell>
+                            <RoleBadge role={m.role} label={roleLabel} />
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            {isOnline ? (
+                              <span className="text-chart-2 text-xs font-medium">Online</span>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">Offline</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {m.role === "owner" ? (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            ) : canAssignRoles || canRemove ? (
+                              <div className="flex justify-end gap-1">
+                                {canAssignRoles && (
+                                  <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
+                                    <Link href={href(`members/${m.id}/access`)}>Access</Link>
+                                  </Button>
+                                )}
+                                {canRemove && (
+                                  <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10 h-8 w-8" asChild>
+                                    <Link href={href(`members/${m.id}/remove`)} aria-label={`Remove ${name}`}>
+                                      <UserMinus className="h-4 w-4" />
+                                    </Link>
+                                  </Button>
+                                )}
+                              </div>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="divide-border/60 divide-y md:hidden">
+                {members.map((m) => {
+                  const isOnline = m.userId ? onlineUsers.has(m.userId) : false
+                  const name = memberDisplayName(m)
+                  const roleLabel = m.organization_role?.name || m.role
+                  const showActions = (canAssignRoles || canRemove) && m.role !== "owner"
+                  return (
+                    <div key={m.id} className="flex gap-3 px-4 py-4 sm:px-6">
+                      <div className="relative shrink-0">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={m.user?.image || ""} alt="" />
+                          <AvatarFallback>{(m.user?.name?.[0] || m.user?.email?.[0] || "U").toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <span
+                          className={cn(
+                            "ring-background absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2",
+                            isOnline ? "bg-chart-2" : "bg-muted-foreground/40"
+                          )}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-3">
+                        <div className="min-w-0">
+                          <p className="text-foreground truncate font-medium">{name}</p>
+                          {m.user?.email && (
+                            <p className="text-muted-foreground truncate text-xs">{m.user.email}</p>
+                          )}
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <RoleBadge role={m.role} label={roleLabel} />
+                            {isOnline ? (
+                              <span className="text-chart-2 text-[10px] font-medium">Online</span>
+                            ) : (
+                              <span className="text-muted-foreground text-[10px]">Offline</span>
+                            )}
+                          </div>
+                        </div>
+                        {showActions ? (
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            {canAssignRoles && (
+                              <Button variant="outline" size="sm" className="h-9 w-full text-xs sm:w-auto" asChild>
+                                <Link href={href(`members/${m.id}/access`)}>Manage access</Link>
+                              </Button>
+                            )}
+                            {canRemove && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-destructive border-destructive/30 hover:bg-destructive/10 h-9 w-full text-xs sm:w-auto"
+                                asChild
+                              >
+                                <Link href={href(`members/${m.id}/remove`)}>Remove</Link>
+                              </Button>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
 
-      {/* Pending Invitations Card */}
       {canInvite && (
-        <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-sm">
-          <CardHeader className="px-4 sm:px-6">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Mail className="h-4 w-4" />
-              Pending Invitations
+        <Card className="app-card overflow-hidden">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-semibold">
+              <Mail className="text-primary h-4 w-4" />
+              Pending invitations
             </CardTitle>
-            <CardDescription>Invitations waiting to be accepted</CardDescription>
+            <CardDescription>Invite links that have not been accepted yet.</CardDescription>
           </CardHeader>
-          <CardContent className="px-4 sm:px-6">
+          <CardContent className="px-0 pt-0 sm:px-6">
             {invitations.length === 0 ? (
-              <div className="py-6 sm:py-8 text-center text-muted-foreground text-sm">No pending invitations.</div>
+              <div className="text-muted-foreground px-4 py-10 text-center text-sm sm:px-6">
+                No open invitations.
+                <span className="mt-2 block">
+                  <Button variant="link" className="h-auto p-0 text-primary" asChild>
+                    <Link href={href("invite")}>Send an invite</Link>
+                  </Button>
+                </span>
+              </div>
             ) : (
-              <div className="divide-y divide-border/50">
+              <div className="divide-border/60 divide-y">
                 {invitations.map((invitation) => (
-                  <div key={invitation.id} className="flex items-center gap-3 sm:gap-4 py-3.5 sm:py-4">
-                    <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                      {invitation.email.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-foreground truncate">
-                          {invitation.email}
-                        </span>
-                        {isInvitationExpired(invitation.expiresAt) && (
-                          <Badge variant="destructive" className="text-xs">
-                            Expired
-                          </Badge>
-                        )}
+                  <div
+                    key={invitation.id}
+                    className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
+                  >
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <Avatar className="h-10 w-10 shrink-0">
+                        <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                          {invitation.email.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-foreground truncate font-medium">{invitation.email}</span>
+                          {isInvitationExpired(invitation.expiresAt) && (
+                            <Badge variant="destructive" className="text-[10px]">
+                              Expired
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          Sent {formatDate(invitation.createdAt)} · Expires {formatDate(invitation.expiresAt)}
+                        </p>
                       </div>
-                      <div className="text-xs text-muted-foreground space-y-1">
-                        <p>Sent: {formatDate(invitation.createdAt)}</p>
-                        <p>Expires: {formatDate(invitation.expiresAt)}</p>
-                      </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-wrap justify-end">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       {invitation.ownershipTransfer ? (
-                        <Badge className="bg-amber-500/15 text-amber-800 dark:text-amber-200 border border-amber-500/30">
+                        <Badge variant="outline" className="border-chart-3/40 bg-chart-3/12 text-chart-3 gap-1 text-[10px]">
+                          <Crown className="h-3 w-3" />
                           Ownership transfer
                         </Badge>
                       ) : (
-                        getRoleBadge({ id: "", role: invitation.role, userId: "" })
+                        <RoleBadge role={invitation.role} label={invitation.role} />
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 px-2 text-xs text-orange-600 hover:text-orange-800 hover:bg-orange-50 dark:hover:bg-orange-900/20"
-                        asChild
-                      >
-                        <Link href={href(`invitations/${invitation.id}/cancel`)}>Cancel</Link>
+                      <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 border-destructive/25 h-8 text-xs" asChild>
+                        <Link href={href(`invitations/${invitation.id}/cancel`)}>Cancel invite</Link>
                       </Button>
                     </div>
                   </div>
@@ -308,9 +477,6 @@ export default function TeamPage() {
           </CardContent>
         </Card>
       )}
-
     </AppPageContainer>
   )
 }
-
-

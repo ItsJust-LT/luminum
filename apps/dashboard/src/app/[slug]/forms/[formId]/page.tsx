@@ -3,7 +3,8 @@
 import { FormDetailClient } from "@/components/forms/form-detail-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowLeft } from "lucide-react"
+import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import { Loader2, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { api } from "@/lib/api"
 import { useEffect, useState } from "react"
@@ -35,31 +36,30 @@ export default function FormDetailPage() {
 
   if (result === null) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <p className="text-muted-foreground">Loading…</p>
+      <AppPageContainer fullWidth className="mx-auto max-w-[1600px]">
+        <div className="flex flex-col items-center justify-center gap-3 py-24">
+          <Loader2 className="text-muted-foreground h-8 w-8 animate-spin" />
+          <p className="text-muted-foreground text-sm">Loading submission…</p>
         </div>
-      </div>
+      </AppPageContainer>
     )
   }
 
   if (!result.success || !result.submission) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <Card className="border-destructive">
-            <CardContent className="pt-6">
-              <p className="text-destructive">{result.error || "Submission not found"}</p>
-              <Button variant="outline" asChild className="mt-4">
-                <Link href={`/${slug}/forms`}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Forms
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <AppPageContainer fullWidth className="mx-auto max-w-[1600px]">
+        <Card className="app-card border-destructive/40">
+          <CardContent className="flex flex-col gap-4 py-8 sm:py-10">
+            <p className="text-destructive text-sm">{result.error || "Submission not found"}</p>
+            <Button variant="outline" size="sm" className="w-fit" asChild>
+              <Link href={`/${slug}/forms`}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to forms
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </AppPageContainer>
     )
   }
 

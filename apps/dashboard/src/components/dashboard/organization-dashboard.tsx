@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { useSession } from "@/lib/auth/client"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -10,13 +9,13 @@ import { Badge } from "@/components/ui/badge"
 import { Globe, LayoutDashboard, Sparkles } from "lucide-react"
 import { api } from "@/lib/api"
 import { DashboardOverview } from "@/components/dashboard/dashboard-overview"
+import { DashboardWorkspaceGrid } from "@/components/dashboard/dashboard-workspace-grid"
 import type { Website } from "@/lib/types/websites"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 
 export function OrganizationDashboard() {
-  const { data: session } = useSession()
   const router = useRouter()
   const { organization, userRole, loading, error } = useOrganization()
   const [website, setWebsite] = useState<Website | null>(null)
@@ -161,12 +160,18 @@ export function OrganizationDashboard() {
       {websiteLoading ? (
         <DashboardSkeleton />
       ) : website ? (
-        <DashboardOverview
-          websiteId={website.id}
-          organizationSlug={organization.slug}
-          analyticsEnabled={website.analytics ?? false}
-          blogsEnabled={organization.blogs_enabled ?? false}
-        />
+        <div className="space-y-8 sm:space-y-10 mt-6 sm:mt-8">
+          <DashboardOverview
+            websiteId={website.id}
+            organizationSlug={organization.slug}
+            analyticsEnabled={website.analytics ?? false}
+          />
+          <DashboardWorkspaceGrid
+            websiteId={website.id}
+            organizationSlug={organization.slug}
+            websiteDomain={website.domain}
+          />
+        </div>
       ) : (
         <div className="app-card border border-dashed border-muted-foreground/25 bg-card/50 overflow-hidden">
           <div className="flex flex-col items-center justify-center py-12 sm:py-16 md:py-24 px-4 sm:px-6 text-center">

@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Eye,
   Users,
@@ -15,21 +14,23 @@ import {
   Monitor,
   ArrowRight,
   LayoutDashboard,
-  BookOpen,
+  TrendingUp,
 } from "lucide-react"
-import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
 import type { MetricCount } from "@/lib/types/analytics"
+import type { TimeSeriesPoint } from "@/lib/types/analytics"
 import { api } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { useOrganization } from "@/lib/contexts/organization-context"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { cleanAnalyticsPath } from "@/lib/analytics/clean-route"
 
 interface DashboardOverviewProps {
   websiteId: string
   organizationSlug: string
   analyticsEnabled: boolean
-  blogsEnabled: boolean
 }
 
 interface OverviewData {
@@ -37,21 +38,21 @@ interface OverviewData {
   uniqueVisitors: number
   avgSessionDuration: number
   formSubmissions: number
-  blogCategoryViews: number
-  blogPublishedPosts: number
 }
 
-export function DashboardOverview({
-  websiteId,
-  organizationSlug,
-  analyticsEnabled,
-  blogsEnabled,
-}: DashboardOverviewProps) {
+const trafficChartConfig = {
+  pageViews: { label: "Page views", color: "var(--color-chart-1)" },
+  uniqueSessions: { label: "Sessions", color: "var(--color-chart-2)" },
+} satisfies ChartConfig
+
+export function DashboardOverview({ websiteId, organizationSlug, analyticsEnabled }: DashboardOverviewProps) {
   const { organization } = useOrganization()
   const [overview, setOverview] = useState<OverviewData | null>(null)
   const [apiLiveViewers, setApiLiveViewers] = useState(0)
   const [deviceData, setDeviceData] = useState<MetricCount[]>([])
   const [countryData, setCountryData] = useState<MetricCount[]>([])
+  const [timeSeries, setTimeSeries] = useState<TimeSeriesPoint[]>([])
+  const [topPages, setTopPages] = useState<MetricCount[]>([])
   const [loading, setLoading] = useState(true)
   const fetchRef = useRef<() => void>(() => {})
 
@@ -67,26 +68,35 @@ export function DashboardOverview({
       const startStr = start.toISOString()
       const endStr = end.toISOString()
 
-      const [overviewRes, realtimeRes, devicesRes, countriesRes] = await Promise.all([
-        api.get("/api/analytics/overview", { websiteId, start: startStr, end: endStr }),
-        api.get("/api/analytics/realtime", { websiteId }),
-        api.get("/api/analytics/devices", { websiteId, start: startStr, end: endStr, limit: 5 }),
-        api.get("/api/analytics/countries", { websiteId, start: startStr, end: endStr, limit: 6 }),
+      const [overviewRes, realtimeRes, devicesRes, countriesRes, tsRes, pagesRes] = await Promise.all([
+        api.analytics.getOverview(websiteId, startStr, endStr).catch(() => null),
+        api.analytics.getRealtime(websiteId).catch(() => null),
+        api.analytics.getDevices(websiteId, startStr, endStr, 5).catch(() => []),
+        api.analytics.getCountries(websiteId, startStr, endStr, 6).catch(() => []),
+        api.analytics.getTimeSeries(websiteId, startStr, endStr, "day").catch(() => null),
+        api.analytics.getTopPages(websiteId, startStr, endStr, 6).catch(() => []),
       ])
 
-      if (overviewRes) {
+      if (overviewRes && typeof overviewRes === "object") {
+        const o = overviewRes as {
+          pageViews?: number
+          uniqueSessions?: number
+          avgDuration?: number
+          formSubmissions?: number
+        }
         setOverview({
-          pageViews: overviewRes.pageViews || 0,
-          uniqueVisitors: overviewRes.uniqueSessions || 0,
-          avgSessionDuration: overviewRes.avgDuration || 0,
-          formSubmissions: overviewRes.formSubmissions || 0,
-          blogCategoryViews: overviewRes.blogCategoryViews ?? 0,
-          blogPublishedPosts: overviewRes.blogPublishedPosts ?? 0,
+          pageViews: o.pageViews || 0,
+          uniqueVisitors: o.uniqueSessions || 0,
+          avgSessionDuration: o.avgDuration || 0,
+          formSubmissions: o.formSubmissions || 0,
         })
       }
-      setApiLiveViewers(realtimeRes?.activeVisitors ?? 0)
-      setDeviceData(devicesRes ?? [])
-      setCountryData(countriesRes ?? [])
+      setApiLiveViewers((realtimeRes as { activeVisitors?: number } | null)?.activeVisitors ?? 0)
+      setDeviceData((devicesRes ?? []) as MetricCount[])
+      setCountryData((countriesRes ?? []) as MetricCount[])
+      const ts = tsRes as { data?: TimeSeriesPoint[] } | null
+      setTimeSeries(Array.isArray(ts?.data) ? ts!.data! : [])
+      setTopPages((pagesRes ?? []) as MetricCount[])
     } catch (e) {
       console.error("Dashboard overview fetch error:", e)
     } finally {
@@ -115,23 +125,23 @@ export function DashboardOverview({
   const liveConnected = presenceConnected
 
   useEffect(() => {
-    if (analyticsEnabled) fetchData()
+    if (analyticsEnabled) void fetchData()
     else setLoading(false)
   }, [fetchData, analyticsEnabled])
 
   if (!analyticsEnabled) {
     return (
-      <div className="app-card border border-dashed border-muted-foreground/25 bg-card/50 overflow-hidden">
-        <div className="flex flex-col items-center justify-center py-12 sm:py-16 md:py-24 px-4 sm:px-6 text-center">
-          <div className="rounded-full bg-muted/50 p-4 sm:p-6 mb-3 sm:mb-4">
-            <LayoutDashboard className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground" />
+      <div className="app-card overflow-hidden border border-dashed border-muted-foreground/25">
+        <div className="flex flex-col items-center justify-center px-4 py-16 text-center sm:py-20 md:py-24">
+          <div className="mb-4 rounded-full bg-muted/50 p-6">
+            <LayoutDashboard className="text-muted-foreground h-12 w-12" />
           </div>
-          <h3 className="text-base sm:text-lg font-semibold text-foreground mb-1">Analytics off</h3>
-          <p className="text-muted-foreground text-sm max-w-sm mb-5 sm:mb-6">
-            Enable analytics for this website to see an overview here. Open Analytics for full reporting.
+          <h3 className="text-foreground mb-1 text-lg font-semibold">Analytics is off</h3>
+          <p className="text-muted-foreground mb-6 max-w-sm text-sm">
+            Turn on analytics for this site to see traffic charts here. Full reports stay on the Analytics page.
           </p>
-          <Button variant="outline" size="sm" asChild className="rounded-lg">
-            <Link href={`/${organizationSlug}/analytics`} className="gap-2">
+          <Button variant="outline" size="sm" className="rounded-lg gap-2" asChild>
+            <Link href={`/${organizationSlug}/analytics`}>
               Open Analytics
               <ArrowRight className="h-4 w-4" />
             </Link>
@@ -143,142 +153,204 @@ export function DashboardOverview({
 
   if (loading) {
     return (
-      <div className="space-y-5 sm:space-y-6 md:space-y-8">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+      <div className="space-y-6">
+        <Skeleton className="h-[320px] w-full rounded-xl" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <Card key={i} className="border-0 bg-card/50 shadow-sm app-card overflow-hidden">
-              <CardContent className="p-4 sm:p-6 text-center">
-                <Skeleton className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg mx-auto mb-3 sm:mb-4" />
-                <Skeleton className="h-6 sm:h-8 w-14 sm:w-20 mx-auto mb-2" />
-                <Skeleton className="h-3 sm:h-4 w-20 sm:w-24 mx-auto" />
-              </CardContent>
-            </Card>
+            <Skeleton key={i} className="h-28 w-full rounded-xl" />
           ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-          <Card className="border-0 bg-card/50 shadow-sm app-card">
-            <CardContent className="p-4 sm:p-6">
-              <Skeleton className="h-5 w-28 mb-2" />
-              <Skeleton className="h-4 w-40 mb-4" />
-              <div className="space-y-3">
-                {[1, 2, 3].map((j) => (
-                  <Skeleton key={j} className="h-11 sm:h-12 w-full rounded-lg" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-0 bg-card/50 shadow-sm app-card">
-            <CardContent className="p-4 sm:p-6">
-              <Skeleton className="h-5 w-32 mb-2" />
-              <Skeleton className="h-4 w-36 mb-4" />
-              <div className="space-y-3">
-                {[1, 2, 3, 4].map((j) => (
-                  <Skeleton key={j} className="h-10 w-full rounded-lg" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-64 w-full rounded-xl" />
         </div>
       </div>
     )
   }
 
+  const fmtDur = (sec: number) => {
+    if (!sec || sec < 1) return "—"
+    const m = Math.floor(sec / 60)
+    const s = Math.floor(sec % 60)
+    return m > 0 ? `${m}m ${s}s` : `${s}s`
+  }
+
   return (
-    <div className="space-y-5 sm:space-y-6 md:space-y-8">
-      {/* Key metrics – mobile-first grid */}
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h2 className="text-xs sm:text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3 sm:mb-4">
-          Last 7 days
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
-          <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
-            <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
-                <Eye className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
-              </div>
-              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
-                {(overview?.pageViews ?? 0).toLocaleString()}
-              </div>
-              <div className="text-muted-foreground text-sm font-medium">Page views</div>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-foreground text-lg font-semibold tracking-tight sm:text-xl">Website traffic</h2>
+            <p className="text-muted-foreground text-sm">Last 7 days · sessions, views, and form conversions from your site</p>
+          </div>
+          <Button size="sm" variant="outline" className="shrink-0 gap-2 self-start sm:self-auto" asChild>
+            <Link href={`/${organizationSlug}/analytics`}>
+              Full analytics
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:gap-6">
+          <Card className="app-card xl:col-span-8">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <div className="bg-primary/10 rounded-lg p-2">
+                  <TrendingUp className="text-primary h-4 w-4" />
+                </div>
+                Visits over time
+              </CardTitle>
+              <CardDescription>Daily page views and unique sessions</CardDescription>
+            </CardHeader>
+            <CardContent className="pb-4">
+              {timeSeries.length > 0 ? (
+                <ChartContainer config={trafficChartConfig} className="aspect-auto h-[260px] w-full sm:h-[280px]">
+                  <AreaChart data={timeSeries} margin={{ left: 4, right: 4, top: 8, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="homePv" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.85} />
+                        <stop offset="95%" stopColor="var(--color-chart-1)" stopOpacity={0.08} />
+                      </linearGradient>
+                      <linearGradient id="homeSess" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.75} />
+                        <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0.06} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-muted/30" />
+                    <XAxis
+                      dataKey="time"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      className="text-[10px] fill-muted-foreground"
+                      tickFormatter={(v) =>
+                        new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                      }
+                    />
+                    <YAxis hide />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Area
+                      type="monotone"
+                      dataKey="uniqueSessions"
+                      stroke="var(--color-chart-2)"
+                      strokeWidth={2}
+                      fill="url(#homeSess)"
+                      dot={false}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="pageViews"
+                      stroke="var(--color-chart-1)"
+                      strokeWidth={2}
+                      fill="url(#homePv)"
+                      dot={false}
+                    />
+                  </AreaChart>
+                </ChartContainer>
+              ) : (
+                <div className="text-muted-foreground flex h-[220px] items-center justify-center text-sm">
+                  No traffic data for this period yet
+                </div>
+              )}
             </CardContent>
           </Card>
-          <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
-            <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
-                <Users className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
-              </div>
-              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
-                {(overview?.uniqueVisitors ?? 0).toLocaleString()}
-              </div>
-              <div className="text-muted-foreground text-sm font-medium">Visitors</div>
-            </CardContent>
-          </Card>
-          <Card className="app-card overflow-hidden border-primary/20 transition-shadow hover:shadow-md">
-            <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="bg-primary/10 mx-auto mb-3 flex w-fit items-center justify-center gap-1.5 rounded-lg p-2.5 sm:mb-4 sm:p-3">
-                <Activity className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
-                <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${liveConnected ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`}
-                  title={liveConnected ? "Live" : "Disconnected"}
-                />
-              </div>
-              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">{liveViewers}</div>
-              <div className="text-muted-foreground flex items-center justify-center gap-1.5 text-sm font-medium">
-                Live now
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
-            <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
-                <FileText className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
-              </div>
-              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
-                {overview?.formSubmissions ?? 0}
-              </div>
-              <div className="text-muted-foreground text-sm font-medium">Form submissions</div>
-            </CardContent>
-          </Card>
-          {blogsEnabled ? (
-            <>
-              <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
-                <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-                  <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
-                    <BookOpen className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
-                  </div>
-                  <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
-                    {(overview?.blogCategoryViews ?? 0).toLocaleString()}
-                  </div>
-                  <div className="text-muted-foreground text-sm font-medium">Blog category views</div>
-                </CardContent>
-              </Card>
-              <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
-                <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-                  <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
-                    <BookOpen className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
-                  </div>
-                  <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
-                    {(overview?.blogPublishedPosts ?? 0).toLocaleString()}
-                  </div>
-                  <div className="text-muted-foreground text-sm font-medium">Published posts</div>
-                </CardContent>
-              </Card>
-            </>
-          ) : null}
+
+          <div className="grid grid-cols-2 gap-3 xl:col-span-4 xl:grid-cols-1 xl:gap-3">
+            <Card className="app-card">
+              <CardContent className="p-4 sm:p-5">
+                <div className="bg-primary/10 mb-3 inline-flex rounded-lg p-2">
+                  <Eye className="text-primary h-5 w-5" />
+                </div>
+                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">
+                  {(overview?.pageViews ?? 0).toLocaleString()}
+                </p>
+                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Page views</p>
+              </CardContent>
+            </Card>
+            <Card className="app-card">
+              <CardContent className="p-4 sm:p-5">
+                <div className="bg-primary/10 mb-3 inline-flex rounded-lg p-2">
+                  <Users className="text-primary h-5 w-5" />
+                </div>
+                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">
+                  {(overview?.uniqueVisitors ?? 0).toLocaleString()}
+                </p>
+                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Sessions</p>
+              </CardContent>
+            </Card>
+            <Card className="app-card border-primary/20 ring-1 ring-primary/10">
+              <CardContent className="p-4 sm:p-5">
+                <div className="bg-primary/10 mb-3 inline-flex items-center gap-1.5 rounded-lg p-2">
+                  <Activity className="text-primary h-5 w-5" />
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${liveConnected ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`}
+                  />
+                </div>
+                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">{liveViewers}</p>
+                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Live now</p>
+              </CardContent>
+            </Card>
+            <Card className="app-card">
+              <CardContent className="p-4 sm:p-5">
+                <div className="bg-primary/10 mb-3 inline-flex rounded-lg p-2">
+                  <FileText className="text-primary h-5 w-5" />
+                </div>
+                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">{overview?.formSubmissions ?? 0}</p>
+                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Form submissions</p>
+              </CardContent>
+            </Card>
+            <Card className="app-card col-span-2 xl:col-span-1">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">Avg. session</p>
+                <p className="text-foreground mt-1 text-xl font-semibold tabular-nums">
+                  {fmtDur(overview?.avgSessionDuration ?? 0)}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
 
-      {/* Demographics – above forms */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+      {topPages.length > 0 ? (
+        <Card className="app-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Top pages</CardTitle>
+            <CardDescription>Most viewed paths this week</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {topPages.map((p) => {
+                const max = Math.max(1, ...topPages.map((x) => x.count || 0))
+                const pct = ((p.count || 0) / max) * 100
+                return (
+                  <div key={p.key} className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+                    <span className="text-muted-foreground w-9 shrink-0 text-right text-xs tabular-nums">
+                      {(p.count || 0).toLocaleString()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-xs sm:text-sm">{cleanAnalyticsPath(p.key || "/")}</p>
+                      <div className="bg-muted mt-1 h-1.5 overflow-hidden rounded-full">
+                        <div className="bg-chart-1 h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
         <Card className="app-card flex flex-col overflow-hidden">
-          <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6 pt-4 sm:pt-6">
+          <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-3 text-lg">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Smartphone className="h-5 w-5 text-primary" />
+              <div className="bg-primary/10 rounded-lg p-2">
+                <Smartphone className="text-primary h-5 w-5" />
               </div>
               Devices
             </CardTitle>
-            <CardDescription>How visitors reach your site</CardDescription>
+            <CardDescription>How people browse your site</CardDescription>
           </CardHeader>
           <CardContent className="flex-1">
             {deviceData.length > 0 ? (
@@ -290,44 +362,43 @@ export function DashboardOverview({
                   return (
                     <div
                       key={device.key}
-                      className="bg-muted/40 flex items-center gap-3 rounded-lg px-4 py-3 backdrop-blur-sm transition-colors hover:bg-muted/60"
+                      className="bg-muted/40 flex items-center gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-muted/60"
                     >
-                      <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="flex-1 min-w-0">
+                      <Icon className="text-muted-foreground h-4 w-4 shrink-0" />
+                      <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium capitalize">{device.key}</p>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden mt-1.5">
+                        <div className="bg-muted mt-1.5 h-2 overflow-hidden rounded-full">
                           <div
-                            className="h-full bg-primary/60 rounded-full transition-all duration-500"
+                            className="bg-chart-1/80 h-full rounded-full transition-all duration-500"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
                       </div>
-                      <Badge variant="secondary" className="text-xs font-medium shrink-0">
+                      <span className="text-muted-foreground w-10 shrink-0 text-right text-xs tabular-nums">
                         {pct.toFixed(0)}%
-                      </Badge>
+                      </span>
                     </div>
                   )
                 })}
               </div>
             ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                <Smartphone className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <div className="text-muted-foreground py-12 text-center">
+                <Smartphone className="mx-auto mb-3 h-12 w-12 opacity-30" />
                 <p className="text-sm font-medium">No device data yet</p>
-                <p className="text-xs mt-1">Data appears when visitors use your site</p>
               </div>
             )}
           </CardContent>
         </Card>
 
         <Card className="app-card overflow-hidden">
-          <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-3 text-lg">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Globe className="h-5 w-5 text-primary" />
+              <div className="bg-primary/10 rounded-lg p-2">
+                <Globe className="text-primary h-5 w-5" />
               </div>
               Top locations
             </CardTitle>
-            <CardDescription>Where your visitors are from</CardDescription>
+            <CardDescription>This week’s visitor geography</CardDescription>
           </CardHeader>
           <CardContent>
             {countryData.length > 0 ? (
@@ -338,17 +409,17 @@ export function DashboardOverview({
                   return (
                     <div
                       key={c.key}
-                      className="bg-muted/40 flex items-center justify-between gap-3 rounded-lg px-4 py-3 backdrop-blur-sm transition-colors hover:bg-muted/60"
+                      className="bg-muted/40 flex items-center justify-between gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-muted/60"
                     >
-                      <span className="text-sm font-medium truncate">{c.key}</span>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+                      <span className="truncate text-sm font-medium">{c.key}</span>
+                      <div className="flex shrink-0 items-center gap-3">
+                        <div className="bg-muted h-2 w-20 overflow-hidden rounded-full">
                           <div
-                            className="h-full bg-primary/60 rounded-full transition-all duration-500"
+                            className="bg-chart-2/80 h-full rounded-full transition-all duration-500"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <span className="text-xs text-muted-foreground w-12 text-right tabular-nums">
+                        <span className="text-muted-foreground w-11 text-right text-xs tabular-nums">
                           {(c.count || 0).toLocaleString()}
                         </span>
                       </div>
@@ -357,18 +428,14 @@ export function DashboardOverview({
                 })}
               </div>
             ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                <Globe className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <div className="text-muted-foreground py-12 text-center">
+                <Globe className="mx-auto mb-3 h-12 w-12 opacity-30" />
                 <p className="text-sm font-medium">No location data yet</p>
-                <p className="text-xs mt-1">Data appears when visitors use your site</p>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-
-      {/* Forms */}
-      <FormSubmissionsInfo websiteId={websiteId} />
     </div>
   )
 }

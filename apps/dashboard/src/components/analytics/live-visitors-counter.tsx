@@ -19,21 +19,16 @@ export function LiveVisitorsBadges({ liveCount, connected }: LiveVisitorsCounter
     <>
       <Badge
         variant={connected ? "default" : "secondary"}
-        className={`flex items-center gap-2 px-4 py-2 ${
-          connected
-            ? "bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800"
-            : ""
-        }`}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium"
       >
-        {connected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-        {connected ? "Live Connected" : "Disconnected"}
+        {connected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+        {connected ? "Live" : "Offline"}
       </Badge>
-      <Badge
-        variant="outline"
-        className="flex items-center gap-2 px-4 py-2 bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800 tabular-nums"
-      >
-        <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-muted-foreground/50"}`} />
-        <AnimatedNumber value={liveCount} duration={600} /> live viewers
+      <Badge variant="outline" className="border-border/80 bg-muted/50 flex items-center gap-1.5 px-3 py-1.5 tabular-nums">
+        <div
+          className={`h-2 w-2 rounded-full ${connected ? "bg-chart-2 animate-pulse" : "bg-muted-foreground/40"}`}
+        />
+        <AnimatedNumber value={liveCount} duration={600} /> <span className="text-muted-foreground font-normal">online</span>
       </Badge>
     </>
   )
@@ -45,17 +40,21 @@ export function LiveVisitorsBadges({ liveCount, connected }: LiveVisitorsCounter
  */
 export function LiveViewersMetricCard({ liveCount, connected }: LiveVisitorsCounterProps) {
   return (
-    <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-green-50/50 to-green-100/30 dark:from-green-950/30 dark:to-green-900/20 ring-2 ring-green-200 dark:ring-green-800">
-      <CardContent className="p-6 text-center">
-        <div className="p-3 bg-green-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
-          <Activity className="h-8 w-8 text-green-600 dark:text-green-400" />
+    <Card className="app-card ring-primary/15 transition-shadow hover:shadow-md ring-1">
+      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5">
+        <div className="bg-primary/10 text-primary flex h-11 w-11 shrink-0 items-center justify-center rounded-xl">
+          <Activity className="h-5 w-5" />
         </div>
-        <div className="text-3xl font-bold mb-2 text-green-900 dark:text-green-100 tabular-nums">
-          <AnimatedNumber value={liveCount} duration={600} />
-        </div>
-        <div className="text-sm text-green-700 dark:text-green-300 font-medium flex items-center justify-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${connected ? "bg-green-500 animate-pulse" : "bg-muted-foreground/50"}`} />
-          Live Viewers
+        <div className="min-w-0 flex-1">
+          <p className="text-muted-foreground flex items-center gap-2 text-xs font-medium tracking-wide uppercase">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-chart-2 animate-pulse" : "bg-muted-foreground/50"}`}
+            />
+            Live now
+          </p>
+          <div className="text-2xl font-semibold leading-none tracking-tight tabular-nums sm:text-3xl">
+            <AnimatedNumber value={liveCount} duration={600} />
+          </div>
         </div>
       </CardContent>
     </Card>

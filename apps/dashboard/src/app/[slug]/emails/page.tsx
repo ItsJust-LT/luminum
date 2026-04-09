@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
@@ -19,6 +18,14 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Mail,
   Send,
@@ -28,12 +35,11 @@ import {
   ChevronsUpDown,
   X,
   Inbox,
-  MailOpen,
   Paperclip,
   RefreshCw,
-  InboxIcon,
   Star,
   Clock,
+  Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -77,7 +83,11 @@ function smartDate(date: Date | string): string {
   if (now.getTime() - d.getTime() < 7 * 24 * 60 * 60 * 1000) {
     return d.toLocaleDateString("en-US", { weekday: "short" })
   }
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined })
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  })
 }
 
 export default function EmailsPage() {
@@ -135,7 +145,6 @@ export default function EmailsPage() {
     api.emails.getSetupStatus(organization.id).then((s) => setSetupStatus(s as EmailSetupStatus))
   }, [organization?.id])
 
-  /** While mail is enabled but not ready, poll so the inbox appears when setup completes. */
   useEffect(() => {
     if (!organization?.id || !setupStatus) return
     if (setupStatus.access !== true || setupStatus.setupComplete) return
@@ -241,6 +250,7 @@ export default function EmailsPage() {
       setUnreadCountFromApi,
       setAvailableEmailAddresses,
       setLoadedForOrgId,
+      setFolderCounts,
     ],
   )
 
@@ -248,7 +258,7 @@ export default function EmailsPage() {
     if (!organization?.id || loadingMore || !hasMore) return
     fetchEmails(page + 1, false)
     setPage((p) => p + 1)
-  }, [page, fetchEmails, organization?.id, loadingMore, hasMore])
+  }, [page, fetchEmails, organization?.id, loadingMore, hasMore, setPage])
 
   const handleEmailClick = useCallback(
     (email: EmailListItem) => {
@@ -283,7 +293,11 @@ export default function EmailsPage() {
   const handleMarkAllAsRead = useCallback(async () => {
     if (!organization?.id) return
     try {
-      const result = await api.emails.markAllAsRead(organization.id) as { success?: boolean; updated?: number; error?: string }
+      const result = (await api.emails.markAllAsRead(organization.id)) as {
+        success?: boolean
+        updated?: number
+        error?: string
+      }
       if (!result?.success) throw new Error(result?.error || "Failed to mark all as read")
       setEmails((prev) => prev.map((email) => ({ ...email, read: true })))
       setUnreadCountFromApi(0)
@@ -297,7 +311,7 @@ export default function EmailsPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to mark all as read")
     }
-  }, [organization?.id, setEmails, setUnreadCountFromApi, refreshFolderCounts])
+  }, [organization?.id, setEmails, setUnreadCountFromApi, refreshFolderCounts, setFolderCounts])
 
   const toggleStar = useCallback(
     async (e: React.MouseEvent, email: EmailListItem) => {
@@ -336,21 +350,21 @@ export default function EmailsPage() {
 
   const emptyMailboxHint = useMemo(() => {
     const hints: Record<MailboxId, string> = {
-      inbox: "Emails sent to your organization will appear here.",
-      sent: "Outbound messages show here after you send.",
-      starred: "Star an email from any folder to collect it here.",
-      drafts: "Save a draft from compose to continue later.",
+      inbox: "Messages to your organization addresses show up here.",
+      sent: "Outgoing mail appears after you send.",
+      starred: "Star a message from any folder to collect it here.",
+      drafts: "Save a draft in compose to finish later.",
       scheduled: "Schedule a send from compose to queue it here.",
     }
     return hints[mailbox]
   }, [mailbox])
 
   const extractPreview = useCallback((email: EmailListItem) => {
-    if (email.textBody) return email.textBody.slice(0, 120).replace(/\s+/g, " ").trim() + (email.textBody.length > 120 ? "…" : "")
+    if (email.textBody)
+      return email.textBody.slice(0, 120).replace(/\s+/g, " ").trim() + (email.textBody.length > 120 ? "…" : "")
     return ""
   }, [])
 
-  // Fetch when org or filters change; skip when setup not complete or when we have cached list (e.g. returning from detail)
   const shouldFetchInbox = setupStatus != null && setupStatus.setupComplete === true
   useEffect(() => {
     if (!organization?.id || !shouldFetchInbox) return
@@ -360,7 +374,6 @@ export default function EmailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- omit scrollPosition so clearing it after restore doesn't refetch
   }, [organization?.id, shouldFetchInbox, mailbox, filterRead, debouncedSearch, selectedEmailAddresses, fetchEmails, hasCachedList, scrollPosition, setPage])
 
-  // Restore scroll position when returning from email detail (after paint so viewport exists)
   useEffect(() => {
     if (scrollPosition == null) return
     const id = setTimeout(() => {
@@ -387,9 +400,7 @@ export default function EmailsPage() {
             refetch()
             break
           case OrganizationEvents.EMAIL_READ:
-            setEmails((prev) =>
-              prev.map((email) => (email.id === data.emailId ? { ...email, read: true } : email)),
-            )
+            setEmails((prev) => prev.map((email) => (email.id === data.emailId ? { ...email, read: true } : email)))
             setUnreadCountFromApi((prev) => (prev != null ? Math.max(0, prev - 1) : null))
             void refreshFolderCounts()
             break
@@ -411,8 +422,7 @@ export default function EmailsPage() {
           case OrganizationEvents.EMAIL_DELETED:
             setEmails((prev) => {
               const removed = prev.find((e) => e.id === data.emailId)
-              if (removed && !removed.read)
-                setUnreadCountFromApi((u) => (u != null ? Math.max(0, u - 1) : null))
+              if (removed && !removed.read) setUnreadCountFromApi((u) => (u != null ? Math.max(0, u - 1) : null))
               return prev.filter((email) => email.id !== data.emailId)
             })
             setTotalCount((prev) => (prev != null ? Math.max(0, prev - 1) : null))
@@ -460,9 +470,8 @@ export default function EmailsPage() {
       })()
     }, 12_000)
     return () => window.clearInterval(tick)
-  }, [organization?.id, shouldFetchInbox, mailbox, fetchEmails, setPage])
+  }, [organization?.id, shouldFetchInbox, mailbox, fetchEmails, setPage, setFolderCounts])
 
-  // Infinite scroll: load more when sentinel enters viewport (must run before any conditional return to satisfy Rules of Hooks)
   useEffect(() => {
     if (!hasMore || loading || loadingMore) return
     const el = loadMoreSentinelRef.current
@@ -479,73 +488,20 @@ export default function EmailsPage() {
 
   const displayTotal = totalCount ?? emails.length
   const displayUnread =
-    mailbox === "inbox"
-      ? (unreadCountFromApi ?? folderCounts.inboxUnread)
-      : emails.filter((e) => !e.read).length
+    mailbox === "inbox" ? (unreadCountFromApi ?? folderCounts.inboxUnread) : emails.filter((e) => !e.read).length
 
-  const handleMailRefresh = useCallback(
-    async (opts?: { mailbox?: MailboxId }) => {
-      if (!organization?.id) return
-      const targetMb = opts?.mailbox ?? mailbox
-      if (opts?.mailbox) {
-        setMailbox(opts.mailbox)
-        setEmails([])
-        setPage(1)
-        setLoadedForOrgId(null)
-      } else {
-        setPage(1)
-      }
-      await fetchEmails(1, true, { mailbox: targetMb })
-      await refreshFolderCounts()
-    },
-    [
-      organization?.id,
-      mailbox,
-      fetchEmails,
-      refreshFolderCounts,
-      setEmails,
-      setPage,
-      setLoadedForOrgId,
-      setMailbox,
-    ],
-  )
+  const readFilterValue = filterRead === undefined ? "all" : filterRead ? "read" : "unread"
 
   if (!organization) return null
 
-  // Wait for setup status before showing inbox or setup-required (avoid flash of wrong view)
   if (setupStatus == null) {
     return (
-      <AppPageContainer fullWidth>
-        <div className="flex min-h-[50vh] items-center justify-center px-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center gap-5 text-center"
-          >
-            <motion.div
-              className="rounded-2xl border border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur-sm"
-              animate={{ y: [0, -5, 0] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-            >
-              <Mail className="h-12 w-12 text-primary" strokeWidth={1.25} />
-            </motion.div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">Opening mail…</p>
-              <p className="text-xs text-muted-foreground">Just a moment</p>
-            </div>
-            <motion.div
-              className="h-1 w-32 overflow-hidden rounded-full bg-muted"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-            >
-              <motion.div
-                className="h-full w-1/2 rounded-full bg-primary/60"
-                animate={{ x: ["-100%", "200%"] }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
-              />
-            </motion.div>
-          </motion.div>
+      <AppPageContainer fullWidth className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-[40vh] flex-1 items-center justify-center px-4">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Loader2 className="text-primary h-8 w-8 animate-spin" />
+            <p className="text-muted-foreground text-sm">Loading mail…</p>
+          </div>
         </div>
       </AppPageContainer>
     )
@@ -553,18 +509,18 @@ export default function EmailsPage() {
 
   if (setupStatus.emailSystemUnavailable) {
     return (
-      <AppPageContainer fullWidth>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <Card className="app-card w-full max-w-md border border-border">
-            <CardContent className="pt-6 px-6 pb-6 text-center">
-              <Mail className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">Email unavailable</h3>
-              <p className="text-muted-foreground mb-4">
+      <AppPageContainer fullWidth className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-1 items-center justify-center p-4">
+          <Card className="app-card w-full max-w-md">
+            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+              <Mail className="text-muted-foreground h-10 w-10" />
+              <h2 className="text-foreground text-lg font-semibold">Email unavailable</h2>
+              <p className="text-muted-foreground text-sm">
                 {setupStatus.error ||
-                  "Email is not available at this time. Please try again later or contact support if you need assistance."}
+                  "Email is not available right now. Try again later or contact support if it continues."}
               </p>
-              <Button onClick={() => router.push(`/${organization.slug}/dashboard`)} variant="outline" className="w-full">
-                Back to Dashboard
+              <Button type="button" variant="outline" className="w-full" onClick={() => router.push(`/${organization.slug}/dashboard`)}>
+                Back to dashboard
               </Button>
             </CardContent>
           </Card>
@@ -573,20 +529,19 @@ export default function EmailsPage() {
     )
   }
 
-  // Route guard: emails feature not enabled (direct URL access blocked)
   if (setupStatus.access === false) {
     return (
-      <AppPageContainer fullWidth>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <Card className="app-card w-full max-w-md border border-border">
-            <CardContent className="pt-6 px-6 pb-6 text-center">
-              <Mail className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">Emails not enabled</h3>
-              <p className="text-muted-foreground mb-4">
-                Emails is not enabled for this organization. Contact an administrator if you need access.
+      <AppPageContainer fullWidth className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-1 items-center justify-center p-4">
+          <Card className="app-card w-full max-w-md">
+            <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+              <Mail className="text-muted-foreground h-10 w-10" />
+              <h2 className="text-foreground text-lg font-semibold">Email not enabled</h2>
+              <p className="text-muted-foreground text-sm">
+                This workspace does not have organization email. Ask an administrator if you need it.
               </p>
-              <Button onClick={() => router.push(`/${organization.slug}/dashboard`)} variant="outline" className="w-full">
-                Back to Dashboard
+              <Button type="button" variant="outline" className="w-full" onClick={() => router.push(`/${organization.slug}/dashboard`)}>
+                Back to dashboard
               </Button>
             </CardContent>
           </Card>
@@ -598,375 +553,380 @@ export default function EmailsPage() {
   if (showSetupRequired) {
     return <MailProvisioningView workspaceName={organization?.name} />
   }
+
   return (
     <AppPageContainer
       fullWidth
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 space-y-0 overflow-hidden px-4 py-4 sm:px-5 sm:py-5 md:px-6 md:py-6"
+      className="mx-auto flex min-h-0 min-w-0 w-full max-w-[1600px] flex-1 flex-col gap-5 overflow-hidden px-0 py-4 sm:py-5 md:py-6"
     >
-      <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="app-hero relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 p-5 shadow-sm sm:p-6 md:p-8 lg:p-10"
-          >
-            <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] pointer-events-none" />
-            <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="space-y-1 sm:space-y-2 min-w-0 flex-1">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <motion.div
-                    layout
-                    className="p-2 sm:p-2.5 bg-primary/10 rounded-xl shadow-sm shrink-0 ring-1 ring-primary/10"
-                    whileHover={{ scale: 1.03 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                  >
-                    <Mail className="h-6 w-6 sm:h-7 sm:w-7 text-primary" />
-                  </motion.div>
-                  <div className="min-w-0">
-                    <h1 className="text-2xl sm:text-3xl md:text-[2rem] font-semibold tracking-tight text-foreground truncate">
-                      {mailboxTitle}
-                    </h1>
-                    <p className="text-muted-foreground mt-0.5 text-sm sm:text-[0.9375rem] leading-snug truncate">
-                      {loading
-                        ? "Loading…"
-                        : displayTotal === 0
-                          ? "No messages in this folder"
-                          : `${displayTotal.toLocaleString()} message${displayTotal === 1 ? "" : "s"}${
-                              mailbox === "inbox" && displayUnread > 0
-                                ? ` · ${displayUnread.toLocaleString()} unread`
-                                : ""
-                            }`}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setPage(1)
-                    void fetchEmails(1, true)
-                  }}
-                  disabled={loading}
-                  className="rounded-xl border-border/60 shadow-sm"
-                >
-                  <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
-                  Refresh
-                </Button>
-                {mailbox === "inbox" ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleMarkAllAsRead()}
-                    disabled={loading || displayUnread === 0}
-                    className="rounded-xl border-border/60 shadow-sm"
-                  >
-                    <Check className="h-4 w-4 mr-2" />
-                    Mark all read
-                  </Button>
-                ) : null}
-                <Button type="button" variant="outline" size="sm" className="rounded-xl border-border/60 shadow-sm shrink-0" asChild>
-                  <Link href={settingsHref}>
-                    <span className="hidden sm:inline">Mail settings</span>
-                    <span className="sm:hidden">Settings</span>
-                  </Link>
-                </Button>
-                <Button type="button" size="sm" className="shrink-0 rounded-xl bg-primary shadow-md shadow-primary/15" asChild>
-                  <Link href={composeHref} className="flex items-center">
-                    <Send className="mr-2 h-4 w-4" />
-                    Compose
-                  </Link>
-                </Button>
-              </div>
+      <header className="shrink-0 space-y-4 px-1 sm:px-0">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="bg-primary/10 text-primary mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
+              <Mail className="h-5 w-5" />
             </div>
-          </motion.div>
+            <div className="min-w-0 space-y-1">
+              <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">{mailboxTitle}</h1>
+              <p className="text-muted-foreground text-sm sm:text-base">
+                {loading
+                  ? "Loading…"
+                  : displayTotal === 0
+                    ? "No messages in this folder"
+                    : `${displayTotal.toLocaleString()} message${displayTotal === 1 ? "" : "s"}${
+                        mailbox === "inbox" && displayUnread > 0
+                          ? ` · ${displayUnread.toLocaleString()} unread`
+                          : ""
+                      }`}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPage(1)
+                void fetchEmails(1, true)
+              }}
+              disabled={loading}
+            >
+              <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
+              Refresh
+            </Button>
+            {mailbox === "inbox" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleMarkAllAsRead()}
+                disabled={loading || displayUnread === 0}
+              >
+                <Check className="mr-2 h-4 w-4" />
+                Mark all read
+              </Button>
+            ) : null}
+            <Button type="button" variant="outline" size="sm" asChild>
+              <Link href={settingsHref}>Settings</Link>
+            </Button>
+            <Button type="button" size="sm" asChild>
+              <Link href={composeHref} className="gap-2">
+                <Send className="h-4 w-4" />
+                Compose
+              </Link>
+            </Button>
+          </div>
+        </div>
 
-      {/* Toolbar */}
-      <div className="shrink-0 space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div className="relative flex-1 w-full min-w-0 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Separator />
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="relative min-w-0 flex-1 lg:max-w-md">
+            <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
             <Input
-              placeholder="Search emails…"
+              placeholder="Search subject, sender, body…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-10 rounded-xl border-muted-foreground/20 bg-background/50"
+              className="h-10 pl-9"
               disabled={orgLoading || loading}
+              aria-label="Search mail"
             />
           </div>
 
-          <Popover open={emailSelectorOpen} onOpenChange={setEmailSelectorOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant={selectedEmailAddresses.length > 0 ? "secondary" : "outline"}
-                className="h-10 rounded-xl border-dashed shrink-0"
-                disabled={orgLoading || loading || availableEmailAddresses.length === 0}
-              >
-                <Inbox className="h-4 w-4 mr-2" />
-                {selectedEmailAddresses.length === 0
-                  ? "All addresses"
-                  : selectedEmailAddresses.length === 1
-                    ? selectedEmailAddresses[0]
-                    : `${selectedEmailAddresses.length} addresses`}
-                <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[320px] p-0 rounded-xl" align="start">
-              <Command>
-                <CommandInput placeholder="Search addresses…" className="h-10" />
-                <CommandList className="max-h-[280px]">
-                  <CommandEmpty>No addresses found.</CommandEmpty>
-                  <CommandGroup>
-                    <CommandItem
-                      onSelect={() => { setSelectedEmailAddresses([]); setEmailSelectorOpen(false) }}
-                      className="cursor-pointer"
-                    >
-                      <Check className={cn("mr-2 h-4 w-4", selectedEmailAddresses.length === 0 ? "opacity-100" : "opacity-0")} />
-                      All addresses
-                      {selectedEmailAddresses.length === 0 && <Badge variant="secondary" className="ml-auto text-xs">Active</Badge>}
-                    </CommandItem>
-                    {availableEmailAddresses.length > 0 && <div className="border-t my-1" />}
-                    {availableEmailAddresses.map((email) => (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <Popover open={emailSelectorOpen} onOpenChange={setEmailSelectorOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={selectedEmailAddresses.length > 0 ? "secondary" : "outline"}
+                  className="h-10 w-full justify-between sm:w-[min(100%,280px)]"
+                  disabled={orgLoading || loading || availableEmailAddresses.length === 0}
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <Inbox className="h-4 w-4 shrink-0" />
+                    <span className="truncate">
+                      {selectedEmailAddresses.length === 0
+                        ? "All addresses"
+                        : selectedEmailAddresses.length === 1
+                          ? selectedEmailAddresses[0]
+                          : `${selectedEmailAddresses.length} addresses`}
+                    </span>
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[min(calc(100vw-2rem),320px)] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Filter addresses…" />
+                  <CommandList className="max-h-[280px]">
+                    <CommandEmpty>No addresses found.</CommandEmpty>
+                    <CommandGroup>
                       <CommandItem
-                        key={email}
                         onSelect={() => {
-                          setSelectedEmailAddresses((prev) =>
-                            prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email],
-                          )
+                          setSelectedEmailAddresses([])
+                          setEmailSelectorOpen(false)
                         }}
                         className="cursor-pointer"
                       >
-                        <Check className={cn("mr-2 h-4 w-4", selectedEmailAddresses.includes(email) ? "opacity-100" : "opacity-0")} />
-                        <Mail className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate text-sm">{email}</span>
+                        <Check
+                          className={cn("mr-2 h-4 w-4", selectedEmailAddresses.length === 0 ? "opacity-100" : "opacity-0")}
+                        />
+                        All addresses
+                        {selectedEmailAddresses.length === 0 ? (
+                          <Badge variant="secondary" className="ml-auto text-xs">
+                            Active
+                          </Badge>
+                        ) : null}
                       </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+                      {availableEmailAddresses.length > 0 ? <div className="bg-border my-1 h-px" /> : null}
+                      {availableEmailAddresses.map((email) => (
+                        <CommandItem
+                          key={email}
+                          onSelect={() => {
+                            setSelectedEmailAddresses((prev) =>
+                              prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]
+                            )
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selectedEmailAddresses.includes(email) ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <Mail className="text-muted-foreground mr-2 h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate text-sm">{email}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
 
-          <div className="flex gap-1.5 p-1 rounded-xl bg-muted/50 w-fit">
-            {[
-              { value: undefined as boolean | undefined, label: "All", icon: InboxIcon },
-              { value: false, label: "Unread", icon: Mail },
-              { value: true, label: "Read", icon: MailOpen },
-            ].map(({ value, label, icon: Icon }) => (
-              <Button
-                key={label}
-                variant={filterRead === value ? "secondary" : "ghost"}
-                size="sm"
-                onClick={() => setFilterRead(value)}
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Read state</span>
+              <Select
+                value={readFilterValue}
+                onValueChange={(v) => {
+                  if (v === "all") setFilterRead(undefined)
+                  else if (v === "read") setFilterRead(true)
+                  else setFilterRead(false)
+                }}
                 disabled={orgLoading || loading}
-                className="rounded-lg h-8 px-3"
               >
-                <Icon className="h-3.5 w-3.5 mr-1.5" />
-                {label}
-              </Button>
-            ))}
+                <SelectTrigger className="h-10 w-full sm:w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="unread">Unread</SelectItem>
+                  <SelectItem value="read">Read</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
         {selectedEmailAddresses.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             {selectedEmailAddresses.map((email) => (
-              <Badge key={email} variant="secondary" className="gap-1.5 pr-1 py-1.5 text-xs font-normal rounded-lg">
-                <Mail className="h-3 w-3" />
-                <span className="truncate max-w-[180px]">{email}</span>
+              <Badge key={email} variant="secondary" className="gap-1.5 rounded-md py-1.5 pr-1 text-xs font-normal">
+                <Mail className="h-3 w-3 shrink-0" />
+                <span className="max-w-[180px] truncate">{email}</span>
                 <button
                   type="button"
                   onClick={() => setSelectedEmailAddresses((prev) => prev.filter((e) => e !== email))}
-                  className="rounded-sm hover:bg-secondary-foreground/20 p-0.5 transition-colors"
+                  className="hover:bg-secondary-foreground/15 rounded-sm p-0.5 transition-colors"
                   aria-label={`Remove ${email}`}
                 >
                   <X className="h-3 w-3" />
                 </button>
               </Badge>
             ))}
-            <Button variant="ghost" size="sm" onClick={() => setSelectedEmailAddresses([])} className="h-7 px-2 text-xs rounded-lg">
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setSelectedEmailAddresses([])}>
               Clear all
             </Button>
           </div>
         )}
-      </div>
+      </header>
 
-      {/* Email list: show cached list instantly when returning from detail */}
-      <div className="app-card flex min-h-[min(280px,50vh)] flex-1 min-h-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm md:min-h-0">
+      <div className="app-card flex min-h-[min(280px,50vh)] flex-1 min-h-0 flex-col overflow-hidden rounded-xl border shadow-sm md:min-h-0">
         {!hasCachedList(organization?.id ?? "") && (orgLoading || loading) ? (
           <div className="divide-y">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 sm:gap-4 px-3 py-3 sm:px-4 sm:py-4 md:px-6">
-                <Skeleton className="h-10 w-10 rounded-full shrink-0" />
-                <div className="flex-1 min-w-0 space-y-2">
+              <div key={i} className="flex items-center gap-3 px-3 py-3 sm:gap-4 sm:px-4 sm:py-4 md:px-5">
+                <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2">
                   <Skeleton className="h-4 w-[200px]" />
-                  <Skeleton className="h-3 w-[320px]" />
+                  <Skeleton className="h-3 w-[320px] max-w-full" />
                 </div>
                 <Skeleton className="h-4 w-16 shrink-0" />
               </div>
             ))}
           </div>
         ) : emails.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 px-6 text-center">
-            <div className="rounded-full bg-muted/50 p-6 mb-4">
-              <Mail className="h-12 w-12 text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
+            <div className="bg-muted/50 mb-4 rounded-full p-5">
+              <Mail className="text-muted-foreground h-10 w-10" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-1 tracking-tight">Nothing here yet</h3>
-            <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+            <h2 className="text-foreground mb-1 text-lg font-semibold tracking-tight">Nothing here</h2>
+            <p className="text-muted-foreground max-w-sm text-sm leading-relaxed">
               {debouncedSearch || selectedEmailAddresses.length > 0 || filterRead !== undefined
-                ? "Try changing your filters or search."
+                ? "Adjust search, addresses, or read filter."
                 : emptyMailboxHint}
             </p>
           </div>
         ) : (
-          <div ref={listContainerRef} className="h-full">
-          <ScrollArea className="h-full min-h-[240px] flex-1 md:min-h-[320px]">
-            <div className="divide-y divide-border/60">
-              <AnimatePresence initial={false}>
+          <div ref={listContainerRef} className="h-full min-h-0 flex-1">
+            <ScrollArea className="h-full min-h-[240px] flex-1 md:min-h-[320px]">
+              <div className="divide-y divide-border/60">
                 {emails.map((email) => (
-                  <motion.div
+                  <div
                     key={email.id}
                     role="button"
                     tabIndex={0}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                     onClick={() => handleEmailClick(email)}
                     onMouseEnter={() => handleEmailHover(email.id)}
                     onKeyDown={(e) => e.key === "Enter" && handleEmailClick(email)}
                     className={cn(
-                      "flex items-start gap-3 sm:gap-4 px-3 py-3.5 sm:px-4 sm:py-4 md:px-5 transition-colors cursor-pointer group active:bg-muted/50",
-                      "hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 min-h-[72px] sm:min-h-0",
-                      !email.read && mailbox === "inbox" && "bg-primary/[0.06] hover:bg-primary/10 border-l-[3px] border-l-primary",
-                      (email.read || mailbox !== "inbox") && "border-l-[3px] border-l-transparent",
+                      "group flex min-h-[72px] cursor-pointer items-start gap-3 px-3 py-3.5 transition-colors active:bg-muted/50 sm:gap-4 sm:px-4 sm:py-4 md:px-5",
+                      "hover:bg-muted/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
+                      !email.read &&
+                        mailbox === "inbox" &&
+                        "border-l-[3px] border-l-chart-4 bg-chart-4/[0.06] hover:bg-chart-4/10",
+                      (email.read || mailbox !== "inbox") && "border-l-[3px] border-l-transparent"
                     )}
                   >
                     <EmailAvatar
                       email={email.from}
                       senderAvatarUrl={email.sender_avatar_url}
                       size={40}
-                      className="h-9 w-9 sm:h-10 sm:w-10 ring-1 ring-border/40"
+                      className="ring-border/40 h-9 w-9 shrink-0 ring-1 sm:h-10 sm:w-10"
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-0.5 flex items-baseline justify-between gap-2">
                         <span
                           className={cn(
-                            "text-[13px] sm:text-sm truncate tracking-tight",
-                            !email.read && mailbox === "inbox" ? "font-semibold text-foreground" : "font-medium text-foreground",
+                            "truncate text-[13px] tracking-tight sm:text-sm",
+                            !email.read && mailbox === "inbox"
+                              ? "text-foreground font-semibold"
+                              : "text-foreground font-medium"
                           )}
                         >
                           {email.from || "Unknown"}
                         </span>
-                        <span className="text-[11px] sm:text-xs text-muted-foreground whitespace-nowrap shrink-0 tabular-nums">
+                        <span className="text-muted-foreground shrink-0 tabular-nums text-[11px] whitespace-nowrap sm:text-xs">
                           {email.scheduled_send_at && !email.sent_at
                             ? formatScheduledSendInLocalTime(email.scheduled_send_at)
                             : smartDate(email.date)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mb-0.5 min-w-0 flex-wrap">
+                      <div className="mb-0.5 flex min-w-0 flex-wrap items-center gap-2">
                         <p
                           className={cn(
-                            "text-[13px] sm:text-sm truncate flex-1 min-w-0 leading-snug",
-                            !email.read && mailbox === "inbox" ? "font-medium text-foreground" : "text-muted-foreground",
+                            "min-w-0 flex-1 truncate text-[13px] leading-snug sm:text-sm",
+                            !email.read && mailbox === "inbox"
+                              ? "text-foreground font-medium"
+                              : "text-muted-foreground"
                           )}
                         >
                           {email.subject || "(No subject)"}
                         </p>
                         {email.is_draft ? (
-                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5 border-amber-500/40 text-amber-800 dark:text-amber-200">
+                          <Badge variant="outline" className="border-chart-3/40 text-chart-3 h-5 shrink-0 px-1.5 py-0 text-[10px]">
                             Draft
                           </Badge>
                         ) : null}
                         {email.scheduled_send_at && !email.sent_at && !email.is_draft ? (
-                          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-5 gap-0.5">
+                          <Badge variant="secondary" className="h-5 shrink-0 gap-0.5 px-1.5 py-0 text-[10px]">
                             <Clock className="h-2.5 w-2.5" />
                             Scheduled
                           </Badge>
                         ) : null}
                         {email.direction === "outbound" && email.outbound_provider === "resend" && (
-                          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
+                          <Badge variant="secondary" className="h-5 shrink-0 px-1.5 py-0 text-[10px]">
                             Resend
                           </Badge>
                         )}
                         {email.direction === "outbound" && email.outbound_provider === "ses" && (
-                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5">
-                            SES (legacy)
+                          <Badge variant="outline" className="h-5 shrink-0 px-1.5 py-0 text-[10px]">
+                            SES
                           </Badge>
                         )}
-                        {email.direction === "outbound" && email.outbound_provider === "mail_app" && !email.fallback_used && (
-                          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 h-5 hidden sm:inline-flex">
-                            Mail server (legacy)
-                          </Badge>
-                        )}
+                        {email.direction === "outbound" &&
+                          email.outbound_provider === "mail_app" &&
+                          !email.fallback_used && (
+                            <Badge variant="outline" className="hidden h-5 px-1.5 py-0 text-[10px] sm:inline-flex">
+                              Legacy
+                            </Badge>
+                          )}
                       </div>
-                      {extractPreview(email) && (
-                        <p className="text-[11px] sm:text-xs text-muted-foreground line-clamp-1 leading-relaxed">
+                      {extractPreview(email) ? (
+                        <p className="text-muted-foreground line-clamp-1 text-[11px] leading-relaxed sm:text-xs">
                           {extractPreview(email)}
                         </p>
-                      )}
+                      ) : null}
                     </div>
-                    <div className="flex items-center gap-0.5 shrink-0">
+                    <div className="flex shrink-0 items-center gap-0.5">
                       <Button
                         variant="ghost"
                         size="icon"
                         className={cn(
                           "h-8 w-8 rounded-lg transition-colors",
                           email.starred
-                            ? "text-amber-500 opacity-100"
-                            : "text-muted-foreground opacity-70 sm:opacity-0 sm:group-hover:opacity-100",
+                            ? "text-chart-3 opacity-100"
+                            : "text-muted-foreground opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
                         )}
                         onClick={(e) => void toggleStar(e, email)}
                         aria-pressed={email.starred}
                       >
-                        <Star className={cn("h-4 w-4", email.starred && "fill-amber-400 text-amber-500")} />
+                        <Star className={cn("h-4 w-4", email.starred && "fill-chart-3 text-chart-3")} />
                         <span className="sr-only">{email.starred ? "Unstar" : "Star"}</span>
                       </Button>
-                      {email.attachments?.length > 0 && (
+                      {email.attachments?.length > 0 ? (
                         <span className="text-muted-foreground p-1.5" title={`${email.attachments.length} attachment(s)`}>
                           <Paperclip className="h-4 w-4" />
                         </span>
-                      )}
+                      ) : null}
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive h-8 w-8 rounded-lg opacity-0 transition-opacity sm:group-hover:opacity-100"
                         onClick={(e) => handleDeleteEmail(e, email.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                         <span className="sr-only">Delete</span>
                       </Button>
                     </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-
-            {hasMore && (
-              <>
-                {loadingMore && (
-                  <div className="divide-y border-t">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <div key={`skeleton-${i}`} className="flex items-start gap-4 px-4 py-4 md:px-6 animate-in fade-in-50 duration-200">
-                        <Skeleton className="h-10 w-10 rounded-full shrink-0" />
-                        <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <Skeleton className="h-4 w-[180px]" />
-                            <Skeleton className="h-3 w-14 shrink-0" />
-                          </div>
-                          <Skeleton className="h-4 w-[280px] max-w-full" />
-                          <Skeleton className="h-3 w-full max-w-[320px]" />
-                        </div>
-                        <Skeleton className="h-8 w-8 rounded-md shrink-0" />
-                      </div>
-                    ))}
                   </div>
-                )}
-                <div ref={loadMoreSentinelRef} className="min-h-[1px] w-full" aria-hidden />
-              </>
-            )}
-          </ScrollArea>
+                ))}
+              </div>
+
+              {hasMore ? (
+                <>
+                  {loadingMore ? (
+                    <div className="divide-y border-t">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div key={`skeleton-${i}`} className="flex items-start gap-4 px-4 py-4 md:px-6">
+                          <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <Skeleton className="h-4 w-[180px]" />
+                              <Skeleton className="h-3 w-14 shrink-0" />
+                            </div>
+                            <Skeleton className="h-4 w-[280px] max-w-full" />
+                            <Skeleton className="h-3 w-full max-w-[320px]" />
+                          </div>
+                          <Skeleton className="h-8 w-8 shrink-0 rounded-md" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div ref={loadMoreSentinelRef} className="min-h-[1px] w-full" aria-hidden />
+                </>
+              ) : null}
+            </ScrollArea>
           </div>
         )}
       </div>

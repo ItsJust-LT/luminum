@@ -14,9 +14,7 @@ import {
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Pie, PieChart, Cell } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import {
-  Eye,
   Users,
-  Clock,
   TrendingUp,
   Activity,
   FileText,
@@ -24,7 +22,6 @@ import {
   Smartphone,
   Monitor,
   RefreshCw,
-  Calendar,
   BarChart3,
   ExternalLink,
   AlertTriangle,
@@ -40,7 +37,12 @@ import {
 } from "lucide-react"
 import type { MetricCount, StatsOverview, PageFlowResponse, EntryExitResponse, SessionPathsResponse, PageStatsResponse } from "@/lib/types/analytics"
 import { api } from "@/lib/api"
-import { formatDuration } from "@/lib/utils"
+import { formatDuration, cn } from "@/lib/utils"
+import { cleanAnalyticsPath } from "@/lib/analytics/clean-route"
+import { getCountryFlag } from "@/components/analytics/analytics-country-flags"
+import { ANALYTICS_DATE_RANGES } from "@/components/analytics/analytics-date-ranges"
+import { AnalyticsKpiGrid } from "@/components/analytics/analytics-kpi-grid"
+import { AnalyticsSetupBanner } from "@/components/analytics/analytics-setup-banner"
 import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import type { Website } from "@/lib/types/websites"
@@ -49,9 +51,18 @@ import { AnalyticsSkeleton } from "@/components/ui/skeleton-loader"
 import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { useRealtime } from "@/components/realtime/realtime-provider"
-import { LiveVisitorsBadges, LiveViewersMetricCard } from "@/components/analytics/live-visitors-counter"
-import { AnimatedNumber } from "@/components/ui/animated-number"
+import { LiveVisitorsBadges } from "@/components/analytics/live-visitors-counter"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
 type OverviewData = StatsOverview
 
@@ -65,115 +76,13 @@ interface LiveData {
   }>
 }
 
-// Date range options
-const DATE_RANGES = [
-  { value: "24h", label: "Last 24 Hours", hours: 24 },
-  { value: "7d", label: "Last 7 Days", days: 7 },
-  { value: "30d", label: "Last 30 Days", days: 30 },
-  { value: "90d", label: "Last 90 Days", days: 90 },
-]
-
-// Enhanced color palette for charts
 const CHART_COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
+  "var(--color-chart-1)",
+  "var(--color-chart-2)",
+  "var(--color-chart-3)",
+  "var(--color-chart-4)",
+  "var(--color-chart-5)",
 ]
-
-// Country code to emoji mapping
-const getCountryFlag = (countryName: string): string => {
-  const countryFlags: { [key: string]: string } = {
-    'United States': '🇺🇸',
-    'Canada': '🇨🇦',
-    'United Kingdom': '🇬🇧',
-    'Germany': '🇩🇪',
-    'France': '🇫🇷',
-    'Italy': '🇮🇹',
-    'Spain': '🇪🇸',
-    'Netherlands': '🇳🇱',
-    'Australia': '🇦🇺',
-    'Japan': '🇯🇵',
-    'China': '🇨🇳',
-    'India': '🇮🇳',
-    'Brazil': '🇧🇷',
-    'Mexico': '🇲🇽',
-    'Argentina': '🇦🇷',
-    'South Korea': '🇰🇷',
-    'Russia': '🇷🇺',
-    'Turkey': '🇹🇷',
-    'Saudi Arabia': '🇸🇦',
-    'South Africa': '🇿🇦',
-    'Nigeria': '🇳🇬',
-    'Egypt': '🇪🇬',
-    'Morocco': '🇲🇦',
-    'Kenya': '🇰🇪',
-    'Ghana': '🇬🇭',
-    'Thailand': '🇹🇭',
-    'Vietnam': '🇻🇳',
-    'Singapore': '🇸🇬',
-    'Malaysia': '🇲🇾',
-    'Indonesia': '🇮🇩',
-    'Philippines': '🇵🇭',
-    'Pakistan': '🇵🇰',
-    'Bangladesh': '🇧🇩',
-    'Sri Lanka': '🇱🇰',
-    'UAE': '🇦🇪',
-    'Israel': '🇮🇱',
-    'Poland': '🇵🇱',
-    'Czech Republic': '🇨🇿',
-    'Hungary': '🇭🇺',
-    'Romania': '🇷🇴',
-    'Bulgaria': '🇧🇬',
-    'Croatia': '🇭🇷',
-    'Serbia': '🇷🇸',
-    'Ukraine': '🇺🇦',
-    'Belarus': '🇧🇾',
-    'Lithuania': '🇱🇹',
-    'Latvia': '🇱🇻',
-    'Estonia': '🇪🇪',
-    'Finland': '🇫🇮',
-    'Sweden': '🇸🇪',
-    'Norway': '🇳🇴',
-    'Denmark': '🇩🇰',
-    'Iceland': '🇮🇸',
-    'Ireland': '🇮🇪',
-    'Portugal': '🇵🇹',
-    'Switzerland': '🇨🇭',
-    'Austria': '🇦🇹',
-    'Belgium': '🇧🇪',
-    'Luxembourg': '🇱🇺',
-    'Greece': '🇬🇷',
-    'Cyprus': '🇨🇾',
-    'Malta': '🇲🇹',
-    'New Zealand': '🇳🇿',
-    'Chile': '🇨🇱',
-    'Peru': '🇵🇪',
-    'Colombia': '🇨🇴',
-    'Venezuela': '🇻🇪',
-    'Ecuador': '🇪🇨',
-    'Bolivia': '🇧🇴',
-    'Paraguay': '🇵🇾',
-    'Uruguay': '🇺🇾',
-    'Costa Rica': '🇨🇷',
-    'Panama': '🇵🇦',
-    'Guatemala': '🇬🇹',
-    'Honduras': '🇭🇳',
-    'El Salvador': '🇸🇻',
-    'Nicaragua': '🇳🇮',
-    'Belize': '🇧🇿',
-    'Jamaica': '🇯🇲',
-    'Cuba': '🇨🇺',
-    'Dominican Republic': '🇩🇴',
-    'Haiti': '🇭🇹',
-    'Puerto Rico': '🇵🇷',
-    'Trinidad and Tobago': '🇹🇹',
-    'Barbados': '🇧🇧',
-    'Bahamas': '🇧🇸'
-  }
-  return countryFlags[countryName] || '🌍'
-}
 
 export default function AnalyticsPage() {
   const router = useRouter()
@@ -300,12 +209,12 @@ export default function AnalyticsPage() {
     const end = new Date()
     const start = new Date()
 
-    const selectedRange = DATE_RANGES.find(r => r.value === range)
+    const selectedRange = ANALYTICS_DATE_RANGES.find(r => r.value === range)
     if (!selectedRange) return { start: start.toISOString(), end: end.toISOString() }
 
-    if (selectedRange.hours) {
+    if ("hours" in selectedRange) {
       start.setHours(end.getHours() - selectedRange.hours)
-    } else if (selectedRange.days) {
+    } else if ("days" in selectedRange) {
       start.setDate(end.getDate() - selectedRange.days)
     }
 
@@ -384,16 +293,16 @@ export default function AnalyticsPage() {
   // Enhanced chart configurations with better colors
   const chartConfig: ChartConfig = {
     pageViews: {
-      label: "Page Views",
-      color: "#3b82f6",
+      label: "Page views",
+      color: "var(--color-chart-1)",
     },
     uniqueSessions: {
       label: "Sessions",
-      color: "#10b981",
+      color: "var(--color-chart-2)",
     },
     formSubmissions: {
-      label: "Form Submissions",
-      color: "#8b5cf6",
+      label: "Form submissions",
+      color: "var(--color-chart-3)",
     },
   }
 
@@ -403,15 +312,15 @@ export default function AnalyticsPage() {
     },
     mobile: {
       label: "Mobile",
-      color: "#3b82f6",
+      color: "var(--color-chart-1)",
     },
     desktop: {
-      label: "Desktop", 
-      color: "#10b981",
+      label: "Desktop",
+      color: "var(--color-chart-2)",
     },
     tablet: {
       label: "Tablet",
-      color: "#f59e0b",
+      color: "var(--color-chart-3)",
     },
   }
 
@@ -571,191 +480,104 @@ export default function AnalyticsPage() {
   const websiteName = website.name || organization.name
   const websiteUrl = website.domain ? `https://${website.domain}` : undefined
 
+  const handleVerifyScriptNow = async () => {
+    if (!organization?.id || verifyingScript) return
+    setVerifyingScript(true)
+    try {
+      const res = (await api.analytics.verifyScriptNow(organization.id)) as {
+        success?: boolean
+        checked?: number
+        failed?: number
+      }
+      if (res?.success) {
+        const next = (await api.analytics.getSetupStatus(organization.id)) as {
+          success?: boolean
+          access?: boolean
+          websites?: NonNullable<typeof analyticsSetupStatus>["websites"]
+        }
+        if (next?.success && next.websites)
+          setAnalyticsSetupStatus({ access: next.access ?? false, websites: next.websites })
+      }
+    } catch {
+      /* keep status */
+    } finally {
+      setVerifyingScript(false)
+    }
+  }
+
   return (
-    <AppPageContainer fullWidth className="space-y-6 sm:space-y-8 md:space-y-10">
-      {/* Header Section */}
-      <div className="app-hero relative overflow-hidden bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 p-6 sm:p-8 md:p-12">
-        <div className="absolute inset-0 bg-grid-white/10 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))]" />
-        <div className="relative">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 sm:gap-6">
-            <div className="space-y-3 sm:space-y-4 min-w-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-xl shrink-0">
-                  <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-                </div>
-                <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight text-foreground truncate">
-                  Analytics Dashboard
-                </h1>
+    <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-6 sm:space-y-8">
+      <header className="space-y-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex items-start gap-3">
+              <div className="bg-primary/10 text-primary mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
+                <BarChart3 className="h-5 w-5" />
               </div>
-              <p className="text-muted-foreground text-base sm:text-lg md:text-xl max-w-2xl leading-relaxed">
-                Comprehensive insights and real-time analytics for {websiteName}
-              </p>
-              {websiteUrl && (
-                <div className="flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-muted-foreground" />
-                  <a 
-                    href={websiteUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-                  >
-                    {websiteUrl.replace(/^https?:\/\//, '')}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
+              <div className="min-w-0">
+                <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">Analytics</h1>
+                <p className="text-muted-foreground mt-1 max-w-2xl text-sm leading-relaxed sm:text-base">
+                  How people find and use <span className="text-foreground font-medium">{websiteName}</span>
+                </p>
+              </div>
             </div>
-            
-            <div className="flex items-center gap-3">
-              <LiveVisitorsBadges liveCount={liveViewersCount} connected={liveConnected} />
-            </div>
+            {websiteUrl ? (
+              <Button variant="link" size="sm" className="text-muted-foreground h-auto px-0" asChild>
+                <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{websiteUrl.replace(/^https?:\/\//, "")}</span>
+                  <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+                </a>
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-border/60 lg:border-0 lg:pt-0 pt-2 lg:justify-end">
+            <LiveVisitorsBadges liveCount={liveViewersCount} connected={liveConnected} />
           </div>
         </div>
-      </div>
 
-      {/* Script setup status: show when tracking script not detected on current or any website */}
+        <Separator />
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <span className="text-muted-foreground text-sm font-medium">Date range</span>
+            <Select value={dateRange} onValueChange={setDateRange}>
+              <SelectTrigger className="w-full sm:w-[min(100%,220px)]">
+                <SelectValue placeholder="Range" />
+              </SelectTrigger>
+              <SelectContent>
+                {ANALYTICS_DATE_RANGES.map((range) => (
+                  <SelectItem key={range.value} value={range.value}>
+                    {range.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={cn("mr-2 h-4 w-4", refreshing && "animate-spin")} />
+            Refresh
+          </Button>
+        </div>
+      </header>
+
       {analyticsSetupStatus?.websites?.length ? (
-        (() => {
-          const withAnalytics = analyticsSetupStatus.websites.filter((w) => w.analytics)
-          const notVerified = withAnalytics.filter((w) => !w.scriptVerified)
-          if (notVerified.length === 0) return null
-          const handleVerifyScriptNow = async () => {
-            if (!organization?.id || verifyingScript) return
-            setVerifyingScript(true)
-            try {
-              const res = await api.analytics.verifyScriptNow(organization.id) as { success?: boolean; checked?: number; failed?: number }
-              if (res?.success) {
-                const next = await api.analytics.getSetupStatus(organization.id) as { success?: boolean; access?: boolean; websites?: typeof analyticsSetupStatus.websites }
-                if (next?.success && next.websites) setAnalyticsSetupStatus({ access: next.access ?? false, websites: next.websites })
-              }
-            } catch {
-              // keep current status
-            } finally {
-              setVerifyingScript(false)
-            }
-          }
-          return (
-            <Card className="app-card border-amber-500/30 bg-amber-500/5">
-              <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3 min-w-0">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground">Tracking script not detected</p>
-                    <p className="text-sm text-muted-foreground">
-                      {notVerified.length === 1
-                        ? `Add the tracking script to ${notVerified[0].domain}. We check periodically; data will appear once the script is live.`
-                        : `${notVerified.length} websites need the tracking script. We check periodically.`}
-                    </p>
-                    {notVerified[0]?.scriptError && (
-                      <p className="text-xs text-muted-foreground mt-1">{notVerified[0].scriptError}</p>
-                    )}
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" onClick={handleVerifyScriptNow} disabled={verifyingScript} className="shrink-0">
-                  {verifyingScript ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                  Re-check now
-                </Button>
-              </CardContent>
-            </Card>
-          )
-        })()
+        <AnalyticsSetupBanner
+          websites={analyticsSetupStatus.websites}
+          verifying={verifyingScript}
+          onRecheck={handleVerifyScriptNow}
+        />
       ) : null}
 
-      {/* Controls Section */}
-      <Card className="app-card bg-card/50 backdrop-blur-sm border-0 shadow-lg">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <Calendar className="h-5 w-5 text-muted-foreground shrink-0" />
-                <span className="text-sm font-medium text-foreground shrink-0">Time Range:</span>
-                <Select value={dateRange} onValueChange={setDateRange}>
-                  <SelectTrigger className="w-[220px] bg-background">
-                    <SelectValue placeholder="Select a date range" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DATE_RANGES.map((range) => (
-                      <SelectItem key={range.value} value={range.value}>
-                        {range.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="bg-background/50 backdrop-blur-sm"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh Data
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {overviewData ? (
+        <AnalyticsKpiGrid
+          overview={overviewData}
+          liveCount={liveViewersCount}
+          liveConnected={liveConnected}
+        />
+      ) : null}
 
-      {/* Key Metrics Section */}
-      {overviewData && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
-          <Card className="app-card group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/50 dark:to-blue-900/30">
-            <CardContent className="p-4 sm:p-6 text-center">
-              <div className="p-3 bg-blue-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
-                <Eye className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="text-3xl font-bold mb-2 text-blue-900 dark:text-blue-100 tabular-nums">
-                <AnimatedNumber value={overviewData.pageViews || 0} duration={700} />
-              </div>
-              <div className="text-sm text-blue-700 dark:text-blue-300 font-medium">Page Views</div>
-            </CardContent>
-          </Card>
-
-          <Card className="app-card group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-emerald-50/50 to-emerald-100/30 dark:from-emerald-950/30 dark:to-emerald-900/20">
-            <CardContent className="p-4 sm:p-6 text-center">
-              <div className="p-3 bg-emerald-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
-                <Users className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div className="text-3xl font-bold mb-2 text-emerald-900 dark:text-emerald-100 tabular-nums">
-                <AnimatedNumber value={overviewData.uniqueSessions || 0} duration={700} />
-              </div>
-              <div className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">Unique Sessions</div>
-            </CardContent>
-          </Card>
-
-          <Card className="app-card group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-amber-50/50 to-amber-100/30 dark:from-amber-950/30 dark:to-amber-900/20">
-            <CardContent className="p-4 sm:p-6 text-center">
-              <div className="p-3 bg-amber-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
-                <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div className="text-3xl font-bold mb-2 text-amber-900 dark:text-amber-100 tabular-nums">
-                <AnimatedNumber
-                  value={overviewData.avgDuration || 0}
-                  duration={700}
-                  format={(n) => formatDuration(Math.round(n))}
-                />
-              </div>
-              <div className="text-sm text-amber-700 dark:text-amber-300 font-medium">Avg. Session</div>
-            </CardContent>
-          </Card>
-
-          <LiveViewersMetricCard liveCount={liveViewersCount} connected={liveConnected} />
-
-          <Card className="app-card group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-purple-50/50 to-purple-100/30 dark:from-purple-950/30 dark:to-purple-900/20">
-            <CardContent className="p-4 sm:p-6 text-center">
-              <div className="p-3 bg-purple-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
-                <FileText className="h-8 w-8 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div className="text-3xl font-bold mb-2 text-purple-900 dark:text-purple-100 tabular-nums">
-                <AnimatedNumber value={overviewData?.formSubmissions || 0} duration={700} />
-              </div>
-              <div className="text-sm text-purple-700 dark:text-purple-300 font-medium">Form Submissions</div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <FormSubmissionsInfo websiteId={website.id} />
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
@@ -799,16 +621,16 @@ export default function AnalyticsPage() {
                     />
                     <defs>
                       <linearGradient id="fillPageViews" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.9} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                        <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.9} />
+                        <stop offset="95%" stopColor="var(--color-chart-1)" stopOpacity={0.1} />
                       </linearGradient>
                       <linearGradient id="fillSessions" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.9} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
+                        <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.9} />
+                        <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0.1} />
                       </linearGradient>
                       <linearGradient id="fillFormSubmissions" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.9} />
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1} />
+                        <stop offset="5%" stopColor="var(--color-chart-3)" stopOpacity={0.9} />
+                        <stop offset="95%" stopColor="var(--color-chart-3)" stopOpacity={0.1} />
                       </linearGradient>
                     </defs>
                     <Area
@@ -816,30 +638,45 @@ export default function AnalyticsPage() {
                       type="monotone"
                       fill="url(#fillSessions)"
                       fillOpacity={0.6}
-                      stroke="#10b981"
+                      stroke="var(--color-chart-2)"
                       strokeWidth={3}
                       dot={false}
-                      activeDot={{ r: 6, stroke: "#10b981", strokeWidth: 2, fill: "#ffffff" }}
+                      activeDot={{
+                        r: 6,
+                        stroke: "var(--color-chart-2)",
+                        strokeWidth: 2,
+                        fill: "var(--background)",
+                      }}
                     />
                     <Area
                       dataKey="pageViews"
                       type="monotone"
                       fill="url(#fillPageViews)"
                       fillOpacity={0.6}
-                      stroke="#3b82f6"
+                      stroke="var(--color-chart-1)"
                       strokeWidth={3}
                       dot={false}
-                      activeDot={{ r: 6, stroke: "#3b82f6", strokeWidth: 2, fill: "#ffffff" }}
+                      activeDot={{
+                        r: 6,
+                        stroke: "var(--color-chart-1)",
+                        strokeWidth: 2,
+                        fill: "var(--background)",
+                      }}
                     />
                     <Area
                       dataKey="formSubmissions"
                       type="monotone"
                       fill="url(#fillFormSubmissions)"
                       fillOpacity={0.6}
-                      stroke="#8b5cf6"
+                      stroke="var(--color-chart-3)"
                       strokeWidth={3}
                       dot={false}
-                      activeDot={{ r: 6, stroke: "#8b5cf6", strokeWidth: 2, fill: "#ffffff" }}
+                      activeDot={{
+                        r: 6,
+                        stroke: "var(--color-chart-3)",
+                        strokeWidth: 2,
+                        fill: "var(--background)",
+                      }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -874,17 +711,8 @@ export default function AnalyticsPage() {
                   const totalViews = topPages.reduce((sum, p) => sum + (p.count || 0), 0)
                   const percentage = totalViews > 0 ? ((page.count || 0) / totalViews) * 100 : 0
                   
-                  // Clean up the route - ensure it starts with / and remove domain/protocol
-                  let cleanRoute = page.key
-                  if (cleanRoute.includes('://')) {
-                    cleanRoute = new URL(cleanRoute).pathname
-                  }
-                  if (!cleanRoute.startsWith('/')) {
-                    cleanRoute = `/${cleanRoute}`
-                  }
-                  if (cleanRoute === '/') {
-                    cleanRoute = '/home'
-                  }
+                  let cleanRoute = cleanAnalyticsPath(page.key)
+                  if (cleanRoute === "/") cleanRoute = "/home"
 
                   return (
                     <div
@@ -1108,9 +936,7 @@ export default function AnalyticsPage() {
               {sortedLivePages.slice(0, 15).map((item, index) => {
                 const maxCount = sortedLivePages[0]?.count || 1
                 const percentage = (item.count / maxCount) * 100
-                let cleanRoute = item.page
-                try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
-                if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                const cleanRoute = cleanAnalyticsPath(item.page)
 
                 return (
                   <div key={index} className="group flex items-center gap-4 p-3 rounded-xl bg-background/60 hover:bg-background/80 transition-all duration-200 border border-cyan-200/20 dark:border-cyan-800/20">
@@ -1152,62 +978,130 @@ export default function AnalyticsPage() {
         </CardHeader>
         <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 gap-1 bg-muted/50 p-1">
-              <TabsTrigger value="overview" className="text-xs sm:text-sm">Page Stats</TabsTrigger>
-              <TabsTrigger value="flow" className="text-xs sm:text-sm">Page Flow</TabsTrigger>
-              <TabsTrigger value="entry-exit" className="text-xs sm:text-sm">Entry & Exit</TabsTrigger>
-              <TabsTrigger value="paths" className="text-xs sm:text-sm">User Journeys</TabsTrigger>
-            </TabsList>
+            <ScrollArea className="w-full">
+              <TabsList className="bg-muted/50 inline-flex h-auto w-max min-w-full gap-1 p-1 sm:w-full sm:grid sm:grid-cols-4">
+                <TabsTrigger value="overview" className="shrink-0 px-3 text-xs sm:text-sm">
+                  Page Stats
+                </TabsTrigger>
+                <TabsTrigger value="flow" className="shrink-0 px-3 text-xs sm:text-sm">
+                  Page Flow
+                </TabsTrigger>
+                <TabsTrigger value="entry-exit" className="shrink-0 px-3 text-xs sm:text-sm">
+                  Entry & Exit
+                </TabsTrigger>
+                <TabsTrigger value="paths" className="shrink-0 px-3 text-xs sm:text-sm">
+                  User Journeys
+                </TabsTrigger>
+              </TabsList>
+            </ScrollArea>
 
             {/* Page Stats Tab */}
             <TabsContent value="overview" className="space-y-4 mt-0">
               {pageStats && pageStats.pages.length > 0 ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-4 gap-4 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    <span>Page</span>
-                    <span className="text-right">Views</span>
-                    <span className="text-right">Visitors</span>
-                    <span className="text-right">Avg. Time</span>
+                <>
+                  <div className="md:hidden space-y-3">
+                    {pageStats.pages.map((page, index) => {
+                      const cleanRoute = cleanAnalyticsPath(page.page)
+                      const maxViews = pageStats.pages[0]?.views || 1
+                      const barWidth = (page.views / maxViews) * 100
+                      return (
+                        <Card key={index} className="overflow-hidden">
+                          <CardContent className="relative p-4">
+                            <div
+                              className="bg-primary/5 pointer-events-none absolute inset-y-0 left-0"
+                              style={{ width: `${barWidth}%` }}
+                            />
+                            <div className="relative space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="bg-primary/10 text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold">
+                                    {index + 1}
+                                  </span>
+                                  <span className="font-mono text-sm break-all">{cleanRoute}</span>
+                                </div>
+                              </div>
+                              <div className="text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                <div>
+                                  <span className="text-xs uppercase tracking-wide">Views</span>
+                                  <div className="text-foreground font-semibold">
+                                    {page.views.toLocaleString()}{" "}
+                                    <span className="text-muted-foreground font-normal">
+                                      ({page.sharePercent}%)
+                                    </span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-xs uppercase tracking-wide">Visitors</span>
+                                  <div className="text-foreground font-medium">
+                                    {page.uniqueVisitors.toLocaleString()}
+                                  </div>
+                                </div>
+                                <div className="col-span-2">
+                                  <span className="text-xs uppercase tracking-wide">Avg. time</span>
+                                  <div>
+                                    <Badge variant="secondary" className="font-mono text-xs">
+                                      {formatDuration(page.avgDuration)}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
-                  {pageStats.pages.map((page, index) => {
-                    let cleanRoute = page.page
-                    try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
-                    if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
-                    const maxViews = pageStats.pages[0]?.views || 1
-                    const barWidth = (page.views / maxViews) * 100
 
-                    return (
-                      <div key={index} className="relative group rounded-xl overflow-hidden">
-                        <div
-                          className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent transition-all duration-700"
-                          style={{ width: `${barWidth}%` }}
-                        />
-                        <div className="relative grid grid-cols-4 gap-4 p-4 items-center hover:bg-muted/20 transition-colors">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
-                              {index + 1}
-                            </span>
-                            <span className="font-mono text-sm truncate">{cleanRoute}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="font-semibold text-sm">{page.views.toLocaleString()}</span>
-                            <span className="text-xs text-muted-foreground ml-1">({page.sharePercent}%)</span>
-                          </div>
-                          <div className="text-right font-medium text-sm">{page.uniqueVisitors.toLocaleString()}</div>
-                          <div className="text-right">
-                            <Badge variant="secondary" className="text-xs font-mono">
-                              {formatDuration(page.avgDuration)}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <div className="flex justify-between items-center px-4 pt-2 text-sm text-muted-foreground border-t">
+                  <div className="hidden md:block">
+                    <ScrollArea className="max-h-[min(28rem,60vh)] w-full rounded-md border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[45%]">Page</TableHead>
+                            <TableHead className="text-right">Views</TableHead>
+                            <TableHead className="text-right">Visitors</TableHead>
+                            <TableHead className="text-right">Avg. time</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pageStats.pages.map((page, index) => {
+                            const cleanRoute = cleanAnalyticsPath(page.page)
+                            return (
+                              <TableRow key={index}>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <span className="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold">
+                                      {index + 1}
+                                    </span>
+                                    <span className="font-mono text-sm">{cleanRoute}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-medium tabular-nums">
+                                  {page.views.toLocaleString()}
+                                  <span className="text-muted-foreground ml-1 text-xs font-normal">
+                                    ({page.sharePercent}%)
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums">
+                                  {page.uniqueVisitors.toLocaleString()}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant="secondary" className="font-mono text-xs">
+                                    {formatDuration(page.avgDuration)}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </div>
+                  <div className="text-muted-foreground flex flex-col gap-1 border-t pt-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                     <span>Total: {pageStats.totalViews.toLocaleString()} views</span>
                     <span>{pageStats.pages.length} pages tracked</span>
                   </div>
-                </div>
+                </>
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
                   <Layers className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -1244,12 +1138,8 @@ export default function AnalyticsPage() {
                     <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Top Page Transitions</h4>
                     <div className="space-y-2">
                       {pageFlow.links.slice(0, 15).map((link, index) => {
-                        let fromClean = link.source
-                        let toClean = link.target
-                        try { if (fromClean.includes('://')) fromClean = new URL(fromClean).pathname } catch {}
-                        try { if (toClean.includes('://')) toClean = new URL(toClean).pathname } catch {}
-                        if (!fromClean.startsWith('/')) fromClean = `/${fromClean}`
-                        if (!toClean.startsWith('/')) toClean = `/${toClean}`
+                        const fromClean = cleanAnalyticsPath(link.source)
+                        const toClean = cleanAnalyticsPath(link.target)
                         const maxVal = pageFlow.links[0]?.value || 1
                         const width = (link.value / maxVal) * 100
 
@@ -1286,9 +1176,7 @@ export default function AnalyticsPage() {
                           .sort((a, b) => b.sessions - a.sessions)
                           .slice(0, 12)
                           .map((node, index) => {
-                            let cleanRoute = node.id
-                            try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
-                            if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                            const cleanRoute = cleanAnalyticsPath(node.id)
                             return (
                               <div key={index} className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-primary/10 text-center">
                                 <div className="font-mono text-xs truncate mb-1">{cleanRoute}</div>
@@ -1329,9 +1217,7 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="space-y-2">
                         {entryExit.topEntryPages.map((item, index) => {
-                          let cleanRoute = item.page
-                          try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
-                          if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                          const cleanRoute = cleanAnalyticsPath(item.page)
                           const maxCount = entryExit.topEntryPages[0]?.count || 1
                           const barWidth = (item.count / maxCount) * 100
                           const pct = entryExit.totalSessions > 0 ? ((item.count / entryExit.totalSessions) * 100).toFixed(1) : '0'
@@ -1364,9 +1250,7 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="space-y-2">
                         {entryExit.topExitPages.map((item, index) => {
-                          let cleanRoute = item.page
-                          try { if (cleanRoute.includes('://')) cleanRoute = new URL(cleanRoute).pathname } catch {}
-                          if (!cleanRoute.startsWith('/')) cleanRoute = `/${cleanRoute}`
+                          const cleanRoute = cleanAnalyticsPath(item.page)
                           const maxCount = entryExit.topExitPages[0]?.count || 1
                           const barWidth = (item.count / maxCount) * 100
                           const pct = entryExit.totalSessions > 0 ? ((item.count / entryExit.totalSessions) * 100).toFixed(1) : '0'
@@ -1423,12 +1307,7 @@ export default function AnalyticsPage() {
                     <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Most Common Visitor Journeys</h4>
                     <div className="space-y-3">
                       {sessionPaths.paths.map((journey, index) => {
-                        const cleanPages = journey.pages.map(p => {
-                          let clean = p
-                          try { if (clean.includes('://')) clean = new URL(clean).pathname } catch {}
-                          if (!clean.startsWith('/')) clean = `/${clean}`
-                          return clean
-                        })
+                        const cleanPages = journey.pages.map((p) => cleanAnalyticsPath(p))
 
                         return (
                           <div key={index} className="p-4 rounded-xl bg-muted/20 hover:bg-muted/30 transition-colors border border-transparent hover:border-primary/10">
@@ -1471,13 +1350,6 @@ export default function AnalyticsPage() {
           </Tabs>
         </CardContent>
       </Card>
-
-      {/* Form Submissions Section */}
-      {website && (
-        <div className="grid grid-cols-1 gap-8">
-          <FormSubmissionsInfo websiteId={website.id} />
-        </div>
-      )}
 
       {/* Real-time Activity Section */}
        {shouldShowLiveActivity() && (
@@ -1544,29 +1416,6 @@ export default function AnalyticsPage() {
           </Card>
         </div>
       )}
-      {/* Footer Section */}
-      <Card className="app-card border-0 bg-gradient-to-r from-primary/5 via-primary/10 to-primary/5 shadow-lg">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="text-center md:text-left">
-              <h3 className="text-lg font-semibold mb-1">Analytics Dashboard</h3>
-              <p className="text-sm text-muted-foreground">
-                Real-time insights powered by advanced analytics • Last updated: {new Date().toLocaleString()}
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="outline" className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                Live Data
-              </Badge>
-              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </AppPageContainer>
   )
 }
