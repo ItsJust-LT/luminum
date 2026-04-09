@@ -29,7 +29,7 @@ function MailWorkspaceChrome({ children }: { children: React.ReactNode }) {
   else if (pathname === settingsHref || pathname.startsWith(`${settingsHref}/`)) section = "settings"
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-4rem)] md:max-h-[calc(100dvh-4rem)] md:flex-row">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:h-[calc(100dvh-4rem)] md:max-h-[calc(100dvh-4rem)] md:flex-row">
       <MailboxSidebar
         active={mailbox}
         onSelect={(m) => {
@@ -47,7 +47,7 @@ function MailWorkspaceChrome({ children }: { children: React.ReactNode }) {
         activeSection={section}
         className="md:h-full md:max-h-none md:w-[220px] md:min-w-[220px] md:shrink-0 md:border-b-0 md:border-r md:border-border/60 md:bg-muted/20 md:py-0"
       />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background/40">{children}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto md:overflow-hidden bg-background/40">{children}</div>
     </div>
   )
 }

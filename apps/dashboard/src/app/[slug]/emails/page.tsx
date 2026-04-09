@@ -601,7 +601,7 @@ export default function EmailsPage() {
   return (
     <AppPageContainer
       fullWidth
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 space-y-0 px-4 py-4 sm:px-5 sm:py-5 md:px-6 md:py-6"
+      className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 space-y-0 overflow-hidden px-4 py-4 sm:px-5 sm:py-5 md:px-6 md:py-6"
     >
       <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -682,7 +682,7 @@ export default function EmailsPage() {
           </motion.div>
 
       {/* Toolbar */}
-      <div className="space-y-5">
+      <div className="shrink-0 space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="relative flex-1 w-full min-w-0 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -792,7 +792,7 @@ export default function EmailsPage() {
       </div>
 
       {/* Email list: show cached list instantly when returning from detail */}
-      <div className="app-card flex min-h-[min(280px,50vh)] flex-1 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm md:min-h-0">
+      <div className="app-card flex min-h-[min(280px,50vh)] flex-1 min-h-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm md:min-h-0">
         {!hasCachedList(organization?.id ?? "") && (orgLoading || loading) ? (
           <div className="divide-y">
             {Array.from({ length: 8 }).map((_, i) => (

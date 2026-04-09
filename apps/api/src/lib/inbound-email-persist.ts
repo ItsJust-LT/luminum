@@ -75,6 +75,7 @@ export interface InboundEmailWebhookLikePayload {
 
 export interface PersistInboundEmailOptions {
   requestId?: string;
+  organizationId?: string | null;
 }
 
 export interface PersistInboundEmailResult {
@@ -82,6 +83,19 @@ export interface PersistInboundEmailResult {
   emailId: string;
   duplicate?: boolean;
   attachmentsProcessed: number;
+}
+
+function extractRecipientEmail(candidate: unknown): string | null {
+  if (typeof candidate === "string") {
+    const value = extractEmailAddress(candidate);
+    return value || null;
+  }
+  if (candidate && typeof candidate === "object") {
+    const c = candidate as { email?: unknown; address?: unknown };
+    if (typeof c.email === "string") return extractEmailAddress(c.email);
+    if (typeof c.address === "string") return extractEmailAddress(c.address);
+  }
+  return null;
 }
 
 /**
@@ -134,16 +148,26 @@ export async function persistInboundEmailFromPayload(
 
   let receivedAt = payload.receivedAt ? new Date(String(payload.receivedAt)) : new Date();
 
-  let organizationId: string | null = null;
+  let organizationId: string | null = options.organizationId ?? null;
   if (toString) {
     let toEmail: string | null = null;
     try {
       const parsed = JSON.parse(toString);
-      toEmail = Array.isArray(parsed) ? extractEmailAddress(parsed[0]) : extractEmailAddress(parsed);
+      if (Array.isArray(parsed)) {
+        for (const entry of parsed) {
+          const addr = extractRecipientEmail(entry);
+          if (addr) {
+            toEmail = addr;
+            break;
+          }
+        }
+      } else {
+        toEmail = extractRecipientEmail(parsed);
+      }
     } catch {
-      toEmail = extractEmailAddress(toString);
+      toEmail = extractRecipientEmail(toString);
     }
-    if (toEmail) organizationId = await findOrganizationByEmail(toEmail);
+    if (!organizationId && toEmail) organizationId = await findOrganizationByEmail(toEmail);
   }
 
   const subjectSanitized = payload.subject != null ? stripNul(String(payload.subject).trim()) || null : null;

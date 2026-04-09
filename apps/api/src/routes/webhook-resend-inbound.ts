@@ -109,19 +109,30 @@ router.post("/", async (req: Request, res: Response) => {
     }
     const em = received.data;
 
-    const attachmentPayloads: { filename: string; contentType: string; contentBase64: string }[] = [];
+    const attachmentPayloads: { filename: string; contentType: string; size?: number; contentBase64: string }[] = [];
     const attList = await resend.emails.receiving.attachments.list({ emailId });
-    const attRows = attList.data?.data ?? [];
+    const attRowsRaw = (attList as unknown as { data?: unknown })?.data;
+    const attRows = Array.isArray(attRowsRaw)
+      ? attRowsRaw
+      : (attRowsRaw as { data?: unknown[] } | undefined)?.data ?? [];
     for (const att of attRows) {
       try {
-        const url = att.download_url;
+        const row = att as {
+          download_url?: string;
+          filename?: string;
+          content_type?: string;
+          contentType?: string;
+          size?: number;
+        };
+        const url = row.download_url;
         if (!url) continue;
         const r = await fetch(url);
         if (!r.ok) continue;
         const buf = Buffer.from(await r.arrayBuffer());
         attachmentPayloads.push({
-          filename: att.filename || "attachment",
-          contentType: att.content_type || "application/octet-stream",
+          filename: row.filename || "attachment",
+          contentType: row.content_type || row.contentType || "application/octet-stream",
+          size: typeof row.size === "number" ? row.size : buf.length,
           contentBase64: buf.toString("base64"),
         });
       } catch {
@@ -141,7 +152,7 @@ router.post("/", async (req: Request, res: Response) => {
         receivedAt: em.created_at,
         attachments: attachmentPayloads.length ? attachmentPayloads : undefined,
       },
-      { requestId }
+      { requestId, organizationId }
     );
 
     return res.status(200).json({ ok: true, emailId: result.emailId, duplicate: result.duplicate });
