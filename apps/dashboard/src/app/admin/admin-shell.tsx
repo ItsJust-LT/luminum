@@ -140,7 +140,7 @@ export default function AdminShell({
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
+      <div className="flex min-h-screen w-full bg-background/55 backdrop-blur-md">
         <div className="hidden md:block">
           <AdminSidebar
             sessionUser={{ name: session?.user?.name, image: session?.user?.image }}
@@ -150,7 +150,7 @@ export default function AdminShell({
         </div>
 
         <SidebarInset className="flex-1 flex flex-col">
-          <header className="bg-background/95 sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b px-4 backdrop-blur md:px-6">
+          <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-background/75 px-3 backdrop-blur-xl md:px-6">
             <SidebarTrigger className="hover:bg-accent hidden -ml-1 rounded-md transition-colors md:flex" />
 
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
@@ -168,7 +168,7 @@ export default function AdminShell({
                 <div className="flex flex-col h-full">
                   <div className="p-4 border-b border-border/50">
                     <div className="flex items-center gap-3">
-                      <div className="bg-primary text-primary-foreground grid h-10 w-10 place-items-center rounded-lg">
+                      <div className="bg-primary/90 text-primary-foreground grid h-10 w-10 place-items-center rounded-2xl shadow-sm">
                         <Crown className="h-5 w-5" />
                       </div>
                       <div>
@@ -243,10 +243,7 @@ export default function AdminShell({
               </Breadcrumb>
 
               <div className="flex items-center gap-2 min-w-0">
-              <Badge
-                variant="secondary"
-                  className="hidden px-2 py-0.5 text-xs sm:inline-flex"
-              >
+              <Badge variant="secondary" className="bg-primary/15 text-primary border-primary/30 hidden border px-2 py-0.5 text-xs sm:inline-flex">
                 <Shield className="h-3 w-3 mr-1" />
                 Admin
               </Badge>
@@ -307,7 +304,7 @@ export default function AdminShell({
           <main
             className={cn(
               "flex-1 min-h-0 flex flex-col",
-              pathname?.startsWith("/admin/database") ? "overflow-hidden" : "overflow-auto"
+              pathname?.startsWith("/admin/database") ? "overflow-hidden" : "overflow-auto px-3 py-3 sm:px-4 md:px-6 md:py-5"
             )}
           >
             {children}

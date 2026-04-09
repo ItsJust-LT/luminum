@@ -25,13 +25,13 @@ import { cn } from '@/lib/utils'
 function getRoleColor(role: string) {
   switch (role) {
     case 'owner':
-      return 'bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 dark:from-violet-950/50 dark:to-purple-950/50 dark:text-violet-300 ring-1 ring-violet-200/50 dark:ring-violet-800/30'
+      return 'bg-primary/15 text-primary border border-primary/30'
     case 'admin':
-      return 'bg-gradient-to-r from-slate-50 to-gray-50 text-slate-700 dark:from-slate-900/50 dark:to-gray-900/50 dark:text-slate-300 ring-1 ring-slate-200/50 dark:ring-slate-700/30'
+      return 'bg-chart-2/15 text-chart-2 border border-chart-2/35'
     case 'member':
-      return 'bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 dark:from-emerald-950/50 dark:to-green-950/50 dark:text-emerald-300 ring-1 ring-emerald-200/50 dark:ring-emerald-800/30'
+      return 'bg-chart-5/15 text-chart-5 border border-chart-5/35'
     default:
-      return 'bg-muted/50 text-muted-foreground ring-1 ring-border/30'
+      return 'bg-muted/70 text-muted-foreground border border-border/60'
   }
 }
 
@@ -85,17 +85,17 @@ export function AppShellLayout({
   const brandSrc = organizationLogo?.trim() || '/images/logo.png'
 
   return (
-    <div className="mobile-app-root flex min-h-[100dvh] flex-col bg-background touch-manipulation">
+    <div className="mobile-app-root flex min-h-[100dvh] flex-col bg-background/80 touch-manipulation backdrop-blur-xl">
       <header
         className={cn(
-          'sticky top-0 z-50 flex shrink-0 items-center gap-2.5 backdrop-blur-md px-4 pt-[env(safe-area-inset-top)]',
+          'sticky top-0 z-50 flex shrink-0 items-center gap-2.5 border-b border-border/50 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl',
           chrome.headerSurface,
         )}
         style={{ height: 'calc(3.25rem + env(safe-area-inset-top, 0px))' }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <div className="flex shrink-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-primary/10">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary/15 ring-1 ring-primary/25">
               <Image
                 src={brandSrc}
                 alt={organizationName || 'Luminum'}
@@ -105,7 +105,7 @@ export function AppShellLayout({
                 unoptimized
               />
             </div>
-            <span className="truncate text-[15px] font-semibold text-foreground tracking-tight">{organizationName}</span>
+            <span className="truncate text-[15px] font-semibold text-foreground tracking-tight md:text-base">{organizationName}</span>
           </div>
         </div>
 
@@ -149,9 +149,9 @@ export function AppShellLayout({
 
       <main
         className={cn(
-          'min-h-0 flex-1 overflow-auto pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]',
+          'min-h-0 flex-1 overflow-auto pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] pt-3 md:pt-4',
           chrome.mainSurface,
-          isWhatsappRoute || isMailRoute ? 'p-0 overflow-hidden min-h-0 flex flex-col' : 'p-4',
+          isWhatsappRoute || isMailRoute ? 'p-0 overflow-hidden min-h-0 flex flex-col' : 'px-3 pb-5 sm:px-4 md:px-6',
         )}
       >
         {children}

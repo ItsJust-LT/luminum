@@ -431,11 +431,11 @@ export default function SlugLayout({
   const getRoleColor = (role: string) => {
     switch (role) {
       case "owner":
-        return "bg-secondary text-secondary-foreground border"
+        return "bg-primary/15 text-primary border-primary/35 border"
       case "admin":
-        return "bg-secondary text-secondary-foreground border"
+        return "bg-chart-2/15 text-chart-2 border-chart-2/35 border"
       case "member":
-        return "bg-secondary text-secondary-foreground border"
+        return "bg-chart-5/15 text-chart-5 border-chart-5/35 border"
       default:
         return "bg-muted text-muted-foreground border"
     }
@@ -650,7 +650,7 @@ export default function SlugLayout({
       <UserNotificationProvider>
         <EmailsProvider>
         <SidebarProvider>
-        <div className="flex min-h-screen w-full">
+        <div className="flex min-h-screen w-full bg-background/55 backdrop-blur-md">
           {/* Desktop Sidebar */}
           <div className="hidden md:block">
             <OrganizationSidebarWrapper
@@ -682,7 +682,7 @@ export default function SlugLayout({
 
           <SidebarInset className="flex-1">
             {/* Enhanced Responsive Header */}
-            <header className="bg-background/95 sticky top-0 z-50 flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur md:gap-4 md:px-8">
+            <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-3 border-b border-border/60 bg-background/75 px-3 backdrop-blur-xl md:gap-4 md:px-6 lg:px-8">
               {/* Desktop Sidebar Trigger */}
               <SidebarTrigger className="hover:bg-accent hidden rounded-md p-2 md:flex" />
 
@@ -691,7 +691,7 @@ export default function SlugLayout({
 
               {/* Brand Section */}
               <div className="flex min-w-0 items-center gap-3">
-                <div className="bg-muted flex-shrink-0 rounded-md p-2">
+                <div className="bg-primary/10 ring-primary/20 flex-shrink-0 rounded-2xl p-2 ring-1">
                   <Image
                     src={
                       isCustomDomain && state.organization
@@ -745,7 +745,7 @@ export default function SlugLayout({
                 </div>
 
                 <Badge
-                  className={`${getRoleColor(state.userRole || "member")} hidden md:inline-flex text-xs font-medium px-3 py-1 rounded-full border-0 shadow-sm capitalize`}
+                  className={`${getRoleColor(state.userRole || "member")} hidden md:inline-flex text-xs font-medium px-3 py-1 rounded-full capitalize`}
                   variant="secondary"
                 >
                   {(state.userRole || "member").replace(/^./, (c) => c.toUpperCase())}
@@ -829,8 +829,8 @@ export default function SlugLayout({
             </header>
 
             <main className={cn(
-              "flex-1 bg-background/50 min-h-0 flex flex-col",
-              isWhatsappRoute || isMailRoute ? "overflow-hidden p-0" : "overflow-auto p-3 md:p-6",
+              "flex-1 min-h-0 flex flex-col bg-transparent",
+              isWhatsappRoute || isMailRoute ? "overflow-hidden p-0" : "overflow-auto px-3 py-3 sm:px-4 md:px-6 md:py-5 lg:px-8",
             )}>
               <OrgRouteGuard slug={slug} flatRoutes={flatRoutes}>
                 {children}

@@ -149,8 +149,7 @@ export default async function RootLayout({
         <meta name="format-detection" content="date=no" />
         <meta name="format-detection" content="address=no" />
         <meta name="format-detection" content="email=no" />
-      <body
-      >
+      <body className="min-h-screen bg-background text-foreground antialiased">
 <Providers>
         <MobilePwaGate>
         {children}
@@ -174,11 +173,14 @@ export default async function RootLayout({
 // Component to handle PWA updates
 function PWAUpdatePrompt() {
   return (
-    <div id="pwa-update-available" className="hidden fixed bottom-4 right-4 bg-blue-600 text-white p-4 rounded-lg shadow-lg z-50">
+    <div
+      id="pwa-update-available"
+      className="bg-popover/90 text-popover-foreground border-border/70 hidden fixed right-4 bottom-4 z-50 rounded-lg border p-4 shadow-lg backdrop-blur-md"
+    >
       <p className="text-sm font-medium">App update available!</p>
       <button 
         id="pwa-refresh" 
-        className="mt-2 bg-white text-blue-600 px-3 py-1 rounded text-sm font-medium hover:bg-gray-100"
+        className="bg-primary text-primary-foreground mt-2 rounded-md px-3 py-1 text-sm font-medium hover:bg-primary/90"
       >
         Refresh
       </button>
