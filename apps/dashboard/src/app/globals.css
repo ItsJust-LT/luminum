@@ -220,5 +220,82 @@
     min-height: 2.75rem;
     min-width: 2.75rem;
   }
+
+  /*
+   * Strict dashboard harmonization:
+   * force legacy hardcoded palette/gradients toward shadcn semantic tokens.
+   * This keeps page-level visual language consistent without requiring per-page rewrites.
+   */
+  [class*="bg-gradient-to-"],
+  [class*="bg-gradient-to-r"],
+  [class*="bg-gradient-to-l"],
+  [class*="bg-gradient-to-b"],
+  [class*="bg-gradient-to-t"],
+  [class*="bg-gradient-to-br"],
+  [class*="bg-gradient-to-bl"],
+  [class*="bg-gradient-to-tr"],
+  [class*="bg-gradient-to-tl"] {
+    background-image: none !important;
+    background-color: color-mix(in oklab, var(--card) 70%, transparent) !important;
+    backdrop-filter: blur(12px);
+  }
+
+  [class*="text-blue-"],
+  [class*="text-indigo-"],
+  [class*="text-violet-"],
+  [class*="text-purple-"],
+  [class*="text-cyan-"],
+  [class*="text-sky-"],
+  [class*="text-teal-"] {
+    color: var(--primary) !important;
+  }
+
+  [class*="text-emerald-"],
+  [class*="text-green-"] {
+    color: var(--accent-foreground) !important;
+  }
+
+  [class*="text-amber-"],
+  [class*="text-orange-"] {
+    color: var(--secondary-foreground) !important;
+  }
+
+  [class*="text-red-"] {
+    color: var(--destructive) !important;
+  }
+
+  [class*="bg-blue-"],
+  [class*="bg-indigo-"],
+  [class*="bg-violet-"],
+  [class*="bg-purple-"],
+  [class*="bg-cyan-"],
+  [class*="bg-sky-"],
+  [class*="bg-teal-"] {
+    background-color: color-mix(in oklab, var(--primary) 12%, transparent) !important;
+  }
+
+  [class*="bg-emerald-"],
+  [class*="bg-green-"] {
+    background-color: color-mix(in oklab, var(--accent) 60%, transparent) !important;
+  }
+
+  [class*="bg-amber-"],
+  [class*="bg-orange-"] {
+    background-color: color-mix(in oklab, var(--secondary) 70%, transparent) !important;
+  }
+
+  [class*="bg-red-"] {
+    background-color: color-mix(in oklab, var(--destructive) 18%, transparent) !important;
+  }
+
+  [class*="rounded-3xl"],
+  [class*="rounded-4xl"] {
+    border-radius: var(--radius-2xl) !important;
+  }
+
+  [class*="shadow-xl"],
+  [class*="shadow-2xl"] {
+    box-shadow: 0 6px 18px color-mix(in oklab, var(--foreground) 12%, transparent) !important;
+  }
 }
 
