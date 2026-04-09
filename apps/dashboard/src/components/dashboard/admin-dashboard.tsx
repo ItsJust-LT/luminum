@@ -34,14 +34,12 @@ const StatCard = ({
   value, 
   subtitle, 
   icon: Icon, 
-  gradient, 
   loading 
 }: { 
   title: string
   value: string | number
   subtitle?: string
   icon: any
-  gradient: string
   loading?: boolean
 }) => (
   <motion.div
@@ -49,28 +47,11 @@ const StatCard = ({
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.3 }}
   >
-    <Card className={cn(
-      "border-0 shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl",
-      `bg-gradient-to-br ${gradient}`
-    )}>
+    <Card className="shadow-sm overflow-hidden transition-shadow hover:shadow-md">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-semibold text-foreground/90">{title}</CardTitle>
-        <div className={cn(
-          "p-2 rounded-lg shadow-sm",
-          gradient.includes("green") ? "bg-green-100/50 dark:bg-green-900/30" :
-          gradient.includes("blue") ? "bg-blue-100/50 dark:bg-blue-900/30" :
-          gradient.includes("purple") ? "bg-purple-100/50 dark:bg-purple-900/30" :
-          gradient.includes("orange") ? "bg-orange-100/50 dark:bg-orange-900/30" :
-          "bg-muted/50"
-        )}>
-          <Icon className={cn(
-            "h-4 w-4",
-            gradient.includes("green") ? "text-green-700 dark:text-green-300" :
-            gradient.includes("blue") ? "text-blue-700 dark:text-blue-300" :
-            gradient.includes("purple") ? "text-purple-700 dark:text-purple-300" :
-            gradient.includes("orange") ? "text-orange-700 dark:text-orange-300" :
-            "text-muted-foreground"
-          )} />
+        <div className="bg-primary/10 p-2 rounded-lg">
+          <Icon className="h-4 w-4 text-primary" />
         </div>
       </CardHeader>
       <CardContent>
@@ -150,15 +131,15 @@ export function AdminDashboard() {
     const status = org.subscriptionStatus || "active"
     switch (status) {
       case 'active':
-        return { status: 'Active', color: 'bg-green-500/10 text-green-600 dark:text-green-300 border-green-500/20' }
+        return { status: 'Active', color: 'bg-secondary text-secondary-foreground border' }
       case 'trialing':
-        return { status: 'Trial', color: 'bg-blue-500/10 text-blue-600 dark:text-blue-300 border-blue-500/20' }
+        return { status: 'Trial', color: 'bg-secondary text-secondary-foreground border' }
       case 'past_due':
-        return { status: 'Past Due', color: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-300 border-yellow-500/20' }
+        return { status: 'Past Due', color: 'bg-secondary text-secondary-foreground border' }
       case 'canceled':
-        return { status: 'Canceled', color: 'bg-red-500/10 text-red-600 dark:text-red-300 border-red-500/20' }
+        return { status: 'Canceled', color: 'bg-destructive/10 text-destructive border-destructive/30 border' }
       default:
-        return { status: status || 'Unknown', color: 'bg-gray-500/10 text-gray-600 dark:text-gray-300 border-gray-500/20' }
+        return { status: status || 'Unknown', color: 'bg-muted text-muted-foreground border' }
     }
   }
 
@@ -220,7 +201,6 @@ export function AdminDashboard() {
             value={loading ? "—" : formatCurrency(stats?.organizations.totalRevenue || 0, 'ZAR')}
             subtitle={loading ? "" : `+${formatCurrency(stats?.organizations.monthlyRevenue || 0, 'ZAR')} this month`}
             icon={DollarSign}
-            gradient="from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20"
             loading={loading}
           />
           <StatCard
@@ -228,7 +208,6 @@ export function AdminDashboard() {
             value={loading ? "—" : stats?.organizations.total || 0}
             subtitle={loading ? "" : `${stats?.organizations.active || 0} active • ${stats?.organizations.withSubscriptions || 0} with subscriptions`}
             icon={Building2}
-            gradient="from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20"
             loading={loading}
           />
           <StatCard
@@ -236,7 +215,6 @@ export function AdminDashboard() {
             value={loading ? "—" : stats?.users.total || 0}
             subtitle={loading ? "" : `${stats?.users.active || 0} active • +${stats?.users.newThisMonth || 0} new this month`}
             icon={Users}
-            gradient="from-purple-50 to-violet-50 dark:from-purple-950/20 dark:to-violet-950/20"
             loading={loading}
           />
           <StatCard
@@ -244,14 +222,13 @@ export function AdminDashboard() {
             value={loading ? "—" : `${stats?.growth.orgGrowthRate || 0}%`}
             subtitle={loading ? "" : "Organization growth"}
             icon={TrendingUp}
-            gradient="from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20"
             loading={loading}
           />
         </div>
 
         {/* Secondary Stats */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card className="border-0 shadow-md bg-card/50 backdrop-blur-sm">
+          <Card className="shadow-sm bg-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Activity className="h-4 w-4 text-primary" />
@@ -277,7 +254,7 @@ export function AdminDashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md bg-card/50 backdrop-blur-sm">
+          <Card className="shadow-sm bg-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Zap className="h-4 w-4 text-primary" />
@@ -303,7 +280,7 @@ export function AdminDashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md bg-card/50 backdrop-blur-sm">
+          <Card className="shadow-sm bg-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-primary" />
@@ -416,7 +393,7 @@ export function AdminDashboard() {
                               <div className="flex items-center gap-3 flex-1 min-w-0">
                                 <Avatar className="h-10 w-10 ring-2 ring-primary/20 group-hover:ring-primary/40 transition-all">
                                   <AvatarImage src={org.logo || ""} />
-                                  <AvatarFallback className="bg-gradient-to-br from-primary/10 to-primary/20 text-primary font-bold">
+                                  <AvatarFallback className="bg-primary/10 text-primary font-bold">
                                     {org.name?.[0]?.toUpperCase() || "O"}
                                   </AvatarFallback>
                                 </Avatar>

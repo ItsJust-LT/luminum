@@ -23,6 +23,15 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Building2, Settings, LogOut, ChevronDown, AlertTriangle, Menu } from "lucide-react"
 import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Separator } from "@/components/ui/separator"
 import { OrganizationProvider } from "@/lib/contexts/organization-context"
 import { EmailsProvider } from "@/lib/contexts/emails-context"
 import { OrganizationSidebarWrapper } from "@/components/organization/organization-sidebar-wrapper"
@@ -422,13 +431,13 @@ export default function SlugLayout({
   const getRoleColor = (role: string) => {
     switch (role) {
       case "owner":
-        return "bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 dark:from-violet-950/50 dark:to-purple-950/50 dark:text-violet-300 ring-1 ring-violet-200/50 dark:ring-violet-800/30"
+        return "bg-secondary text-secondary-foreground border"
       case "admin":
-        return "bg-gradient-to-r from-slate-50 to-gray-50 text-slate-700 dark:from-slate-900/50 dark:to-gray-900/50 dark:text-slate-300 ring-1 ring-slate-200/50 dark:ring-slate-700/30"
+        return "bg-secondary text-secondary-foreground border"
       case "member":
-        return "bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-700 dark:from-emerald-950/50 dark:to-green-950/50 dark:text-emerald-300 ring-1 ring-emerald-200/50 dark:ring-emerald-800/30"
+        return "bg-secondary text-secondary-foreground border"
       default:
-        return "bg-muted/50 text-muted-foreground ring-1 ring-border/30"
+        return "bg-muted text-muted-foreground border"
     }
   }
 
@@ -673,16 +682,16 @@ export default function SlugLayout({
 
           <SidebarInset className="flex-1">
             {/* Enhanced Responsive Header */}
-            <header className="sticky top-0 z-50 flex h-16 md:h-18 shrink-0 items-center gap-3 md:gap-4 border-b border-border/40 bg-background/98 backdrop-blur-md px-4 md:px-8 shadow-sm transition-all duration-200">
+            <header className="bg-background/95 sticky top-0 z-50 flex h-16 shrink-0 items-center gap-3 border-b px-4 backdrop-blur md:gap-4 md:px-8">
               {/* Desktop Sidebar Trigger */}
-              <SidebarTrigger className="hidden md:flex -ml-1 hover:bg-muted/60 rounded-xl p-2 transition-colors duration-200" />
+              <SidebarTrigger className="hover:bg-accent hidden rounded-md p-2 md:flex" />
 
               {/* Mobile Menu Trigger */}
               <MobileMenu />
 
               {/* Brand Section */}
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2 bg-gradient-to-br from-primary/15 to-primary/5 rounded-xl flex-shrink-0 ring-1 ring-primary/10">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="bg-muted flex-shrink-0 rounded-md p-2">
                   <Image
                     src={
                       isCustomDomain && state.organization
@@ -696,7 +705,7 @@ export default function SlugLayout({
                     unoptimized={isCustomDomain && !!state.organization}
                   />
                 </div>
-                <div className="flex flex-col min-w-0">
+                <div className="flex min-w-0 flex-col">
                   <span className="font-semibold text-foreground text-sm md:text-base tracking-tight truncate">
                     {isCustomDomain ? (state.organization?.name || "Dashboard") : "Luminum Agency"}
                   </span>
@@ -706,18 +715,31 @@ export default function SlugLayout({
                 </div>
               </div>
 
-             
+              <Separator orientation="vertical" className="hidden h-6 md:block" />
+              <Breadcrumb className="hidden md:block">
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href={orgNavPath(slug, flatRoutes, "dashboard")}>Dashboard</BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage className="capitalize">
+                      {pathname?.split("/").filter(Boolean).at(-1) ?? "overview"}
+                    </BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
 
               {/* Right Section */}
               <div className="ml-auto flex items-center gap-2 md:gap-4">
                 <div className="hidden sm:block">
-                  <div className="p-1 rounded-lg hover:bg-muted/50 transition-colors duration-200">
+                  <div className="rounded-lg p-1">
                     <ThemeToggle />
                   </div>
                 </div>
 
                 <div className="relative">
-                  <div className="p-1 rounded-lg hover:bg-muted/50 transition-colors duration-200">
+                  <div className="rounded-lg p-1">
                     <NotificationBell />
                   </div>
                 </div>
@@ -734,11 +756,11 @@ export default function SlugLayout({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="flex items-center gap-2 md:gap-3 hover:bg-muted/60 h-10 md:h-11 px-3 md:px-4 rounded-xl transition-all duration-200 border border-transparent hover:border-border/50"
+                      className="hover:bg-accent flex h-10 items-center gap-2 rounded-lg border border-transparent px-3 md:h-11 md:gap-3 md:px-4"
                     >
-                      <Avatar className="h-7 w-7 md:h-8 md:w-8 ring-2 ring-background shadow-sm">
+                      <Avatar className="h-7 w-7 border md:h-8 md:w-8">
                         <AvatarImage src={session?.user?.image || ""} />
-                        <AvatarFallback className="text-sm font-semibold bg-primary/10 text-primary">
+                        <AvatarFallback className="bg-muted text-sm font-semibold text-foreground">
                           {session?.user?.name?.charAt(0).toUpperCase() || "U"}
                         </AvatarFallback>
                       </Avatar>

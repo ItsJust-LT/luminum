@@ -43,6 +43,14 @@ import {
   Terminal,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Separator } from "@/components/ui/separator"
 import NotificationBell from "@/components/NotificationBell"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { cn } from "@/lib/utils"
@@ -142,8 +150,8 @@ export default function AdminShell({
         </div>
 
         <SidebarInset className="flex-1 flex flex-col">
-          <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border/40 bg-background/80 backdrop-blur-xl px-4 md:px-6">
-            <SidebarTrigger className="hidden md:flex -ml-1 hover:bg-muted/50 rounded-lg transition-colors" />
+          <header className="bg-background/95 sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b px-4 backdrop-blur md:px-6">
+            <SidebarTrigger className="hover:bg-accent hidden -ml-1 rounded-md transition-colors md:flex" />
 
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
               <SheetTrigger asChild>
@@ -160,8 +168,8 @@ export default function AdminShell({
                 <div className="flex flex-col h-full">
                   <div className="p-4 border-b border-border/50">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 grid place-items-center">
-                        <Crown className="h-5 w-5 text-white" />
+                      <div className="bg-primary text-primary-foreground grid h-10 w-10 place-items-center rounded-lg">
+                        <Crown className="h-5 w-5" />
                       </div>
                       <div>
                         <p className="font-bold text-sm">Admin Console</p>
@@ -217,10 +225,27 @@ export default function AdminShell({
               </SheetContent>
             </Sheet>
 
-            <div className="flex items-center gap-2 min-w-0">
+              <Separator orientation="vertical" className="hidden h-6 md:block" />
+              <Breadcrumb className="hidden md:block">
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>Admin</BreadcrumbPage>
+                  </BreadcrumbItem>
+                  {pathname !== "/admin" && (
+                    <>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="capitalize">{pathname.split("/").at(-1)}</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  )}
+                </BreadcrumbList>
+              </Breadcrumb>
+
+              <div className="flex items-center gap-2 min-w-0">
               <Badge
                 variant="secondary"
-                className="bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs px-2 py-0.5 hidden sm:inline-flex"
+                  className="hidden px-2 py-0.5 text-xs sm:inline-flex"
               >
                 <Shield className="h-3 w-3 mr-1" />
                 Admin
@@ -239,11 +264,11 @@ export default function AdminShell({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="flex items-center gap-2 hover:bg-muted/50 h-9 px-2 md:px-3 transition-all duration-200"
+                    className="hover:bg-accent flex h-9 items-center gap-2 px-2 transition-colors md:px-3"
                   >
-                    <Avatar className="h-7 w-7 md:h-8 md:w-8 ring-2 ring-primary/10">
+                    <Avatar className="h-7 w-7 border md:h-8 md:w-8">
                       <AvatarImage src={session?.user?.image || ""} />
-                      <AvatarFallback className="bg-gradient-to-br from-primary/80 to-primary text-primary-foreground font-bold text-xs">
+                      <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                         {session?.user?.name?.charAt(0).toUpperCase() || "A"}
                       </AvatarFallback>
                     </Avatar>

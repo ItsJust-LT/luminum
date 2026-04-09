@@ -483,7 +483,7 @@ export function FormsPage() {
           <p className="text-muted-foreground text-sm sm:text-base mt-1 sm:mt-2">
               Manage and respond to form submissions from your website
               {filteredSubmissions.length !== submissions.length && (
-                <span className="ml-2 text-sm font-medium text-blue-600">
+                <span className="text-primary ml-2 text-sm font-medium">
                   ({filteredSubmissions.length} of {submissions.length} shown)
                 </span>
               )}
@@ -521,9 +521,9 @@ export function FormsPage() {
                     <Button variant="outline" className="flex items-center gap-2">
                       {sortBy === "not_contacted" && <XCircle className="h-4 w-4 text-orange-500" />}
                       {sortBy === "contacted" && <CheckCircle className="h-4 w-4 text-green-500" />}
-                      {sortBy === "latest" && <ArrowDown className="h-4 w-4 text-blue-500" />}
-                      {sortBy === "oldest" && <ArrowUp className="h-4 w-4 text-blue-500" />}
-                      {sortBy === "new" && <EyeOff className="h-4 w-4 text-red-500" />}
+                      {sortBy === "latest" && <ArrowDown className="text-primary h-4 w-4" />}
+                      {sortBy === "oldest" && <ArrowUp className="text-primary h-4 w-4" />}
+                      {sortBy === "new" && <EyeOff className="text-destructive h-4 w-4" />}
                       {sortBy === "seen" && <Eye className="h-4 w-4 text-gray-500" />}
                       <span className="capitalize">
                         {sortBy.replace('_', ' ')}
@@ -541,15 +541,15 @@ export function FormsPage() {
                       Contacted
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setSortBy("latest")}>
-                      <ArrowDown className="h-4 w-4 mr-2 text-blue-500" />
+                      <ArrowDown className="text-primary mr-2 h-4 w-4" />
                       Latest First
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setSortBy("oldest")}>
-                      <ArrowUp className="h-4 w-4 mr-2 text-blue-500" />
+                      <ArrowUp className="text-primary mr-2 h-4 w-4" />
                       Oldest First
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setSortBy("new")}>
-                      <EyeOff className="h-4 w-4 mr-2 text-red-500" />
+                      <EyeOff className="text-destructive mr-2 h-4 w-4" />
                       New (Unseen)
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setSortBy("seen")}>
@@ -719,7 +719,7 @@ export function FormsPage() {
                           <DropdownMenuContent align="end">
                             {contactMethods.email && (
                               <DropdownMenuItem onClick={() => handleEmailSubmission(contactMethods.email!)}>
-                                <Mail className="h-4 w-4 mr-2 text-blue-500" />
+                                <Mail className="text-primary mr-2 h-4 w-4" />
                                 Send Email
                               </DropdownMenuItem>
                             )}
@@ -898,7 +898,7 @@ export function FormsPage() {
                                 <DropdownMenuContent align="end">
                                   {contactMethods.email && (
                                     <DropdownMenuItem onClick={() => handleEmailSubmission(contactMethods.email!)}>
-                                      <Mail className="h-4 w-4 mr-2 text-blue-500" />
+                                      <Mail className="text-primary mr-2 h-4 w-4" />
                                       Send Email
                                     </DropdownMenuItem>
                                   )}

@@ -4,6 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Pie, PieChart, Cell } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import {
@@ -68,16 +75,11 @@ const DATE_RANGES = [
 
 // Enhanced color palette for charts
 const CHART_COLORS = [
-  '#3b82f6', // Blue
-  '#10b981', // Emerald
-  '#f59e0b', // Amber
-  '#ef4444', // Red
-  '#8b5cf6', // Violet
-  '#06b6d4', // Cyan
-  '#84cc16', // Lime
-  '#f97316', // Orange
-  '#ec4899', // Pink
-  '#6366f1', // Indigo
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ]
 
 // Country code to emoji mapping
@@ -667,19 +669,18 @@ export default function AnalyticsPage() {
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <Calendar className="h-5 w-5 text-muted-foreground shrink-0" />
                 <span className="text-sm font-medium text-foreground shrink-0">Time Range:</span>
-                <div className="flex flex-wrap gap-1 p-1 bg-muted rounded-lg">
-                  {DATE_RANGES.map((range) => (
-                    <Button
-                      key={range.value}
-                      variant={dateRange === range.value ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => setDateRange(range.value)}
-                      className={`app-touch ${dateRange === range.value ? "shadow-sm" : "hover:bg-background/50"}`}
-                    >
-                      {range.label}
-                    </Button>
-                  ))}
-                </div>
+                <Select value={dateRange} onValueChange={setDateRange}>
+                  <SelectTrigger className="w-[220px] bg-background">
+                    <SelectValue placeholder="Select a date range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATE_RANGES.map((range) => (
+                      <SelectItem key={range.value} value={range.value}>
+                        {range.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             
@@ -992,22 +993,14 @@ export default function AnalyticsPage() {
                         className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-primary/10"
                         style={{ borderLeftColor: CHART_COLORS[index % CHART_COLORS.length], borderLeftWidth: '3px' }}
                       >
-                        <div className="p-2 rounded-lg" style={{ backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}15` }}>
+                        <div className="bg-muted p-2 rounded-lg">
                           {getDeviceIcon(device.key)}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold capitalize text-sm">{device.key}</div>
                           <div className="text-xs text-muted-foreground">{percentage.toFixed(1)}%</div>
                         </div>
-                        <Badge 
-                          variant="secondary" 
-                          className="text-xs font-semibold"
-                          style={{ 
-                            backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}20`,
-                            color: CHART_COLORS[index % CHART_COLORS.length],
-                            border: `1px solid ${CHART_COLORS[index % CHART_COLORS.length]}40`
-                          }}
-                        >
+                        <Badge variant="secondary" className="text-xs font-semibold border">
                           {(device.count || 0).toLocaleString()}
                         </Badge>
                       </div>
@@ -1042,19 +1035,14 @@ export default function AnalyticsPage() {
                 {topCountries.slice(0, 8).map((country, index) => {
                   const totalCountries = topCountries.reduce((sum, c) => sum + (c.count || 0), 0)
                   const percentage = totalCountries > 0 ? ((country.count || 0) / totalCountries) * 100 : 0
-                  const countryColor = CHART_COLORS[index % CHART_COLORS.length]
-
                   return (
                     <div
                       key={index}
                       className="flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-all duration-200 hover:scale-[1.02] border border-transparent hover:border-primary/10"
                     >
                       <div className="flex items-center gap-4">
-                        <div 
-                          className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg"
-                          style={{ 
-                            background: `linear-gradient(135deg, ${countryColor}dd, ${countryColor})` 
-                          }}
+                        <div
+                          className="text-primary-foreground bg-primary w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-lg"
                         >
                           {index + 1}
                         </div>
@@ -1069,22 +1057,13 @@ export default function AnalyticsPage() {
                       <div className="flex items-center gap-3">
                         <div className="w-20 h-3 bg-muted rounded-full overflow-hidden">
                           <div
-                            className="h-full rounded-full transition-all duration-700 ease-out"
+                            className="bg-primary h-full rounded-full transition-all duration-700 ease-out"
                             style={{ 
                               width: `${percentage}%`,
-                              background: `linear-gradient(90deg, ${countryColor}80, ${countryColor})`
                             }}
                           />
                         </div>
-                        <Badge 
-                          variant="secondary" 
-                          className="font-semibold px-3 py-1"
-                          style={{
-                            backgroundColor: `${countryColor}20`,
-                            color: countryColor,
-                            border: `1px solid ${countryColor}40`
-                          }}
-                        >
+                        <Badge variant="secondary" className="font-semibold px-3 py-1 border">
                           {(country.count || 0).toLocaleString()}
                         </Badge>
                       </div>

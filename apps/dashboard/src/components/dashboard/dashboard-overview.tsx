@@ -148,7 +148,7 @@ export function DashboardOverview({
           {[1, 2, 3, 4].map((i) => (
             <Card key={i} className="border-0 bg-card/50 shadow-sm app-card overflow-hidden">
               <CardContent className="p-4 sm:p-6 text-center">
-                <Skeleton className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl mx-auto mb-3 sm:mb-4" />
+                <Skeleton className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg mx-auto mb-3 sm:mb-4" />
                 <Skeleton className="h-6 sm:h-8 w-14 sm:w-20 mx-auto mb-2" />
                 <Skeleton className="h-3 sm:h-4 w-20 sm:w-24 mx-auto" />
               </CardContent>
@@ -191,76 +191,76 @@ export function DashboardOverview({
           Last 7 days
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
-          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/50 dark:to-blue-900/30 app-card overflow-hidden">
+          <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
             <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="p-2.5 sm:p-3 bg-blue-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
-                <Eye className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600 dark:text-blue-400" />
+              <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
+                <Eye className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
               </div>
-              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-blue-900 dark:text-blue-100 tabular-nums">
+              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
                 {(overview?.pageViews ?? 0).toLocaleString()}
               </div>
-              <div className="text-sm text-blue-700 dark:text-blue-300 font-medium">Page views</div>
+              <div className="text-muted-foreground text-sm font-medium">Page views</div>
             </CardContent>
           </Card>
-          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-emerald-50/50 to-emerald-100/30 dark:from-emerald-950/30 dark:to-emerald-900/20 app-card overflow-hidden">
+          <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
             <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="p-2.5 sm:p-3 bg-emerald-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
-                <Users className="h-6 w-6 sm:h-8 sm:w-8 text-emerald-600 dark:text-emerald-400" />
+              <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
+                <Users className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
               </div>
-              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-emerald-900 dark:text-emerald-100 tabular-nums">
+              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
                 {(overview?.uniqueVisitors ?? 0).toLocaleString()}
               </div>
-              <div className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">Visitors</div>
+              <div className="text-muted-foreground text-sm font-medium">Visitors</div>
             </CardContent>
           </Card>
-          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-green-50/50 to-green-100/30 dark:from-green-950/30 dark:to-green-900/20 app-card overflow-hidden ring-2 ring-green-200/50 dark:ring-green-800/50">
+          <Card className="app-card overflow-hidden border-primary/20 transition-shadow hover:shadow-md">
             <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="p-2.5 sm:p-3 bg-green-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform flex items-center justify-center gap-1.5">
-                <Activity className="h-6 w-6 sm:h-8 sm:w-8 text-green-600 dark:text-green-400" />
+              <div className="bg-primary/10 mx-auto mb-3 flex w-fit items-center justify-center gap-1.5 rounded-lg p-2.5 sm:mb-4 sm:p-3">
+                <Activity className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
                 <span
-                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${liveConnected ? "bg-green-500 animate-pulse" : "bg-muted-foreground/40"}`}
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${liveConnected ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`}
                   title={liveConnected ? "Live" : "Disconnected"}
                 />
               </div>
-              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-green-900 dark:text-green-100 tabular-nums">{liveViewers}</div>
-              <div className="text-sm text-green-700 dark:text-green-300 font-medium flex items-center justify-center gap-1.5">
+              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">{liveViewers}</div>
+              <div className="text-muted-foreground flex items-center justify-center gap-1.5 text-sm font-medium">
                 Live now
               </div>
             </CardContent>
           </Card>
-          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-cyan-50/50 to-cyan-100/30 dark:from-cyan-950/30 dark:to-cyan-900/20 app-card overflow-hidden">
+          <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
             <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-              <div className="p-2.5 sm:p-3 bg-cyan-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
-                <FileText className="h-6 w-6 sm:h-8 sm:w-8 text-cyan-600 dark:text-cyan-400" />
+              <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
+                <FileText className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
               </div>
-              <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-cyan-900 dark:text-cyan-100 tabular-nums">
+              <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
                 {overview?.formSubmissions ?? 0}
               </div>
-              <div className="text-sm text-cyan-700 dark:text-cyan-300 font-medium">Form submissions</div>
+              <div className="text-muted-foreground text-sm font-medium">Form submissions</div>
             </CardContent>
           </Card>
           {blogsEnabled ? (
             <>
-              <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-indigo-50/50 to-indigo-100/30 dark:from-indigo-950/30 dark:to-indigo-900/20 app-card overflow-hidden">
+              <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
                 <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-                  <div className="p-2.5 sm:p-3 bg-indigo-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
-                    <BookOpen className="h-6 w-6 sm:h-8 sm:w-8 text-indigo-600 dark:text-indigo-400" />
+                  <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
+                    <BookOpen className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
                   </div>
-                  <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-indigo-900 dark:text-indigo-100 tabular-nums">
+                  <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
                     {(overview?.blogCategoryViews ?? 0).toLocaleString()}
                   </div>
-                  <div className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">Blog category views</div>
+                  <div className="text-muted-foreground text-sm font-medium">Blog category views</div>
                 </CardContent>
               </Card>
-              <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-sky-50/50 to-sky-100/30 dark:from-sky-950/30 dark:to-sky-900/20 app-card overflow-hidden">
+              <Card className="app-card overflow-hidden transition-shadow hover:shadow-md">
                 <CardContent className="p-4 sm:p-5 md:p-6 text-center">
-                  <div className="p-2.5 sm:p-3 bg-sky-500/10 rounded-xl w-fit mx-auto mb-3 sm:mb-4 group-hover:scale-110 transition-transform">
-                    <BookOpen className="h-6 w-6 sm:h-8 sm:w-8 text-sky-600 dark:text-sky-400" />
+                  <div className="bg-primary/10 mx-auto mb-3 w-fit rounded-lg p-2.5 sm:mb-4 sm:p-3">
+                    <BookOpen className="text-primary h-6 w-6 sm:h-8 sm:w-8" />
                   </div>
-                  <div className="text-xl sm:text-2xl md:text-3xl font-bold mb-1 sm:mb-2 text-sky-900 dark:text-sky-100 tabular-nums">
+                  <div className="text-foreground mb-1 text-xl font-bold tabular-nums sm:mb-2 sm:text-2xl md:text-3xl">
                     {(overview?.blogPublishedPosts ?? 0).toLocaleString()}
                   </div>
-                  <div className="text-sm text-sky-700 dark:text-sky-300 font-medium">Published posts</div>
+                  <div className="text-muted-foreground text-sm font-medium">Published posts</div>
                 </CardContent>
               </Card>
             </>
@@ -270,10 +270,10 @@ export function DashboardOverview({
 
       {/* Demographics – above forms */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        <Card className="flex flex-col border-0 bg-gradient-to-br from-background to-muted/10 shadow-lg app-card overflow-hidden">
+        <Card className="app-card flex flex-col overflow-hidden">
           <CardHeader className="pb-3 sm:pb-4 px-4 sm:px-6 pt-4 sm:pt-6">
             <CardTitle className="flex items-center gap-3 text-lg">
-              <div className="p-2 bg-primary/10 rounded-xl">
+              <div className="p-2 bg-primary/10 rounded-lg">
                 <Smartphone className="h-5 w-5 text-primary" />
               </div>
               Devices
@@ -290,7 +290,7 @@ export function DashboardOverview({
                   return (
                     <div
                       key={device.key}
-                      className="flex items-center gap-3 py-3 px-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
+                      className="bg-muted/40 flex items-center gap-3 rounded-lg px-4 py-3 backdrop-blur-sm transition-colors hover:bg-muted/60"
                     >
                       <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -319,10 +319,10 @@ export function DashboardOverview({
           </CardContent>
         </Card>
 
-        <Card className="border-0 bg-gradient-to-br from-background to-muted/10 shadow-lg app-card overflow-hidden">
+        <Card className="app-card overflow-hidden">
           <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
             <CardTitle className="flex items-center gap-3 text-lg">
-              <div className="p-2 bg-primary/10 rounded-xl">
+              <div className="p-2 bg-primary/10 rounded-lg">
                 <Globe className="h-5 w-5 text-primary" />
               </div>
               Top locations
@@ -338,7 +338,7 @@ export function DashboardOverview({
                   return (
                     <div
                       key={c.key}
-                      className="flex items-center justify-between gap-3 py-3 px-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
+                      className="bg-muted/40 flex items-center justify-between gap-3 rounded-lg px-4 py-3 backdrop-blur-sm transition-colors hover:bg-muted/60"
                     >
                       <span className="text-sm font-medium truncate">{c.key}</span>
                       <div className="flex items-center gap-3 shrink-0">
