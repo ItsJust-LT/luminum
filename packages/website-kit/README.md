@@ -332,7 +332,7 @@ Use `fetchBlogPostDetail` as an alias for `getPublishedPostBySlug` when you want
 
 ### 4. Sitemap
 
-Merge static routes with API-driven blog URLs.
+Merge static internal routes with API-driven blog URLs (recommended).
 
 Defaults in `getBlogSitemapEntries`:
 
@@ -344,27 +344,36 @@ If blog/category fetch fails, the helper returns what it can by default (safe to
 
 ```ts
 // app/sitemap.ts
-import { getBlogSitemapEntries } from "@itsjust-lt/website-kit/metadata";
+import { getWebsiteSitemapEntries } from "@itsjust-lt/website-kit/metadata";
 
 export default async function sitemap() {
-  const blogEntries = await getBlogSitemapEntries({
+  return getWebsiteSitemapEntries({
     websiteId: process.env.LUMINUM_WEBSITE_ID!,
     apiBaseUrl: process.env.LUMINUM_API_URL,
     baseUrl: "https://yoursite.com",
+    staticRoutes: [
+      "/",
+      "/about",
+      "/services",
+      "/contact",
+      "/blog", // optional if includeBlogIndex=true (deduped automatically)
+      "/privacy-policy",
+      "/terms-of-service",
+    ],
     // optional:
-    // blogPathPrefix: "/blog",
+    // includeCategories: true,
     // includeBlogIndex: true,
+    // blogPathPrefix: "/blog",
     // strict: true,
     // onError: (err, stage) => console.error("sitemap", stage, err),
   });
-
-  return [
-    { url: "https://yoursite.com", lastModified: new Date() },
-    { url: "https://yoursite.com/about", lastModified: new Date() },
-    ...blogEntries,
-  ];
 }
 ```
+
+If you prefer manual composition, you can still use:
+
+- `getStaticSitemapEntries(...)` for your app routes.
+- `getBlogSitemapEntries(...)` for blog/categories only.
 
 ### 5. Robots.txt
 

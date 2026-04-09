@@ -31,7 +31,14 @@ export {
 export type { BlogRenderSpec, RenderSpecBlock, MarkdownRenderBlock, ComponentRenderBlock } from "./blog/index.js";
 
 // Metadata
-export { getBlogSitemapEntries, type SitemapEntry } from "./metadata/index.js";
+export {
+  getBlogSitemapEntries,
+  getStaticSitemapEntries,
+  getWebsiteSitemapEntries,
+  type SitemapEntry,
+  type StaticSitemapOptions,
+  type WebsiteSitemapOptions,
+} from "./metadata/index.js";
 export { getRobotsConfig, type RobotsConfig } from "./metadata/index.js";
 export { generateOpenGraphImageElement, type OpenGraphImageProps } from "./metadata/index.js";
 export { blogSeoToMetadata } from "./metadata/index.js";
