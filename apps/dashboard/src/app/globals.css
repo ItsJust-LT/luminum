@@ -100,77 +100,77 @@
 
 :root {
   --radius: 0.9rem;
-  /* Light: warm canvas; primary = vivid violet; neutrals carry subtle hue; charts = saturated rainbow */
-  --background: oklch(0.992 0.006 95);
-  --foreground: oklch(0.2 0.018 285);
-  --card: oklch(0.999 0.008 285);
-  --card-foreground: oklch(0.2 0.018 285);
-  --popover: oklch(0.998 0.008 285);
-  --popover-foreground: oklch(0.2 0.018 285);
-  --primary: oklch(0.48 0.23 285);
-  --primary-foreground: oklch(0.995 0.01 285);
-  --secondary: oklch(0.955 0.02 285);
-  --secondary-foreground: oklch(0.28 0.03 285);
-  --muted: oklch(0.965 0.018 285);
-  --muted-foreground: oklch(0.44 0.028 285);
-  --accent: oklch(0.945 0.045 200);
-  --accent-foreground: oklch(0.22 0.04 285);
+  /* Light: neutral dark-gray surfaces with vivid blue as the main accent */
+  --background: oklch(0.99 0.002 260);
+  --foreground: oklch(0.205 0.008 260);
+  --card: oklch(0.998 0.003 260);
+  --card-foreground: oklch(0.205 0.008 260);
+  --popover: oklch(0.998 0.003 260);
+  --popover-foreground: oklch(0.205 0.008 260);
+  --primary: oklch(0.56 0.22 252);
+  --primary-foreground: oklch(0.99 0.004 250);
+  --secondary: oklch(0.955 0.004 260);
+  --secondary-foreground: oklch(0.3 0.01 260);
+  --muted: oklch(0.965 0.003 260);
+  --muted-foreground: oklch(0.46 0.01 260);
+  --accent: oklch(0.95 0.025 252);
+  --accent-foreground: oklch(0.22 0.015 260);
   --destructive: oklch(0.52 0.24 22);
-  --border: oklch(0.9 0.02 285);
-  --input: oklch(0.928 0.018 285);
-  --ring: oklch(0.52 0.21 285);
-  /* chart-1 = brand violet; 2–5 = bright cyan, amber, fuchsia, lime */
-  --chart-1: oklch(0.52 0.23 285);
-  --chart-2: oklch(0.58 0.2 198);
-  --chart-3: oklch(0.78 0.18 72);
-  --chart-4: oklch(0.6 0.3 330);
-  --chart-5: oklch(0.7 0.24 142);
-  --sidebar: oklch(0.988 0.012 285);
-  --sidebar-foreground: oklch(0.22 0.02 285);
-  --sidebar-primary: oklch(0.48 0.23 285);
-  --sidebar-primary-foreground: oklch(0.995 0.01 285);
-  --sidebar-accent: oklch(0.955 0.035 200);
-  --sidebar-accent-foreground: oklch(0.24 0.03 285);
-  --sidebar-border: oklch(0.9 0.022 285);
-  --sidebar-ring: oklch(0.52 0.21 285);
+  --border: oklch(0.9 0.005 260);
+  --input: oklch(0.925 0.004 260);
+  --ring: oklch(0.58 0.2 252);
+  /* chart-1 = brand blue; 2-5 = cyan, amber, fuchsia, lime accents */
+  --chart-1: oklch(0.56 0.22 252);
+  --chart-2: oklch(0.63 0.19 205);
+  --chart-3: oklch(0.79 0.17 82);
+  --chart-4: oklch(0.62 0.27 340);
+  --chart-5: oklch(0.72 0.22 145);
+  --sidebar: oklch(0.985 0.003 260);
+  --sidebar-foreground: oklch(0.22 0.009 260);
+  --sidebar-primary: oklch(0.56 0.22 252);
+  --sidebar-primary-foreground: oklch(0.99 0.004 250);
+  --sidebar-accent: oklch(0.955 0.012 252);
+  --sidebar-accent-foreground: oklch(0.24 0.01 260);
+  --sidebar-border: oklch(0.9 0.006 260);
+  --sidebar-ring: oklch(0.58 0.2 252);
   --scrollbar-thumb: color-mix(in oklch, var(--foreground) 22%, transparent);
   --scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 34%, transparent);
   --scrollbar-track: transparent;
 }
 
 .dark {
-  /* Dark: violet-tinted shell; luminous chart accents */
-  --background: oklch(0.14 0.018 285);
-  --foreground: oklch(0.93 0.012 285);
-  --card: oklch(0.18 0.022 285);
-  --card-foreground: oklch(0.93 0.012 285);
-  --popover: oklch(0.19 0.022 285);
-  --popover-foreground: oklch(0.93 0.012 285);
-  --primary: oklch(0.72 0.19 285);
-  --primary-foreground: oklch(0.14 0.04 285);
-  --secondary: oklch(0.24 0.02 285);
-  --secondary-foreground: oklch(0.92 0.012 285);
-  --muted: oklch(0.23 0.02 285);
-  --muted-foreground: oklch(0.66 0.02 285);
-  --accent: oklch(0.28 0.05 200);
-  --accent-foreground: oklch(0.94 0.012 285);
+  /* Dark: charcoal-first shell; bright blue leads; accents are supportive */
+  --background: oklch(0.16 0.004 260);
+  --foreground: oklch(0.93 0.006 260);
+  --card: oklch(0.2 0.005 260);
+  --card-foreground: oklch(0.93 0.006 260);
+  --popover: oklch(0.21 0.005 260);
+  --popover-foreground: oklch(0.93 0.006 260);
+  --primary: oklch(0.71 0.19 252);
+  --primary-foreground: oklch(0.15 0.03 252);
+  --secondary: oklch(0.26 0.006 260);
+  --secondary-foreground: oklch(0.92 0.008 260);
+  --muted: oklch(0.24 0.006 260);
+  --muted-foreground: oklch(0.68 0.01 260);
+  --accent: oklch(0.29 0.03 252);
+  --accent-foreground: oklch(0.94 0.008 260);
   --destructive: oklch(0.66 0.22 22);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.68 0.17 285);
-  --chart-1: oklch(0.72 0.18 285);
-  --chart-2: oklch(0.76 0.17 198);
-  --chart-3: oklch(0.86 0.17 72);
-  --chart-4: oklch(0.72 0.24 330);
-  --chart-5: oklch(0.8 0.2 142);
-  --sidebar: oklch(0.155 0.022 285);
-  --sidebar-foreground: oklch(0.92 0.012 285);
-  --sidebar-primary: oklch(0.72 0.19 285);
-  --sidebar-primary-foreground: oklch(0.14 0.04 285);
-  --sidebar-accent: oklch(0.26 0.045 200);
-  --sidebar-accent-foreground: oklch(0.93 0.012 285);
+  --ring: oklch(0.7 0.17 252);
+  --chart-1: oklch(0.71 0.19 252);
+  --chart-2: oklch(0.75 0.16 205);
+  --chart-3: oklch(0.84 0.15 82);
+  --chart-4: oklch(0.72 0.23 340);
+  --chart-5: oklch(0.79 0.19 145);
+  --sidebar: oklch(0.17 0.005 260);
+  --sidebar-foreground: oklch(0.92 0.007 260);
+  --sidebar-primary: oklch(0.71 0.19 252);
+  --sidebar-primary-foreground: oklch(0.15 0.03 252);
+  --sidebar-accent: oklch(0.27 0.018 252);
+  --sidebar-accent-foreground: oklch(0.93 0.008 260);
   --sidebar-border: oklch(1 0 0 / 11%);
-  --sidebar-ring: oklch(0.68 0.17 285);
+  --sidebar-ring: oklch(0.7 0.17 252);
   --scrollbar-thumb: color-mix(in oklch, var(--foreground) 18%, transparent);
   --scrollbar-thumb-hover: color-mix(in oklch, var(--foreground) 30%, transparent);
   --scrollbar-track: transparent;
@@ -183,18 +183,18 @@
   body {
     @apply bg-background text-foreground;
     background-image:
-      radial-gradient(circle at 18% 12%, color-mix(in oklab, var(--primary) 7%, transparent) 0%, transparent 44%),
-      radial-gradient(circle at 86% 8%, color-mix(in oklab, var(--chart-2) 5.5%, transparent) 0%, transparent 40%),
-      radial-gradient(circle at 50% 88%, color-mix(in oklab, var(--chart-3) 4%, transparent) 0%, transparent 38%),
-      radial-gradient(circle at 80% 92%, color-mix(in oklab, var(--chart-4) 4%, transparent) 0%, transparent 36%);
+      radial-gradient(circle at 18% 12%, color-mix(in oklab, var(--primary) 8.5%, transparent) 0%, transparent 44%),
+      radial-gradient(circle at 86% 8%, color-mix(in oklab, var(--chart-2) 4.5%, transparent) 0%, transparent 40%),
+      radial-gradient(circle at 50% 88%, color-mix(in oklab, var(--chart-3) 3.5%, transparent) 0%, transparent 38%),
+      radial-gradient(circle at 80% 92%, color-mix(in oklab, var(--chart-4) 3.5%, transparent) 0%, transparent 36%);
     background-attachment: fixed;
   }
   .dark body {
     background-image:
-      radial-gradient(circle at 18% 12%, color-mix(in oklab, var(--primary) 11%, transparent) 0%, transparent 46%),
-      radial-gradient(circle at 86% 8%, color-mix(in oklab, var(--chart-2) 7%, transparent) 0%, transparent 42%),
-      radial-gradient(circle at 50% 88%, color-mix(in oklab, var(--chart-3) 5%, transparent) 0%, transparent 40%),
-      radial-gradient(circle at 80% 92%, color-mix(in oklab, var(--chart-5) 6%, transparent) 0%, transparent 38%);
+      radial-gradient(circle at 18% 12%, color-mix(in oklab, var(--primary) 13%, transparent) 0%, transparent 46%),
+      radial-gradient(circle at 86% 8%, color-mix(in oklab, var(--chart-2) 6%, transparent) 0%, transparent 42%),
+      radial-gradient(circle at 50% 88%, color-mix(in oklab, var(--chart-3) 4%, transparent) 0%, transparent 40%),
+      radial-gradient(circle at 80% 92%, color-mix(in oklab, var(--chart-5) 4.5%, transparent) 0%, transparent 38%);
   }
   h1,
   h2,
@@ -400,7 +400,7 @@
     background-color: color-mix(in oklab, var(--card) 70%, transparent) !important;
   }
 
-  /* Tailwind hue classes → semantic tokens (violet primary + chart rainbow) */
+  /* Tailwind hue classes -> semantic tokens (blue primary + chart accents) */
   [class*="text-blue-"],
   [class*="text-indigo-"],
   [class*="text-violet-"],
