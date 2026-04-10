@@ -11,3 +11,16 @@ export const fadeUp = {
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.28, ease: easeOut },
 }
+
+/** Open / close for dropdown & submenus (motion/react). */
+export const dropdownPanelSpring = {
+  type: "spring" as const,
+  stiffness: 420,
+  damping: 32,
+  mass: 0.72,
+}
+
+export const dropdownPanelExit = {
+  duration: 0.16,
+  ease: easeOut,
+}

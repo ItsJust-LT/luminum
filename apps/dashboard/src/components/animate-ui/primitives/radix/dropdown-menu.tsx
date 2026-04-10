@@ -10,6 +10,7 @@ import {
   type HighlightItemProps,
   type HighlightProps,
 } from '@/components/animate-ui/primitives/effects/highlight';
+import { dropdownPanelExit, dropdownPanelSpring } from '@/lib/motion-presets';
 import { getStrictContext } from '@/lib/get-strict-context';
 import { useControlledState } from '@/hooks/use-controlled-state';
 import { useDataState } from '@/hooks/use-data-state';
@@ -191,12 +192,13 @@ function DropdownMenuSubContent({
   arrowPadding,
   sticky,
   hideWhenDetached,
-  transition = { duration: 0.2 },
+  transition,
   style,
   container,
   ...props
 }: DropdownMenuSubContentProps) {
   const { isOpen } = useDropdownMenuSub();
+  const t = transition ?? dropdownPanelSpring;
 
   return (
     <AnimatePresence>
@@ -222,10 +224,15 @@ function DropdownMenuSubContent({
             <motion.div
               key="dropdown-menu-sub-content"
               data-slot="dropdown-menu-sub-content"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={transition}
+              initial={{ opacity: 0, y: 8, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{
+                opacity: 0,
+                y: 4,
+                scale: 0.97,
+                transition: { ...dropdownPanelExit },
+              }}
+              transition={t}
               style={{ willChange: 'opacity, transform', ...style }}
               {...props}
             />
@@ -288,12 +295,13 @@ function DropdownMenuContent({
   arrowPadding,
   sticky,
   hideWhenDetached,
-  transition = { duration: 0.2 },
+  transition,
   style,
   container,
   ...props
 }: DropdownMenuContentProps) {
   const { isOpen } = useDropdownMenu();
+  const t = transition ?? dropdownPanelSpring;
 
   return (
     <AnimatePresence>
@@ -321,10 +329,15 @@ function DropdownMenuContent({
             <motion.div
               key="dropdown-menu-content"
               data-slot="dropdown-menu-content"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={transition}
+              initial={{ opacity: 0, y: 10, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{
+                opacity: 0,
+                y: 6,
+                scale: 0.97,
+                transition: { ...dropdownPanelExit },
+              }}
+              transition={t}
               style={{ willChange: 'opacity, transform', ...style }}
               {...props}
             />
