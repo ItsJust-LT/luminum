@@ -8,6 +8,16 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { authClient } from "@/lib/auth/client"
 import { api } from "@/lib/api"
 import { Website } from "@/lib/types/websites"
@@ -30,6 +40,8 @@ export function ClientProjectsList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [pendingDeleteProject, setPendingDeleteProject] = useState<ClientProject | null>(null)
+  const [deletingProject, setDeletingProject] = useState(false)
 
   useEffect(() => {
     fetchClientProjects()
@@ -71,28 +83,30 @@ export function ClientProjectsList() {
   }
 
   const handleDeleteProject = async (project: ClientProject) => {
-    if (confirm("Are you sure you want to delete this client project? This action cannot be undone.")) {
-      try {
-        // Delete website first if it exists
-        if (project.website) {
-          try {
-            await api.websites.delete(project.website.id)
-          } catch (websiteError) {
-            console.error("Error deleting website:", websiteError)
-            // Continue with organization deletion even if website deletion fails
-          }
+    setDeletingProject(true)
+    try {
+      // Delete website first if it exists
+      if (project.website) {
+        try {
+          await api.websites.delete(project.website.id)
+        } catch (websiteError) {
+          console.error("Error deleting website:", websiteError)
+          // Continue with organization deletion even if website deletion fails
         }
-
-        // Delete organization
-        await authClient.organization.delete({
-          organizationId: project.id,
-        })
-
-        await fetchClientProjects()
-      } catch (error: any) {
-        console.error("Error deleting project:", error)
-        setError("Failed to delete project")
       }
+
+      // Delete organization
+      await authClient.organization.delete({
+        organizationId: project.id,
+      })
+
+      setPendingDeleteProject(null)
+      await fetchClientProjects()
+    } catch (error: any) {
+      console.error("Error deleting project:", error)
+      setError("Failed to delete project")
+    } finally {
+      setDeletingProject(false)
     }
   }
 
@@ -183,6 +197,7 @@ export function ClientProjectsList() {
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center space-x-2">
@@ -268,7 +283,7 @@ export function ClientProjectsList() {
                       <Users className="mr-2 h-4 w-4" />
                       Manage Clients
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDeleteProject(project)} className="text-red-600">
+                    <DropdownMenuItem onClick={() => setPendingDeleteProject(project)} className="text-red-600">
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete Project
                     </DropdownMenuItem>
@@ -280,5 +295,30 @@ export function ClientProjectsList() {
         )}
       </CardContent>
     </Card>
+    <AlertDialog open={pendingDeleteProject !== null} onOpenChange={(open) => !open && !deletingProject && setPendingDeleteProject(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete client project?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This deletes the project organization and related website data. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deletingProject}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={deletingProject || !pendingDeleteProject}
+            onClick={(e) => {
+              e.preventDefault()
+              if (!pendingDeleteProject) return
+              void handleDeleteProject(pendingDeleteProject)
+            }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {deletingProject ? "Deleting..." : "Delete project"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

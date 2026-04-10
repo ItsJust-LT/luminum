@@ -5,6 +5,16 @@ import { authClient } from '@/lib/auth/client'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Loader2, User, Mail, Shield, Save, ArrowLeft, CheckCircle, AlertCircle, Trash2, Link, Unlink, Eye, EyeOff } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 interface Account {
   id: string
@@ -25,6 +35,10 @@ export default function AccountSettingsPage() {
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [unlinkDialogOpen, setUnlinkDialogOpen] = useState(false)
+  const [pendingUnlink, setPendingUnlink] = useState<{ providerId: string; accountId: string } | null>(null)
+  const [unlinkLoading, setUnlinkLoading] = useState(false)
   const [showPasswords, setShowPasswords] = useState({
     current: false,
     new: false,
@@ -164,10 +178,6 @@ export default function AccountSettingsPage() {
   }
 
   const handleDeleteAccount = async () => {
-    if (!confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-      return
-    }
-
     setIsLoading(true)
     clearMessages()
 
@@ -180,6 +190,7 @@ export default function AccountSettingsPage() {
       setErrorMessage(error?.message || 'Failed to delete account. Please try again.')
     } finally {
       setIsLoading(false)
+      setDeleteDialogOpen(false)
     }
   }
 
@@ -195,10 +206,7 @@ export default function AccountSettingsPage() {
   }
 
   const handleUnlinkAccount = async (providerId: string, accountId: string) => {
-    if (!confirm(`Are you sure you want to unlink your ${providerId} account?`)) {
-      return
-    }
-
+    setUnlinkLoading(true)
     try {
       await authClient.unlinkAccount({
         providerId,
@@ -208,6 +216,10 @@ export default function AccountSettingsPage() {
       loadAccounts()
     } catch (error: any) {
       setErrorMessage(error?.message || `Failed to unlink ${providerId} account.`)
+    } finally {
+      setUnlinkLoading(false)
+      setUnlinkDialogOpen(false)
+      setPendingUnlink(null)
     }
   }
 
@@ -523,7 +535,10 @@ export default function AccountSettingsPage() {
                   </div>
                   {accounts.length > 1 && (
                     <button
-                      onClick={() => handleUnlinkAccount(account.providerId, account.id)}
+                      onClick={() => {
+                        setPendingUnlink({ providerId: account.providerId, accountId: account.id })
+                        setUnlinkDialogOpen(true)
+                      }}
                       className="inline-flex items-center px-3 py-1 border border-destructive text-sm font-medium rounded-md text-destructive bg-background hover:bg-destructive/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-destructive"
                     >
                       <Unlink className="h-4 w-4 mr-1" />
@@ -574,7 +589,7 @@ export default function AccountSettingsPage() {
               )}
               
               <button 
-                onClick={handleDeleteAccount}
+                onClick={() => setDeleteDialogOpen(true)}
                 disabled={isLoading}
                 className="inline-flex items-center px-4 py-2 border border-destructive text-sm font-medium rounded-md text-destructive bg-background hover:bg-destructive/10 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-destructive disabled:opacity-50"
               >
@@ -592,5 +607,51 @@ export default function AccountSettingsPage() {
           </div>
         </div>
       </div>
+      <AlertDialog open={unlinkDialogOpen} onOpenChange={(open) => !unlinkLoading && setUnlinkDialogOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlink {pendingUnlink?.providerId} account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You can link this account again later. Sign-in options for this provider will be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={unlinkLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={unlinkLoading || !pendingUnlink}
+              onClick={(e) => {
+                e.preventDefault()
+                if (!pendingUnlink) return
+                void handleUnlinkAccount(pendingUnlink.providerId, pendingUnlink.accountId)
+              }}
+            >
+              {unlinkLoading ? 'Unlinking...' : 'Unlink account'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => !isLoading && setDeleteDialogOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action is permanent and cannot be undone. You will receive a verification email to confirm deletion.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isLoading}
+              onClick={(e) => {
+                e.preventDefault()
+                void handleDeleteAccount()
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isLoading ? 'Deleting...' : 'Delete account'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )}

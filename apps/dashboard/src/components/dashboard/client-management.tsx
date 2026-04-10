@@ -9,6 +9,16 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { authClient } from "@/lib/auth/client"
 
 interface Client {
@@ -29,6 +39,8 @@ export function ClientManagement() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [pendingRemoveClientId, setPendingRemoveClientId] = useState<string | null>(null)
+  const [removingClient, setRemovingClient] = useState(false)
 
   useEffect(() => {
     fetchClients()
@@ -93,15 +105,17 @@ export function ClientManagement() {
   }
 
   const handleRemoveClient = async (userId: string) => {
-    if (confirm("Are you sure you want to permanently remove this client?")) {
-      try {
-        await authClient.admin.removeUser({
-          userId,
-        })
-        await fetchClients() // Refresh the list
-      } catch (error: any) {
-        console.error("Error removing client:", error)
-      }
+    setRemovingClient(true)
+    try {
+      await authClient.admin.removeUser({
+        userId,
+      })
+      setPendingRemoveClientId(null)
+      await fetchClients() // Refresh the list
+    } catch (error: any) {
+      console.error("Error removing client:", error)
+    } finally {
+      setRemovingClient(false)
     }
   }
 
@@ -161,6 +175,7 @@ export function ClientManagement() {
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center space-x-2">
@@ -241,7 +256,7 @@ export function ClientManagement() {
                         Unban Client
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem onClick={() => handleRemoveClient(client.id)} className="text-red-600">
+                    <DropdownMenuItem onClick={() => setPendingRemoveClientId(client.id)} className="text-red-600">
                       <Trash2 className="mr-2 h-4 w-4" />
                       Remove Client
                     </DropdownMenuItem>
@@ -253,5 +268,30 @@ export function ClientManagement() {
         )}
       </CardContent>
     </Card>
+    <AlertDialog open={pendingRemoveClientId !== null} onOpenChange={(open) => !open && !removingClient && setPendingRemoveClientId(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove client account?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the client account and access. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={removingClient}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={removingClient || !pendingRemoveClientId}
+            onClick={(e) => {
+              e.preventDefault()
+              if (!pendingRemoveClientId) return
+              void handleRemoveClient(pendingRemoveClientId)
+            }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {removingClient ? "Removing..." : "Remove client"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

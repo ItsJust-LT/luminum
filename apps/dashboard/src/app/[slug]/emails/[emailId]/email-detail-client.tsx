@@ -63,6 +63,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { EmailAvatar } from "@/components/emails/email-avatar"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
@@ -339,6 +349,8 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
   const [sendingReply, setSendingReply] = useState(false)
   const [starred, setStarred] = useState(!!seedEmail.starred)
   const [starSaving, setStarSaving] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deletingEmail, setDeletingEmail] = useState(false)
 
   const refreshThread = useCallback(async () => {
     try {
@@ -404,13 +416,16 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
   }
 
   const handleDelete = async () => {
-    if (!confirm("Delete this message?")) return
+    setDeletingEmail(true)
     try {
       await api.emails.delete(seedEmail.id)
       toast.success("Email deleted")
       router.push(`/${organizationSlug}/emails`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete email")
+    } finally {
+      setDeletingEmail(false)
+      setDeleteDialogOpen(false)
     }
   }
 
@@ -618,7 +633,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
               <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-500")} />
               <span className="sr-only">Star</span>
             </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={handleDelete} title="Delete">
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setDeleteDialogOpen(true)} title="Delete">
               <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
               <span className="sr-only">Delete</span>
             </Button>
@@ -643,7 +658,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
                   Print
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
+                <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-destructive focus:text-destructive">
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete
                 </DropdownMenuItem>
@@ -937,6 +952,29 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
           </p>
         </div>
       </div>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => !deletingEmail && setDeleteDialogOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this email?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This message will be permanently removed from this mailbox and cannot be recovered.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingEmail}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingEmail}
+              onClick={(e) => {
+                e.preventDefault()
+                void handleDelete()
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingEmail ? "Deleting..." : "Delete email"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

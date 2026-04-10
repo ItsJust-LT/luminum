@@ -8,6 +8,16 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { authClient } from "@/lib/auth/client"
 import { PageDataSpinner } from "@/components/shell/page-data-spinner"
 
@@ -29,6 +39,8 @@ export function OrganizationsList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [pendingDeleteOrgId, setPendingDeleteOrgId] = useState<string | null>(null)
+  const [deletingOrg, setDeletingOrg] = useState(false)
 
   useEffect(() => {
     fetchOrganizations()
@@ -53,15 +65,17 @@ export function OrganizationsList() {
   }
 
   const handleDeleteOrganization = async (organizationId: string) => {
-    if (confirm("Are you sure you want to delete this organization? This action cannot be undone.")) {
-      try {
-        await authClient.organization.delete({
-          organizationId,
-        })
-        await fetchOrganizations() // Refresh the list
-      } catch (error: any) {
-        console.error("Error deleting organization:", error)
-      }
+    setDeletingOrg(true)
+    try {
+      await authClient.organization.delete({
+        organizationId,
+      })
+      setPendingDeleteOrgId(null)
+      await fetchOrganizations() // Refresh the list
+    } catch (error: any) {
+      console.error("Error deleting organization:", error)
+    } finally {
+      setDeletingOrg(false)
     }
   }
 
@@ -106,6 +120,7 @@ export function OrganizationsList() {
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center space-x-2">
@@ -191,7 +206,7 @@ export function OrganizationsList() {
                       <Users className="mr-2 h-4 w-4" />
                       View Members
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleDeleteOrganization(org.id)} className="text-red-600">
+                    <DropdownMenuItem onClick={() => setPendingDeleteOrgId(org.id)} className="text-red-600">
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete Organization
                     </DropdownMenuItem>
@@ -203,5 +218,30 @@ export function OrganizationsList() {
         )}
       </CardContent>
     </Card>
+    <AlertDialog open={pendingDeleteOrgId !== null} onOpenChange={(open) => !open && !deletingOrg && setPendingDeleteOrgId(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete organization?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the organization and all associated data. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deletingOrg}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={deletingOrg || !pendingDeleteOrgId}
+            onClick={(e) => {
+              e.preventDefault()
+              if (!pendingDeleteOrgId) return
+              void handleDeleteOrganization(pendingDeleteOrgId)
+            }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {deletingOrg ? "Deleting..." : "Delete organization"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

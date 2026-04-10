@@ -9,6 +9,16 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { authClient } from "@/lib/auth/client"
 import { OrganizationInviteDialog } from "@/components/dashboard/organization-invite-dialog"
 import { AddClientToOrganizationDialog } from "@/components/dashboard/add-client-to-organization-dialog"
@@ -59,6 +69,8 @@ export function OrganizationManagement({ onOrganizationChange }: OrganizationMan
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [websites, setWebsites] = useState<any[]>([])
+  const [pendingRemoveMember, setPendingRemoveMember] = useState<Member | null>(null)
+  const [removingMember, setRemovingMember] = useState(false)
 
   useEffect(() => {
     fetchActiveOrganization()
@@ -117,26 +129,28 @@ export function OrganizationManagement({ onOrganizationChange }: OrganizationMan
   }
 
   const handleRemoveMember = async (member: any) => {
-    if (confirm("Are you sure you want to remove this member?")) {
-      try {
-        const result = await api.organizationActions.removeMember({
-          memberId: member.userId,
-          memberEmail: member.user.email,
-          memberName: member.user.name,
-          organizationName: activeOrg?.name || "",
-          organizationId: activeOrg?.id || "",
-        })
+    setRemovingMember(true)
+    try {
+      const result = await api.organizationActions.removeMember({
+        memberId: member.userId,
+        memberEmail: member.user.email,
+        memberName: member.user.name,
+        organizationName: activeOrg?.name || "",
+        organizationId: activeOrg?.id || "",
+      })
 
-        if (result.success) {
-          await fetchActiveOrganization()
-        } else {
-          console.error("Failed to remove member:", result.error)
-          setError(result.error || "Failed to remove member")
-        }
-      } catch (error: any) {
-        console.error("Error removing member:", error)
-        setError("Failed to remove member")
+      if (result.success) {
+        setPendingRemoveMember(null)
+        await fetchActiveOrganization()
+      } else {
+        console.error("Failed to remove member:", result.error)
+        setError(result.error || "Failed to remove member")
       }
+    } catch (error: any) {
+      console.error("Error removing member:", error)
+      setError("Failed to remove member")
+    } finally {
+      setRemovingMember(false)
     }
   }
 
@@ -269,6 +283,7 @@ export function OrganizationManagement({ onOrganizationChange }: OrganizationMan
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
@@ -348,7 +363,7 @@ export function OrganizationManagement({ onOrganizationChange }: OrganizationMan
                             Make Client
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem onClick={() => handleRemoveMember(member)} className="text-red-600">
+                        <DropdownMenuItem onClick={() => setPendingRemoveMember(member)} className="text-red-600">
                           <Users className="mr-2 h-4 w-4" />
                           Remove Client
                         </DropdownMenuItem>
@@ -453,5 +468,29 @@ export function OrganizationManagement({ onOrganizationChange }: OrganizationMan
         </Tabs>
       </CardContent>
     </Card>
+    <AlertDialog open={pendingRemoveMember !== null} onOpenChange={(open) => !open && !removingMember && setPendingRemoveMember(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove client from organization?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This removes the client from this organization and revokes access immediately.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={removingMember}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={removingMember || !pendingRemoveMember}
+            onClick={(e) => {
+              e.preventDefault()
+              if (!pendingRemoveMember) return
+              void handleRemoveMember(pendingRemoveMember)
+            }}
+          >
+            {removingMember ? "Removing..." : "Remove client"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

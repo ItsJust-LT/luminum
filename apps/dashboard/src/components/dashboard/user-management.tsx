@@ -9,6 +9,16 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { authClient } from "@/lib/auth/client"
 
 interface User {
@@ -27,6 +37,8 @@ export function UserManagement() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [pendingRemoveUserId, setPendingRemoveUserId] = useState<string | null>(null)
+  const [removingUser, setRemovingUser] = useState(false)
 
   useEffect(() => {
     fetchUsers()
@@ -95,15 +107,17 @@ export function UserManagement() {
   }
 
   const handleRemoveUser = async (userId: string) => {
-    if (confirm("Are you sure you want to permanently delete this user?")) {
-      try {
-        await authClient.admin.removeUser({
-          userId,
-        })
-        await fetchUsers() // Refresh the list
-      } catch (error: any) {
-        console.error("Error removing user:", error)
-      }
+    setRemovingUser(true)
+    try {
+      await authClient.admin.removeUser({
+        userId,
+      })
+      setPendingRemoveUserId(null)
+      await fetchUsers() // Refresh the list
+    } catch (error: any) {
+      console.error("Error removing user:", error)
+    } finally {
+      setRemovingUser(false)
     }
   }
 
@@ -164,6 +178,7 @@ export function UserManagement() {
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center space-x-2">
@@ -250,7 +265,7 @@ export function UserManagement() {
                         Unban User
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem onClick={() => handleRemoveUser(user.id)} className="text-red-600">
+                    <DropdownMenuItem onClick={() => setPendingRemoveUserId(user.id)} className="text-red-600">
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete User
                     </DropdownMenuItem>
@@ -262,5 +277,30 @@ export function UserManagement() {
         )}
       </CardContent>
     </Card>
+    <AlertDialog open={pendingRemoveUserId !== null} onOpenChange={(open) => !open && !removingUser && setPendingRemoveUserId(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete user account?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently deletes the user and cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={removingUser}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={removingUser || !pendingRemoveUserId}
+            onClick={(e) => {
+              e.preventDefault()
+              if (!pendingRemoveUserId) return
+              void handleRemoveUser(pendingRemoveUserId)
+            }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {removingUser ? "Deleting..." : "Delete user"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   )
 }

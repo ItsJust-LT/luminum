@@ -18,6 +18,16 @@ import { orgFeatureFlagsFromOrganization } from "@/lib/org-feature-flags"
 import { PermissionMatrix } from "@/components/team/permission-matrix"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
 import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 type RoleRow = {
   id: string
@@ -41,6 +51,7 @@ export default function EditTeamRolePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   useEffect(() => {
     api.organizationRoles.catalog().then((res) => {
@@ -106,7 +117,6 @@ export default function EditTeamRolePage() {
 
   const onDelete = async () => {
     if (!organization?.id || !role || role.kind !== ORG_ROLE_KIND.custom) return
-    if (!confirm(`Delete role “${role.name}”? Members must be reassigned first.`)) return
     setDeleting(true)
     try {
       const res = (await api.organizationRoles.delete(organization.id, role.id)) as { success?: boolean; error?: string }
@@ -117,6 +127,7 @@ export default function EditTeamRolePage() {
       toast.error(e instanceof Error ? e.message : "Failed")
     } finally {
       setDeleting(false)
+      setDeleteDialogOpen(false)
     }
   }
 
@@ -240,7 +251,7 @@ export default function EditTeamRolePage() {
           {editable && (
             <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-between sm:items-center">
               {role.kind === ORG_ROLE_KIND.custom ? (
-                <Button type="button" variant="destructive" size="sm" disabled={deleting} onClick={() => void onDelete()}>
+                <Button type="button" variant="destructive" size="sm" disabled={deleting} onClick={() => setDeleteDialogOpen(true)}>
                   {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
                   Delete role
                 </Button>
@@ -259,6 +270,29 @@ export default function EditTeamRolePage() {
           )}
         </form>
       </div>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => !deleting && setDeleteDialogOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete role "{role?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Members must be reassigned first. Deleting this role cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault()
+                void onDelete()
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Deleting..." : "Delete role"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppPageContainer>
   )
 }
