@@ -28,8 +28,18 @@ type HighlightContextType<T extends string> = {
   setActiveValue: (value: T | null) => void;
   /** When using hover, restore to this after pointer leaves an item (controlled `value` / `defaultValue` on Highlight). */
   selectionValue: T | null;
+  /** Parent mode + hover + controlled `value`: separate hover pill from route selection pill. */
+  dualLayer: boolean;
+  hoverActiveValue: T | null;
+  setHoverActiveValue: (value: T | null) => void;
   setBounds: (bounds: DOMRect) => void;
   clearBounds: () => void;
+  setSelectionBounds: (bounds: DOMRect) => void;
+  setHoverBounds: (bounds: DOMRect) => void;
+  clearSelectionBounds: () => void;
+  clearHoverBounds: () => void;
+  setSelectionActiveClassName: (className: string) => void;
+  setHoverActiveClassName: (className: string) => void;
   id: string;
   hover: boolean;
   click: boolean;
@@ -65,6 +75,10 @@ type BaseHighlightProps<T extends React.ElementType = 'div'> = {
   defaultValue?: string | null;
   onValueChange?: (value: string | null) => void;
   className?: string;
+  /** Parent + dual-layer: pill for the current route / controlled `value`. */
+  selectionHighlightClassName?: string;
+  /** Parent + dual-layer: pill that follows the pointer on hover. */
+  hoverHighlightClassName?: string;
   style?: React.CSSProperties;
   transition?: Transition;
   hover?: boolean;
@@ -130,6 +144,8 @@ function Highlight<T extends React.ElementType = 'div'>({
     defaultValue,
     onValueChange,
     className,
+    selectionHighlightClassName,
+    hoverHighlightClassName,
     style,
     transition = { type: 'spring', stiffness: 350, damping: 35 },
     hover = false,
@@ -179,8 +195,42 @@ function Highlight<T extends React.ElementType = 'div'>({
   const [activeClassNameState, setActiveClassNameState] =
     React.useState<string>('');
 
+  const [hoverActiveValue, setHoverActiveValue] = React.useState<
+    string | null
+  >(null);
+  const [selectionBoundsState, setSelectionBoundsState] =
+    React.useState<Bounds | null>(null);
+  const [hoverBoundsState, setHoverBoundsState] = React.useState<Bounds | null>(
+    null,
+  );
+  const [selectionActiveClassNameState, setSelectionActiveClassNameState] =
+    React.useState('');
+  const [hoverActiveClassNameState, setHoverActiveClassNameState] =
+    React.useState('');
+
   const selectionValue: string | null =
     value !== undefined ? value ?? null : defaultValue ?? null;
+
+  const dualLayer = Boolean(
+    hover &&
+      mode === 'parent' &&
+      controlledItems &&
+      value !== undefined,
+  );
+
+  const selectionTransition = transition;
+  const hoverTransition = {
+    type: 'spring' as const,
+    stiffness: Math.min(
+      ((transition as { stiffness?: number })?.stiffness ?? 350) + 80,
+      560,
+    ),
+    damping: (transition as { damping?: number })?.damping ?? 35,
+    mass: Math.max(
+      ((transition as { mass?: number })?.mass ?? 1) * 0.85,
+      0.55,
+    ),
+  };
 
   const safeSetActiveValue = (id: string | null) => {
     setActiveValue((prev) => {
@@ -232,10 +282,75 @@ function Highlight<T extends React.ElementType = 'div'>({
     setBoundsState((prev) => (prev === null ? prev : null));
   }, []);
 
+  const rectToLocalBounds = React.useCallback((bounds: DOMRect): Bounds | null => {
+    if (!localRef.current) return null;
+    const containerRect = localRef.current.getBoundingClientRect();
+    const offset = boundsOffsetRef.current;
+    return {
+      top: bounds.top - containerRect.top + offset.top,
+      left: bounds.left - containerRect.left + offset.left,
+      width: bounds.width + offset.width,
+      height: bounds.height + offset.height,
+    };
+  }, []);
+
+  const mergeBounds = (prev: Bounds | null, next: Bounds) => {
+    if (
+      prev &&
+      prev.top === next.top &&
+      prev.left === next.left &&
+      prev.width === next.width &&
+      prev.height === next.height
+    ) {
+      return prev;
+    }
+    return next;
+  };
+
+  const setSelectionBounds = React.useCallback(
+    (rect: DOMRect) => {
+      const newBounds = rectToLocalBounds(rect);
+      if (!newBounds) return;
+      setSelectionBoundsState((prev) => mergeBounds(prev, newBounds));
+    },
+    [rectToLocalBounds],
+  );
+
+  const setHoverBounds = React.useCallback(
+    (rect: DOMRect) => {
+      const newBounds = rectToLocalBounds(rect);
+      if (!newBounds) return;
+      setHoverBoundsState((prev) => mergeBounds(prev, newBounds));
+    },
+    [rectToLocalBounds],
+  );
+
+  const clearSelectionBounds = React.useCallback(() => {
+    setSelectionBoundsState((prev) => (prev === null ? prev : null));
+  }, []);
+
+  const clearHoverBounds = React.useCallback(() => {
+    setHoverBoundsState((prev) => (prev === null ? prev : null));
+  }, []);
+
   React.useEffect(() => {
     if (value !== undefined) setActiveValue(value);
     else if (defaultValue !== undefined) setActiveValue(defaultValue);
   }, [value, defaultValue]);
+
+  React.useEffect(() => {
+    if (!dualLayer) return;
+    if (selectionValue == null) {
+      clearSelectionBounds();
+    }
+  }, [dualLayer, selectionValue, clearSelectionBounds]);
+
+  React.useEffect(() => {
+    if (!dualLayer) return;
+    if (hoverActiveValue == null) {
+      clearHoverBounds();
+    }
+  }, [dualLayer, hoverActiveValue, clearHoverBounds]);
 
   const id = React.useId();
 
@@ -245,6 +360,31 @@ function Highlight<T extends React.ElementType = 'div'>({
     if (!container) return;
 
     const onScroll = () => {
+      if (dualLayer) {
+        if (selectionValue) {
+          const els = container.querySelectorAll<HTMLElement>(
+            '[data-highlight="true"]',
+          );
+          for (const el of els) {
+            if (el.getAttribute('data-value') === selectionValue) {
+              setSelectionBounds(el.getBoundingClientRect());
+              break;
+            }
+          }
+        }
+        if (hoverActiveValue) {
+          const els = container.querySelectorAll<HTMLElement>(
+            '[data-highlight="true"]',
+          );
+          for (const el of els) {
+            if (el.getAttribute('data-value') === hoverActiveValue) {
+              setHoverBounds(el.getBoundingClientRect());
+              break;
+            }
+          }
+        }
+        return;
+      }
       if (!activeValue) return;
       const activeEl = container.querySelector<HTMLElement>(
         `[data-value="${activeValue}"][data-highlight="true"]`,
@@ -255,10 +395,93 @@ function Highlight<T extends React.ElementType = 'div'>({
 
     container.addEventListener('scroll', onScroll, { passive: true });
     return () => container.removeEventListener('scroll', onScroll);
-  }, [mode, activeValue]);
+  }, [
+    mode,
+    activeValue,
+    dualLayer,
+    selectionValue,
+    hoverActiveValue,
+    setSelectionBounds,
+    setHoverBounds,
+  ]);
+
+  const defaultSelectionClass =
+    'pointer-events-none rounded-lg bg-primary/10 shadow-[inset_0_0_0_1px] shadow-primary/15 dark:bg-primary/14';
+  const defaultHoverClass =
+    'pointer-events-none rounded-lg bg-primary/18 shadow-[inset_0_0_0_1px] shadow-primary/28 dark:bg-primary/24';
 
   const render = (children: React.ReactNode) => {
     if (mode === 'parent') {
+      if (dualLayer) {
+        const selCls =
+          selectionHighlightClassName ?? className ?? defaultSelectionClass;
+        const hovCls = hoverHighlightClassName ?? defaultHoverClass;
+        return (
+          <Component
+            ref={localRef}
+            data-slot="motion-highlight-container"
+            style={{ position: 'relative', zIndex: 1 }}
+            className={(props as ParentModeHighlightProps)?.containerClassName}
+          >
+            <AnimatePresence initial={false}>
+              {selectionBoundsState && (
+                <motion.div
+                  data-slot="motion-highlight-selection"
+                  animate={{
+                    top: selectionBoundsState.top,
+                    left: selectionBoundsState.left,
+                    width: selectionBoundsState.width,
+                    height: selectionBoundsState.height,
+                    opacity: 1,
+                  }}
+                  initial={false}
+                  exit={{
+                    opacity: 0,
+                    transition: {
+                      ...selectionTransition,
+                      delay:
+                        ((transition as { delay?: number })?.delay ?? 0) +
+                        (exitDelay ?? 0) / 1000,
+                    },
+                  }}
+                  transition={selectionTransition}
+                  style={{ position: 'absolute', zIndex: 0, ...style }}
+                  className={cn(selCls, selectionActiveClassNameState)}
+                />
+              )}
+            </AnimatePresence>
+            <AnimatePresence initial={false}>
+              {hoverBoundsState && (
+                <motion.div
+                  data-slot="motion-highlight-hover"
+                  animate={{
+                    top: hoverBoundsState.top,
+                    left: hoverBoundsState.left,
+                    width: hoverBoundsState.width,
+                    height: hoverBoundsState.height,
+                    opacity: 1,
+                  }}
+                  initial={{ opacity: 0 }}
+                  exit={{
+                    opacity: 0,
+                    transition: {
+                      ...hoverTransition,
+                      delay:
+                        ((transition as { delay?: number })?.delay ?? 0) +
+                        (exitDelay ?? 0) / 1000,
+                    },
+                  }}
+                  transition={hoverTransition}
+                  style={{ position: 'absolute', zIndex: 1, ...style }}
+                  className={cn(hovCls, hoverActiveClassNameState)}
+                />
+              )}
+            </AnimatePresence>
+            {children}
+          </Component>
+        );
+      }
+
       return (
         <Component
           ref={localRef}
@@ -312,6 +535,9 @@ function Highlight<T extends React.ElementType = 'div'>({
         activeValue,
         setActiveValue: safeSetActiveValue,
         selectionValue,
+        dualLayer,
+        hoverActiveValue,
+        setHoverActiveValue,
         id,
         hover,
         click,
@@ -323,6 +549,12 @@ function Highlight<T extends React.ElementType = 'div'>({
         exitDelay,
         setBounds: safeSetBounds,
         clearBounds,
+        setSelectionBounds,
+        setHoverBounds,
+        clearSelectionBounds,
+        clearHoverBounds,
+        setSelectionActiveClassName: setSelectionActiveClassNameState,
+        setHoverActiveClassName: setHoverActiveClassNameState,
         activeClassName: activeClassNameState,
         setActiveClassName: setActiveClassNameState,
         forceUpdateBounds: (props as ParentModeHighlightProps)
@@ -406,9 +638,14 @@ function HighlightItem<T extends React.ElementType>({
     activeValue,
     setActiveValue,
     selectionValue,
+    dualLayer,
+    hoverActiveValue,
+    setHoverActiveValue,
     mode,
     setBounds,
     clearBounds,
+    setSelectionBounds,
+    setHoverBounds,
     hover,
     click,
     enabled,
@@ -420,13 +657,19 @@ function HighlightItem<T extends React.ElementType>({
     exitDelay: contextExitDelay,
     forceUpdateBounds: contextForceUpdateBounds,
     setActiveClassName,
+    setSelectionActiveClassName,
+    setHoverActiveClassName,
   } = useHighlight();
 
   const Component = as ?? 'div';
   const element = children as React.ReactElement<ExtendedChildProps>;
   const childValue =
     id ?? value ?? element.props?.['data-value'] ?? element.props?.id ?? itemId;
-  const isActive = activeValue === childValue;
+  const isSelectionActive =
+    dualLayer && selectionValue != null && childValue === selectionValue;
+  const isHoverActive =
+    dualLayer && hoverActiveValue != null && childValue === hoverActiveValue;
+  const isActive = dualLayer ? isSelectionActive : activeValue === childValue;
   const isDisabled = disabled === undefined ? contextDisabled : disabled;
   const itemTransition = transition ?? contextTransition;
 
@@ -438,7 +681,39 @@ function HighlightItem<T extends React.ElementType>({
   }, []);
 
   React.useEffect(() => {
-    if (mode !== 'parent') return;
+    if (mode !== 'parent' || !dualLayer) return;
+    if (!isSelectionActive || !localRef.current) return;
+    setSelectionBounds(localRef.current.getBoundingClientRect());
+    setSelectionActiveClassName(activeClassName ?? '');
+  }, [
+    mode,
+    dualLayer,
+    isSelectionActive,
+    childValue,
+    selectionValue,
+    activeClassName,
+    setSelectionBounds,
+    setSelectionActiveClassName,
+  ]);
+
+  React.useEffect(() => {
+    if (mode !== 'parent' || !dualLayer) return;
+    if (!isHoverActive || !localRef.current) return;
+    setHoverBounds(localRef.current.getBoundingClientRect());
+    setHoverActiveClassName('');
+  }, [
+    mode,
+    dualLayer,
+    isHoverActive,
+    childValue,
+    hoverActiveValue,
+    setHoverBounds,
+    setHoverActiveClassName,
+  ]);
+
+  React.useEffect(() => {
+    if (mode !== 'parent' || dualLayer) return;
+
     let rafId: number;
     let previousBounds: Bounds | null = null;
     const shouldUpdateBounds =
@@ -497,16 +772,27 @@ function HighlightItem<T extends React.ElementType>({
   };
 
   const commonHandlers = hover
-    ? {
-        onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => {
-          setActiveValue(childValue);
-          element.props.onMouseEnter?.(e);
-        },
-        onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => {
-          setActiveValue(selectionValue ?? null);
-          element.props.onMouseLeave?.(e);
-        },
-      }
+    ? dualLayer
+      ? {
+          onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => {
+            setHoverActiveValue(childValue);
+            element.props.onMouseEnter?.(e);
+          },
+          onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => {
+            setHoverActiveValue(null);
+            element.props.onMouseLeave?.(e);
+          },
+        }
+      : {
+          onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => {
+            setActiveValue(childValue);
+            element.props.onMouseEnter?.(e);
+          },
+          onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => {
+            setActiveValue(selectionValue ?? null);
+            element.props.onMouseLeave?.(e);
+          },
+        }
     : click
       ? {
           onClick: (e: React.MouseEvent<HTMLDivElement>) => {

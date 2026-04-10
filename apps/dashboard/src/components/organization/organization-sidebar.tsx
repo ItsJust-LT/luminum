@@ -125,8 +125,9 @@ function NavMenuWithHighlight({
       click={false}
       enabled
       value={selectedHref}
-      transition={{ type: "spring", stiffness: 500, damping: 38, mass: 0.78 }}
-      className="pointer-events-none rounded-lg bg-primary/14 shadow-[inset_0_0_0_1px] shadow-primary/20 dark:bg-primary/20 dark:shadow-primary/30"
+      transition={{ type: "spring", stiffness: 400, damping: 34, mass: 0.82 }}
+      selectionHighlightClassName="pointer-events-none rounded-lg bg-sidebar-primary/14 shadow-[inset_0_0_0_1px] shadow-sidebar-primary/28 dark:bg-sidebar-primary/20 dark:shadow-sidebar-primary/35"
+      hoverHighlightClassName="pointer-events-none rounded-lg bg-primary/22 shadow-[inset_0_0_0_1px] shadow-primary/35 dark:bg-primary/28 dark:shadow-primary/40"
       containerClassName="relative"
     >
       <SidebarMenu className="relative space-y-1">
