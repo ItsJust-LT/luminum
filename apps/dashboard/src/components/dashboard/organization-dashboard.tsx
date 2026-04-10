@@ -180,7 +180,7 @@ export function OrganizationDashboard() {
             </div>
             <h3 className="text-base sm:text-lg font-semibold text-foreground mb-1">No website yet</h3>
             <p className="text-muted-foreground text-sm max-w-sm mb-5 sm:mb-6">
-              Add a website to this organization to see an overview and form submissions here.
+              Add a website to this organization to see traffic overview and workspace shortcuts here.
             </p>
             <Button asChild className="rounded-lg app-touch">
               <Link href={`/${organization.slug}/website`}>Add website</Link>

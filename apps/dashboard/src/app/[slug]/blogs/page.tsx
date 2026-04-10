@@ -1,13 +1,13 @@
 "use client"
 
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSession } from "@/lib/auth/client"
 import { useOrganization } from "@/lib/contexts/organization-context"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation"
 import LoadingAnimation from "@/components/LoadingAnimation"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { dashboardBlogAssetUrlFromKey } from "@/lib/blog-public-url"
 import { toast } from "sonner"
@@ -61,6 +61,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import { mergeSearchParams } from "@/lib/url-state/list-query"
 
 type BlogRow = {
   id: string
@@ -74,6 +75,9 @@ type BlogRow = {
 }
 
 type StatusFilter = "all" | "published" | "draft" | "scheduled"
+
+type BlogSortKey = "updated_desc" | "updated_asc" | "title_asc"
+const BLOG_SORT_KEYS: BlogSortKey[] = ["updated_desc", "updated_asc", "title_asc"]
 
 function statusBadgeClass(status: string) {
   switch (status) {
@@ -96,16 +100,54 @@ function formatShortDate(iso?: string | null) {
   })
 }
 
-export default function OrgBlogsListPage() {
+function OrgBlogsListPageInner() {
   const { data: session, isPending: sessionPending } = useSession()
   const { organization, loading: orgLoading } = useOrganization()
   const params = useParams()
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const slug = params.slug as string
   const [posts, setPosts] = useState<BlogRow[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+  const [sortBy, setSortBy] = useState<BlogSortKey>("updated_desc")
+  const queryFocusRef = useRef(false)
+
+  const pushBlogUrl = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      const qs = typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString()
+      const merged = mergeSearchParams(qs, updates)
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false })
+    },
+    [pathname, router, searchParams]
+  )
+
+  useEffect(() => {
+    if (queryFocusRef.current) return
+    setQuery(searchParams.get("q") ?? "")
+  }, [searchParams])
+
+  useEffect(() => {
+    const st = searchParams.get("status") as StatusFilter | null
+    if (st === "published" || st === "draft" || st === "scheduled") setStatusFilter(st)
+    else setStatusFilter("all")
+
+    const so = searchParams.get("sort")
+    if (so && (BLOG_SORT_KEYS as readonly string[]).includes(so)) setSortBy(so as BlogSortKey)
+  }, [searchParams])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const qs = typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString()
+      const cur = new URLSearchParams(qs).get("q") ?? ""
+      if (query === cur) return
+      const merged = mergeSearchParams(qs, { q: query || null })
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false })
+    }, 380)
+    return () => window.clearTimeout(t)
+  }, [query, pathname, router, searchParams])
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -138,8 +180,22 @@ export default function OrgBlogsListPage() {
         (p) => p.title.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q)
       )
     }
-    return list
-  }, [posts, query, statusFilter])
+    const rows = [...list]
+    rows.sort((a, b) => {
+      const ta = (a.updated_at || a.published_at || "").toString()
+      const tb = (b.updated_at || b.published_at || "").toString()
+      switch (sortBy) {
+        case "updated_asc":
+          return new Date(ta).getTime() - new Date(tb).getTime()
+        case "title_asc":
+          return a.title.localeCompare(b.title, undefined, { sensitivity: "base" })
+        case "updated_desc":
+        default:
+          return new Date(tb).getTime() - new Date(ta).getTime()
+      }
+    })
+    return rows
+  }, [posts, query, statusFilter, sortBy])
 
   const stats = useMemo(() => {
     const published = posts.filter((p) => p.status === "published").length
@@ -148,11 +204,13 @@ export default function OrgBlogsListPage() {
     return { published, draft, scheduled, total: posts.length }
   }, [posts])
 
-  const filtersActive = query.trim() !== "" || statusFilter !== "all"
+  const filtersActive = query.trim() !== "" || statusFilter !== "all" || sortBy !== "updated_desc"
 
   const clearFilters = () => {
     setQuery("")
     setStatusFilter("all")
+    setSortBy("updated_desc")
+    pushBlogUrl({ q: null, status: null, sort: null })
   }
 
   const removePost = async () => {
@@ -261,8 +319,17 @@ export default function OrgBlogsListPage() {
               placeholder="Search title or slug…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => {
+                queryFocusRef.current = true
+              }}
+              onBlur={() => {
+                queryFocusRef.current = false
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Escape") setQuery("")
+                if (e.key === "Escape") {
+                  setQuery("")
+                  pushBlogUrl({ q: null })
+                }
               }}
               aria-label="Search posts"
             />
@@ -270,7 +337,10 @@ export default function OrgBlogsListPage() {
               <button
                 type="button"
                 className="text-muted-foreground hover:bg-muted hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1"
-                onClick={() => setQuery("")}
+                onClick={() => {
+                  setQuery("")
+                  pushBlogUrl({ q: null })
+                }}
                 aria-label="Clear search"
               >
                 <X className="h-4 w-4" />
@@ -282,7 +352,13 @@ export default function OrgBlogsListPage() {
               <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Status</span>
               <Select
                 value={statusFilter}
-                onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+                onValueChange={(v) => {
+                  const vf = v as StatusFilter
+                  setStatusFilter(vf)
+                  pushBlogUrl({
+                    status: vf === "all" ? null : vf,
+                  })
+                }}
               >
                 <SelectTrigger className="w-full sm:w-[200px]" aria-label="Filter by status">
                   <SelectValue />
@@ -292,6 +368,26 @@ export default function OrgBlogsListPage() {
                   <SelectItem value="published">Published</SelectItem>
                   <SelectItem value="scheduled">Scheduled</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Sort</span>
+              <Select
+                value={sortBy}
+                onValueChange={(v) => {
+                  const sv = v as BlogSortKey
+                  setSortBy(sv)
+                  pushBlogUrl({ sort: sv })
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-[200px]" aria-label="Sort posts">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="updated_desc">Recently updated</SelectItem>
+                  <SelectItem value="updated_asc">Oldest activity</SelectItem>
+                  <SelectItem value="title_asc">Title A–Z</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -546,5 +642,13 @@ export default function OrgBlogsListPage() {
         </AlertDialogContent>
       </AlertDialog>
     </AppPageContainer>
+  )
+}
+
+export default function OrgBlogsListPage() {
+  return (
+    <Suspense fallback={<LoadingAnimation />}>
+      <OrgBlogsListPageInner />
+    </Suspense>
   )
 }

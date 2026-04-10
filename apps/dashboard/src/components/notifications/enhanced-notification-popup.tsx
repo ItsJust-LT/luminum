@@ -142,8 +142,8 @@ export function EnhancedNotificationPopup({
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 24, scale: 0.96, filter: 'blur(4px)' }}
-      animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+      initial={{ opacity: 0, y: 24, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, x: 28, scale: 0.94, transition: { duration: 0.22 } }}
       transition={{
         type: 'spring',
@@ -167,7 +167,7 @@ export function EnhancedNotificationPopup({
         }}
         className={cn(
           'relative cursor-pointer overflow-hidden rounded-2xl text-left shadow-2xl',
-          'border border-border/60 bg-card/95 backdrop-blur-xl',
+          'border border-border/60 bg-card',
           'ring-1 ring-black/[0.04] dark:ring-white/[0.06]',
           'transition-[box-shadow,transform] duration-200 hover:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.28)]',
           'dark:hover:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)]',

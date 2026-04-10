@@ -509,7 +509,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
   const toggleHeaders = (id: string) => setExpandedId((prev) => (prev === id ? null : id))
 
   return (
-    <div className="bg-background flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <Dialog open={!!preview} onOpenChange={handlePreviewOpenChange}>
         <DialogContent
           className={cn(
@@ -535,7 +535,11 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
                   <img src={preview.url} alt={preview.filename} className="max-w-full max-h-[75vh] w-auto object-contain rounded-lg shadow-lg" />
                 )}
                 {preview.type === "pdf" && (
-                  <iframe src={preview.url} title={preview.filename} className="w-full h-[75vh] min-h-[400px] rounded-lg border bg-background" />
+                  <iframe
+                    src={preview.url}
+                    title={preview.filename}
+                    className="h-[min(75dvh,640px)] min-h-[280px] w-full rounded-lg border bg-background sm:min-h-[400px]"
+                  />
                 )}
                 {preview.type === "text" && (
                   <div className="w-full h-[60vh] min-h-[200px] overflow-auto rounded-lg border bg-background p-4">
@@ -579,30 +583,30 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
         </DialogContent>
       </Dialog>
 
-      <header className="sticky top-0 z-20 border-b border-border/80 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90">
-        <div className="mx-auto flex w-full max-w-[1400px] items-center gap-2 sm:gap-3 px-3 py-2 sm:px-5 sm:py-2.5">
-          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" asChild>
+      <header className="sticky top-0 z-20 border-b border-border/80 bg-background shadow-sm">
+        <div className="mx-auto flex w-full max-w-[1400px] items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
+          <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 sm:h-9 sm:w-9" asChild>
             <Link href={`/${organizationSlug}/emails`} aria-label="Back to Inbox">
-              <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+              <ArrowLeft className="h-5 w-5 sm:h-4 sm:w-4" />
             </Link>
           </Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-sm sm:text-base font-semibold text-foreground truncate min-w-0" title={headerSubject}>
-                {headerSubject}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="min-w-0 flex-1 text-base font-semibold leading-tight text-foreground" title={headerSubject}>
+                <span className="line-clamp-2 sm:truncate sm:line-clamp-none">{headerSubject}</span>
               </h1>
               {thread.length > 1 && (
-                <Badge variant="secondary" className="shrink-0 gap-1 text-[11px] font-medium">
+                <Badge variant="secondary" className="shrink-0 gap-1 text-[10px] font-medium sm:text-[11px]">
                   <MessagesSquare className="h-3 w-3" />
                   {thread.length} in thread
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-muted-foreground truncate hidden sm:block">
+            <p className="text-muted-foreground mt-0.5 truncate text-[11px] sm:text-xs">
               {displaySender(seedEmail.from)} · {formatDate(seedEmail.date)}
             </p>
           </div>
-          <div className="flex items-center gap-0.5 shrink-0">
+          <div className="flex shrink-0 items-center gap-0.5">
             <Button
               variant="ghost"
               size="icon"
@@ -650,7 +654,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
       </header>
 
       <ScrollArea className="flex-1 min-h-0">
-        <div className="mx-auto w-full max-w-[1400px] px-3 pb-36 pt-4 sm:px-5 sm:pt-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1400px] px-3 pb-40 pt-3 sm:px-5 sm:pb-36 sm:pt-6 lg:px-8">
           {threadLoading ? (
             <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin opacity-60" />
@@ -668,23 +672,23 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
                   <Card
                     key={msg.id}
                     className={cn(
-                      "overflow-hidden border-border/80 shadow-sm transition-shadow",
-                      isSeed && "ring-2 ring-primary/25 shadow-md",
-                      isOutbound && "bg-muted/20"
+                      "overflow-hidden border-border/70 shadow-sm transition-shadow",
+                      isSeed && "shadow-md ring-2 ring-primary/20",
+                      isOutbound && "bg-muted/25"
                     )}
                   >
                     <CardContent className="p-0">
-                      <div className="flex gap-3 p-3 sm:p-4 lg:p-5">
+                      <div className="flex gap-3 p-3 sm:gap-4 sm:p-4 lg:p-5">
                         <EmailAvatar
                           email={msg.from}
                           senderAvatarUrl={msg.sender_avatar_url}
                           size={48}
-                          className="h-11 w-11 sm:h-12 sm:w-12 shrink-0 ring-1 ring-border/50"
+                          className="h-10 w-10 shrink-0 ring-1 ring-border/50 sm:h-12 sm:w-12"
                         />
                         <div className="min-w-0 flex-1 space-y-2">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-foreground text-[15px] leading-tight truncate" title={msg.from}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-x-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[15px] font-semibold leading-tight text-foreground" title={msg.from}>
                                 {displaySender(msg.from)}
                               </p>
                               <button
@@ -697,8 +701,8 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
                                 {showFullHeaders ? <ChevronUp className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
                               </button>
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground">
-                              <Calendar className="h-3.5 w-3.5" />
+                            <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:self-start">
+                              <Calendar className="h-3.5 w-3.5 shrink-0" />
                               <span className="tabular-nums">{formatDate(msg.date)}</span>
                               {isOutbound && msg.outbound_provider === "resend" && (
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
@@ -709,14 +713,14 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
                           </div>
 
                           {showFullHeaders && (
-                            <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs space-y-1">
-                              <div className="grid grid-cols-[3.5rem_1fr] gap-x-2 gap-y-0.5">
-                                <span className="text-muted-foreground">To</span>
-                                <span className="text-foreground break-all">{msg.to.join(", ") || "—"}</span>
+                            <div className="space-y-1 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+                              <div className="grid grid-cols-1 gap-x-2 gap-y-1 sm:grid-cols-[4rem_1fr] sm:gap-y-0.5">
+                                <span className="text-muted-foreground sm:pt-0.5">To</span>
+                                <span className="break-all text-foreground">{msg.to.join(", ") || "—"}</span>
                                 {msg.cc?.length > 0 && (
                                   <>
-                                    <span className="text-muted-foreground">Cc</span>
-                                    <span className="text-foreground break-all">{msg.cc.join(", ")}</span>
+                                    <span className="text-muted-foreground sm:pt-0.5">Cc</span>
+                                    <span className="break-all text-foreground">{msg.cc.join(", ")}</span>
                                   </>
                                 )}
                               </div>
@@ -734,38 +738,44 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
                           )}
 
                           {hasAttachments && (
-                            <div className="flex flex-wrap gap-2 pt-1">
+                            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
                               {msg.attachments.map((attachment: any, index: number) => {
                                 const previewType = getPreviewType(attachment)
                                 return (
                                   <div
                                     key={index}
-                                    className="flex items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1.5 text-xs"
+                                    className="flex w-full min-w-0 flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-2.5 py-2 text-xs sm:w-auto sm:max-w-full sm:bg-background/80"
                                   >
-                                    <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                    <span className="truncate max-w-[180px] sm:max-w-[240px]" title={attachment.filename}>
+                                    <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                    <span className="min-w-0 max-w-full flex-1 truncate sm:max-w-[200px] md:max-w-[280px]" title={attachment.filename}>
                                       {attachment.filename}
                                     </span>
-                                    <span className="text-muted-foreground shrink-0">{formatAttachmentSize(attachment)}</span>
-                                    {previewType && (
+                                    <span className="shrink-0 text-muted-foreground">{formatAttachmentSize(attachment)}</span>
+                                    <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
+                                      {previewType && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-8 px-2 sm:h-7"
+                                          title="Preview"
+                                          onClick={() => void handlePreviewAttachment(msg.id, index, attachment)}
+                                          disabled={loadingPreview}
+                                        >
+                                          <Eye className="h-3.5 w-3.5" />
+                                          <span className="sr-only">Preview</span>
+                                        </Button>
+                                      )}
                                       <Button
                                         size="sm"
-                                        variant="ghost"
-                                        className="h-7 px-2"
-                                        onClick={() => void handlePreviewAttachment(msg.id, index, attachment)}
-                                        disabled={loadingPreview}
+                                        variant="secondary"
+                                        className="h-8 px-2 sm:h-7"
+                                        title="Download"
+                                        onClick={() => void handleDownloadAttachment(msg.id, index, attachment.filename || "attachment")}
                                       >
-                                        <Eye className="h-3.5 w-3.5" />
+                                        <Download className="h-3.5 w-3.5" />
+                                        <span className="sr-only">Download</span>
                                       </Button>
-                                    )}
-                                    <Button
-                                      size="sm"
-                                      variant="secondary"
-                                      className="h-7 px-2"
-                                      onClick={() => void handleDownloadAttachment(msg.id, index, attachment.filename || "attachment")}
-                                    >
-                                      <Download className="h-3.5 w-3.5" />
-                                    </Button>
+                                    </div>
                                   </div>
                                 )
                               })}
@@ -774,7 +784,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
 
                           <Separator className="my-1" />
 
-                          <div className="rounded-lg border border-border/50 bg-card overflow-hidden">
+                          <div className="overflow-hidden rounded-lg border border-border/60 bg-card">
                             {msg.htmlBody ? (
                               <MessageSanitizedHtml htmlBody={msg.htmlBody} />
                             ) : msg.textBody ? (
@@ -804,7 +814,7 @@ export function EmailDetailClient({ email: seedEmail, organizationSlug, mailDoma
         </div>
       </ScrollArea>
 
-      <div className="sticky bottom-0 z-20 border-t border-border/80 bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90">
+      <div className="sticky bottom-0 z-20 border-t border-border/80 bg-background pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.35)]">
         <div className="mx-auto w-full max-w-[1400px] px-3 py-3 sm:px-5 sm:py-3.5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
             <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">

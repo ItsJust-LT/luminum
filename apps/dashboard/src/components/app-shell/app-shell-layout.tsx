@@ -3,7 +3,6 @@
 import type React from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useMemo } from 'react'
-import Image from 'next/image'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -25,13 +24,13 @@ import { cn } from '@/lib/utils'
 function getRoleColor(role: string) {
   switch (role) {
     case 'owner':
-      return 'bg-primary/15 text-primary border border-primary/30'
+      return 'bg-primary/12 text-primary'
     case 'admin':
-      return 'bg-chart-2/15 text-chart-2 border border-chart-2/35'
+      return 'bg-chart-2/12 text-chart-2'
     case 'member':
-      return 'bg-chart-5/15 text-chart-5 border border-chart-5/35'
+      return 'bg-chart-5/12 text-chart-5'
     default:
-      return 'bg-muted/70 text-muted-foreground border border-border/60'
+      return 'bg-muted/80 text-muted-foreground'
   }
 }
 
@@ -85,42 +84,38 @@ export function AppShellLayout({
   const brandSrc = organizationLogo?.trim() || '/images/logo.png'
 
   return (
-    <div className="mobile-app-root flex min-h-[100dvh] flex-col bg-background/80 touch-manipulation backdrop-blur-xl">
+    <div className="mobile-app-root flex min-h-[100dvh] flex-col touch-manipulation bg-gradient-to-b from-background via-background to-muted/30">
       <header
         className={cn(
-          'sticky top-0 z-50 flex shrink-0 items-center gap-2.5 border-b border-border/50 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl',
+          'sticky top-0 z-50 flex shrink-0 items-center gap-2.5 px-4 pt-[env(safe-area-inset-top)]',
           chrome.headerSurface,
         )}
         style={{ height: 'calc(3.25rem + env(safe-area-inset-top, 0px))' }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <div className="flex shrink-0 items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary/15 ring-1 ring-primary/25">
-              <Image
-                src={brandSrc}
-                alt={organizationName || 'Luminum'}
-                width={18}
-                height={18}
-                className="h-4 w-4 object-contain"
-                unoptimized
-              />
-            </div>
-            <span className="truncate text-[15px] font-semibold text-foreground tracking-tight md:text-base">{organizationName}</span>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex min-w-0 max-w-[min(100%,14rem)] shrink-0 items-center gap-2 rounded-2xl bg-muted/50 px-2 py-1 pr-2.5 sm:max-w-[min(100%,18rem)] sm:gap-2.5 sm:px-2.5 sm:py-1.5 sm:pr-3">
+            <Avatar className="h-8 w-8 shrink-0 rounded-xl shadow-none ring-0 sm:h-9 sm:w-9">
+              <AvatarImage src={brandSrc} alt={organizationName || 'Luminum'} className="object-contain p-1" />
+              <AvatarFallback className="rounded-xl bg-primary/15 text-sm font-semibold text-primary">
+                {(organizationName || 'L').charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <span className="truncate text-[15px] font-semibold tracking-tight text-foreground sm:text-base">{organizationName}</span>
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
           <ThemeToggle />
-          <div className="flex items-center justify-center rounded-full p-0.5 transition-colors hover:bg-muted/60">
+          <div className="flex items-center justify-center rounded-full p-0.5 transition-colors hover:bg-foreground/[0.06]">
             <NotificationBell />
           </div>
-          <Badge className={`${roleColor} hidden text-xs sm:inline-flex`} variant="secondary">
+          <Badge className={`${roleColor} hidden border-0 shadow-none text-xs sm:inline-flex`} variant="secondary">
             {(userRole || 'member').replace(/^./, (c) => c.toUpperCase())}
           </Badge>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full active:scale-95 transition-transform" aria-label="Account menu">
-                <Avatar className="h-8 w-8 ring-2 ring-background shadow-sm">
+                <Avatar className="h-8 w-8 shadow-none ring-0">
                   <AvatarImage src={sessionUser.image ?? ''} />
                   <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
                     {sessionUser.name?.charAt(0).toUpperCase() ?? 'U'}
@@ -149,7 +144,7 @@ export function AppShellLayout({
 
       <main
         className={cn(
-          'min-h-0 flex-1 overflow-auto pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] pt-3 md:pt-4',
+          'scrollbar-app min-h-0 flex-1 overflow-auto pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] pt-3 md:pt-4',
           chrome.mainSurface,
           isWhatsappRoute || isMailRoute ? 'p-0 overflow-hidden min-h-0 flex flex-col' : 'px-3 pb-5 sm:px-4 md:px-6',
         )}

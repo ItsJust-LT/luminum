@@ -90,7 +90,7 @@ export function SignInForm({ orgBranding }: SignInFormProps) {
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto shadow-2xl border bg-card/50 backdrop-blur-xl">
+    <Card className="mx-auto w-full max-w-md border bg-card shadow-2xl">
       <CardHeader className="space-y-6 text-center pb-8">
         <div className="flex justify-center mb-4">
           <Image
@@ -123,7 +123,7 @@ export function SignInForm({ orgBranding }: SignInFormProps) {
           <>
             <Button
               variant="outline"
-              className="w-full h-12 text-foreground border-border hover:bg-accent hover:border-accent-foreground/20 transition-all duration-300 bg-background/50 backdrop-blur-sm font-medium"
+              className="h-12 w-full border-border bg-background font-medium text-foreground transition-all duration-300 hover:border-accent-foreground/20 hover:bg-accent"
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isGoogleLoading}

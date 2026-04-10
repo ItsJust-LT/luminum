@@ -178,48 +178,95 @@ export function AuthRouteLoadingSkeleton() {
   )
 }
 
-/** Analytics / audits — KPI strip + dominant chart */
-export function ChartPageLoadingSkeleton() {
+/**
+ * Matches org Analytics page: header (icon + title + live strip), separator,
+ * date toolbar, KPI row (AnalyticsKpiGrid-style), primary chart card, two-column row.
+ */
+export function AnalyticsPageLoadingSkeleton({ className }: { className?: string }) {
   return (
-    <div className={cn(pad, "app-page")}>
-      <div className="flex flex-col gap-4 border-b border-border/50 pb-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-52 max-w-[80vw] sm:h-9" staggerIndex={0} />
-          <Skeleton className="h-4 w-72 max-w-full" staggerIndex={1} />
+    <div
+      className={cn(
+        "w-full min-h-0 px-3 sm:px-4 md:px-6 pt-4 sm:pt-5 md:pt-6",
+        "mx-auto max-w-[1600px] space-y-6 sm:space-y-8",
+        className
+      )}
+    >
+      <header className="space-y-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex items-start gap-3">
+              <Skeleton className="h-10 w-10 shrink-0 rounded-xl" staggerIndex={0} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-8 w-40 max-w-[75vw] sm:w-48" staggerIndex={1} />
+                <Skeleton className="h-4 w-full max-w-2xl" staggerIndex={2} />
+              </div>
+            </div>
+            <Skeleton className="h-4 w-44 max-w-[85vw]" staggerIndex={3} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-border/60 pt-2 lg:border-0 lg:pt-0 lg:justify-end">
+            <Skeleton className="h-8 w-28 rounded-full" staggerIndex={4} />
+            <Skeleton className="h-8 w-24 rounded-full" staggerIndex={5} />
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Skeleton className="h-9 w-28 rounded-lg" staggerIndex={2} />
-          <Skeleton className="h-9 w-28 rounded-lg" staggerIndex={3} />
+        <div className="bg-border h-px w-full shrink-0" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <Skeleton className="h-4 w-20" staggerIndex={6} />
+            <Skeleton className="h-9 w-full rounded-md sm:w-[min(100%,220px)]" staggerIndex={7} />
+          </div>
+          <Skeleton className="h-9 w-full rounded-md sm:w-28" staggerIndex={8} />
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:gap-4">
+      </header>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[0, 1, 2, 3].map((n) => (
-          <div key={n} className="app-card rounded-xl border p-4">
-            <Skeleton className="mb-2 h-3 w-20" staggerIndex={4 + n} />
-            <Skeleton className="h-8 w-24" staggerIndex={4 + n} />
+          <div
+            key={n}
+            className="app-card rounded-xl border border-border/50 bg-card/50 p-4 shadow-sm sm:p-5"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              <Skeleton className="h-11 w-11 shrink-0 rounded-xl" staggerIndex={9 + n} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-3 w-24" staggerIndex={9 + n} />
+                <Skeleton className="h-8 w-28 sm:h-9" staggerIndex={9 + n} />
+              </div>
+            </div>
           </div>
         ))}
       </div>
-      <div className="app-card rounded-xl border p-4 sm:p-6">
-        <Skeleton className="mb-4 h-5 w-40" staggerIndex={8} />
-        <Skeleton className="h-[240px] w-full rounded-xl sm:h-[320px]" staggerIndex={9} />
+
+      <div className="app-card border-border/50 rounded-xl border p-4 shadow-sm sm:p-6">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 shrink-0 rounded-xl" staggerIndex={13} />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-5 w-44 sm:w-52" staggerIndex={14} />
+            <Skeleton className="h-4 w-full max-w-xl" staggerIndex={15} />
+          </div>
+        </div>
+        <Skeleton className="mt-5 h-[320px] w-full rounded-xl sm:h-[380px] md:h-[400px]" staggerIndex={16} />
       </div>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="app-card rounded-xl border p-4 sm:p-6">
-          <Skeleton className="mb-3 h-5 w-36" staggerIndex={10} />
+        <div className="app-card rounded-xl border border-border/60 p-4 sm:p-6">
+          <Skeleton className="mb-3 h-5 w-36" staggerIndex={17} />
           <div className="space-y-2">
             {[0, 1, 2, 3, 4].map((n) => (
-              <Skeleton key={n} className="h-10 w-full rounded-lg" staggerIndex={11 + n} />
+              <Skeleton key={n} className="h-10 w-full rounded-lg sm:h-11" staggerIndex={18 + n} />
             ))}
           </div>
         </div>
-        <div className="app-card rounded-xl border p-4 sm:p-6">
-          <Skeleton className="mb-3 h-5 w-36" staggerIndex={16} />
-          <Skeleton className="h-48 w-full rounded-xl sm:h-56" staggerIndex={17} />
+        <div className="app-card rounded-xl border border-border/60 p-4 sm:p-6">
+          <Skeleton className="mb-3 h-5 w-36" staggerIndex={23} />
+          <Skeleton className="h-52 w-full rounded-xl sm:h-56" staggerIndex={24} />
         </div>
       </div>
     </div>
   )
+}
+
+/** Analytics, audits, reports — shared chart-dashboard placeholder */
+export function ChartPageLoadingSkeleton() {
+  return <AnalyticsPageLoadingSkeleton />
 }
 
 /** Forms, invoices, blogs list — toolbar + dense rows */

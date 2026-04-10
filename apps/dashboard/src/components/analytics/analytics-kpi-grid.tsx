@@ -2,7 +2,7 @@
 
 import type { ComponentType, ReactNode } from "react"
 import { Card, CardContent } from "@/components/ui/card"
-import { Eye, Users, Clock, FileText } from "lucide-react"
+import { Eye, Users, Clock } from "lucide-react"
 import { AnimatedNumber } from "@/components/ui/animated-number"
 import { formatDuration } from "@/lib/utils"
 import { LiveViewersMetricCard } from "@/components/analytics/live-visitors-counter"
@@ -44,7 +44,7 @@ function KpiCard({
 
 export function AnalyticsKpiGrid({ overview, liveCount, liveConnected, className }: AnalyticsKpiGridProps) {
   return (
-    <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5", className)}>
+    <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4", className)}>
       <KpiCard icon={Eye} label="Page views">
         <AnimatedNumber value={overview.pageViews ?? 0} duration={700} />
       </KpiCard>
@@ -59,9 +59,6 @@ export function AnalyticsKpiGrid({ overview, liveCount, liveConnected, className
         />
       </KpiCard>
       <LiveViewersMetricCard liveCount={liveCount} connected={liveConnected} />
-      <KpiCard icon={FileText} label="Form submissions" className="xl:col-span-1">
-        <AnimatedNumber value={overview.formSubmissions ?? 0} duration={700} />
-      </KpiCard>
     </div>
   )
 }

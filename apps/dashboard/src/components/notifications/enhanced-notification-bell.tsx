@@ -12,7 +12,6 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from '@/lib/notifications/push-client';
-import { api } from '@/lib/api';
 import { useSession } from '@/lib/auth/client';
 import {
   DropdownMenu,
@@ -28,6 +27,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getNotificationIconForBadge } from '@/components/notifications/notification-icons';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Notification, NotificationAction } from '@/lib/notifications/types';
+import {
+  getVisibleNotificationActions,
+  isMarkResourceReadActionId,
+} from '@/lib/notifications/action-visibility';
+import { runNotificationAction } from '@/lib/notifications/run-notification-action';
 import { toast } from 'sonner';
 
 function defaultOpenHref(n: Notification): string | undefined {
@@ -42,27 +46,7 @@ function defaultOpenHref(n: Notification): string | undefined {
 }
 
 async function runRowAction(n: Notification, action: NotificationAction) {
-  if (action.kind === 'api') {
-    if (action.id === 'mark_email_read' || action.id === 'mark_form_read') {
-      await api.notifications.performAction(n.id, action.id);
-      return;
-    }
-    if (action.path && action.method === 'POST') {
-      const path = action.path.startsWith('/') ? action.path : `/${action.path}`;
-      await fetch(`/api/proxy${path}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(action.body ?? {}),
-      });
-    }
-  } else if (action.kind === 'navigate' && action.href) {
-    if (action.href.startsWith('/')) {
-      window.location.href = action.href;
-    } else {
-      window.open(action.href, '_blank');
-    }
-  }
+  await runNotificationAction(n, action);
 }
 
 function startOfLocalDay(d: Date): number {
@@ -265,22 +249,22 @@ export function EnhancedNotificationBell() {
         sideOffset={8}
         collisionPadding={12}
         className={cn(
-          'z-[100] flex max-h-[min(90dvh,var(--radix-dropdown-menu-content-available-height))] w-[min(calc(100vw-1rem),26rem)] flex-col overflow-hidden p-0',
+          'z-[100] flex max-h-[min(90dvh,var(--radix-dropdown-menu-content-available-height))] w-[min(calc(100vw-1rem),28rem)] flex-col overflow-hidden p-0',
           'rounded-2xl border border-border/60 shadow-2xl',
-          'bg-popover/95 backdrop-blur-2xl dark:bg-popover/98',
+          'bg-popover',
           'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95'
         )}
       >
         {/* Header — stays above the scroll region */}
-        <div className="relative shrink-0 border-b border-border/50 bg-muted/30 px-3 py-3 sm:px-4 dark:bg-muted/20">
+        <div className="relative shrink-0 border-b border-border/60 bg-card px-3 py-3 sm:px-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Inbox className="h-4 w-4" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                <Inbox className="h-[1.05rem] w-[1.05rem]" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 pt-0.5">
                 <h2 className="text-sm font-semibold tracking-tight text-foreground">Notifications</h2>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
                   {unreadCount > 0
                     ? `${unreadCount} unread`
                     : notifications.length === 0
@@ -289,7 +273,7 @@ export function EnhancedNotificationBell() {
                 </p>
               </div>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:justify-start">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:pt-0.5 sm:justify-start">
               <NotificationPreferencesButton />
               {notifications.length > 0 && unreadCount > 0 && (
                 <Button
@@ -340,20 +324,20 @@ export function EnhancedNotificationBell() {
             )}
 
             {sections.length > 0 && (
-              <div className="space-y-1 py-2">
+              <div className="space-y-0.5 py-2">
                 {sections.map((section) => (
                   <div key={section.label}>
-                    <div className="bg-popover/95 sticky top-0 z-10 px-3 pb-1 pt-2 backdrop-blur-md sm:px-4">
-                      <span className="inline-flex rounded-full bg-muted/90 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <div className="sticky top-0 z-10 border-b border-transparent bg-popover/95 px-3 pb-1.5 pt-2 backdrop-blur-sm supports-[backdrop-filter]:bg-popover/80 sm:px-4">
+                      <span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                         {section.label}
                       </span>
                     </div>
-                    <ul className="space-y-1 px-2">
+                    <ul className="space-y-1 px-2 pb-1">
                       {section.items.map((n) => {
                         const style = getNotificationTypeStyle(n.type);
                         const accent = style.accentHex;
                         const isUnread = !n.read;
-                        const rowActions = (n.actions || []).filter((a) => a.id !== 'open');
+                        const rowActions = getVisibleNotificationActions(n, { includeOpen: false });
 
                         return (
                           <li key={n.id}>
@@ -362,11 +346,11 @@ export function EnhancedNotificationBell() {
                               initial={{ opacity: 0.85 }}
                               animate={{ opacity: 1 }}
                               className={cn(
-                                'group flex w-full gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors',
-                                'hover:bg-muted/70 dark:hover:bg-muted/40',
+                                'group flex w-full gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left transition-colors',
                                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                                isUnread &&
-                                  'border-border/30 bg-muted/50 shadow-sm dark:bg-muted/30'
+                                isUnread
+                                  ? 'border-border/25 bg-primary/[0.04] shadow-sm hover:bg-primary/[0.07] dark:bg-primary/[0.06] dark:hover:bg-primary/[0.09]'
+                                  : 'hover:bg-muted/60 dark:hover:bg-muted/35'
                               )}
                               style={
                                 isUnread
@@ -426,7 +410,7 @@ export function EnhancedNotificationBell() {
                                 </div>
                                 {rowActions.length > 0 && (
                                   <div
-                                    className="mt-2 flex flex-wrap gap-1.5"
+                                    className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/40 pt-2"
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     {rowActions.map((a) => (
@@ -435,11 +419,17 @@ export function EnhancedNotificationBell() {
                                         type="button"
                                         size="sm"
                                         variant={
-                                          a.variant === 'secondary' || a.style === 'secondary'
-                                            ? 'outline'
-                                            : 'secondary'
+                                          isMarkResourceReadActionId(a.id)
+                                            ? 'ghost'
+                                            : a.variant === 'secondary' || a.style === 'secondary'
+                                              ? 'outline'
+                                              : 'secondary'
                                         }
-                                        className="h-7 rounded-lg px-2.5 text-xs"
+                                        className={cn(
+                                          'h-7 rounded-md px-2.5 text-xs',
+                                          isMarkResourceReadActionId(a.id) &&
+                                            'text-muted-foreground hover:text-foreground'
+                                        )}
                                         onClick={() => void runRowAction(n, a)}
                                       >
                                         {a.label}

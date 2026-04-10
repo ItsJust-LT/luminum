@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { FileText, TrendingUp } from "lucide-react"
-import type { MetricCount } from "@/lib/analytics/client"
+import type { MetricCount } from "@/lib/types/analytics"
 
 interface TopPagesTableProps {
   pages: MetricCount[]
@@ -52,7 +52,18 @@ export function TopPagesTable({ pages: initialPages }: TopPagesTableProps) {
                       {index + 1}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-foreground truncate">{cleanPath}</div>
+                      {page.title ? (
+                        <div className="truncate font-medium text-foreground">{page.title}</div>
+                      ) : null}
+                      <div
+                        className={
+                          page.title
+                            ? "truncate font-mono text-xs text-muted-foreground"
+                            : "truncate font-medium text-foreground"
+                        }
+                      >
+                        {cleanPath}
+                      </div>
                       <div className="text-sm text-muted-foreground flex items-center gap-1">
                         <TrendingUp className="h-3 w-3" />
                         {percentage.toFixed(1)}% of total views

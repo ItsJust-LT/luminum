@@ -94,29 +94,6 @@ export function TableSkeleton({ rows = 5, className }: { rows?: number; classNam
   )
 }
 
-export function AnalyticsSkeleton({ className }: { className?: string }) {
-  return (
-    <div className={cn("space-y-6", className)}>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-lg border bg-card p-6">
-            <div className="space-y-2">
-              <SkeletonLoader width="w-1/2" staggerBase={i} />
-              <SkeletonLoader variant="text" width="w-1/3" staggerBase={i + 4} />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="rounded-lg border bg-card p-6">
-        <div className="space-y-4">
-          <SkeletonLoader width="w-1/4" staggerBase={8} />
-          <SkeletonLoader variant="card" staggerBase={9} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export function FormSkeleton({ className }: { className?: string }) {
   return (
     <div className={cn("space-y-6", className)}>

@@ -174,7 +174,7 @@ export function AdminSidebar({
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="px-3 flex-1 overflow-y-auto">
+      <SidebarContent className="flex-1 px-3">
         <SidebarGroup className="py-2">
           <SidebarGroupLabel className="text-muted-foreground mx-2 mb-2 rounded-md bg-muted px-3 py-2 text-xs font-semibold uppercase tracking-wider">
             Navigation

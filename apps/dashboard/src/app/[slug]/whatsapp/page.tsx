@@ -242,7 +242,7 @@ function renderMediaContent(msg: WhatsAppMessage, fromMe: boolean) {
   if (!msg.media_url) return null
   const mime = (msg.mime_type || "").toLowerCase()
   const shellClass = cn(
-    "mt-2 overflow-hidden rounded-xl border backdrop-blur-sm",
+    "mt-2 overflow-hidden rounded-xl border",
     fromMe ? "border-primary-foreground/25 bg-primary-foreground/10" : "border-border/80 bg-background/80"
   )
 
@@ -1354,7 +1354,7 @@ export default function WhatsAppPage() {
           selectedChat ? "flex" : "hidden md:flex"
         )}>
           {/* Chat header */}
-          <div className="bg-background/95 flex h-14 items-center gap-3 border-b px-4 backdrop-blur-sm">
+          <div className="flex h-14 items-center gap-3 border-b bg-background px-4">
             <Button
               variant="ghost"
               size="icon"

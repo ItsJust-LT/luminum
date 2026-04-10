@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/require-auth.js";
 import { prisma } from "../lib/prisma.js";
+import { aggregateUrlCountsWithTitles } from "../lib/analytics-url-titles.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -240,19 +241,10 @@ router.get("/top-pages", async (req: Request, res: Response) => {
 
     const events = await prisma.events.findMany({
       where: { created_at: { gte: new Date(start), lte: new Date(end) }, url: { not: null } },
-      select: { url: true },
+      select: { url: true, page_title: true },
     });
 
-    const counts: Record<string, number> = {};
-    for (const e of events) {
-      const url = (e.url || "/").trim() || "/";
-      counts[url] = (counts[url] || 0) + 1;
-    }
-
-    const result = Object.entries(counts)
-      .map(([key, count]) => ({ key, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, parseInt(limit));
+    const result = aggregateUrlCountsWithTitles(events).slice(0, parseInt(limit));
 
     res.json({ success: true, data: result });
   } catch (error: any) {

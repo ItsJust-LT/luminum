@@ -14,13 +14,13 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { format, parseISO } from "date-fns";
+import { format, isValid, parse, parseISO } from "date-fns";
 import { currencies } from "@/lib/currencies";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -301,7 +301,7 @@ export default function EditInvoicePage() {
 
   return (
     <div className="min-h-screen pb-8">
-      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b">
+      <div className="sticky top-0 z-30 border-b bg-background">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/${slug}/invoices/${invoiceId}`}><ArrowLeft className="h-4 w-4" /></Link>
@@ -381,27 +381,30 @@ export default function EditInvoicePage() {
                 </div>
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5"><CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />{isReceipt ? "Payment date" : "Invoice date"}</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start font-normal"><CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />{format(date, "PPP")}</Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} initialFocus /></PopoverContent>
-                  </Popover>
+                  <DatePicker
+                    value={format(date, "yyyy-MM-dd")}
+                    onChange={(v) => {
+                      const d = parse(v, "yyyy-MM-dd", new Date());
+                      if (isValid(d)) setDate(d);
+                    }}
+                  />
                 </div>
                 {!isReceipt && (
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1.5"><CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />{isQuote ? "Valid Until" : "Due Date"} <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn("w-full justify-start font-normal", !dueDate && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />{dueDate ? format(dueDate, "PPP") : "Select a due date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={dueDate} onSelect={(d) => setDueDate(d ?? undefined)} initialFocus />
-                      {dueDate && <div className="p-2 border-t"><Button variant="ghost" size="sm" className="w-full" onClick={() => setDueDate(undefined)}>Clear date</Button></div>}
-                    </PopoverContent>
-                  </Popover>
+                  <DatePicker
+                    value={dueDate ? format(dueDate, "yyyy-MM-dd") : ""}
+                    onChange={(v) => {
+                      if (!v) {
+                        setDueDate(undefined);
+                        return;
+                      }
+                      const d = parse(v, "yyyy-MM-dd", new Date());
+                      if (isValid(d)) setDueDate(d);
+                    }}
+                    allowClear
+                    placeholder="Select a due date"
+                  />
                 </div>
                 )}
                 <div className="space-y-2 sm:col-span-2">

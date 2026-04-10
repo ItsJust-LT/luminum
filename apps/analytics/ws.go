@@ -34,6 +34,7 @@ type PageNavigationData struct {
 	SessionID  string `json:"sessionId"`
 	URL        string `json:"url"`
 	Referrer   string `json:"referrer"`
+	PageTitle  string `json:"pageTitle"`
 	DeviceType string `json:"deviceType"`
 	Country    string `json:"country"`
 	City       string `json:"city"`

@@ -15,22 +15,19 @@ import {
   MousePointer,
   BarChart3,
   RefreshCw,
-  FileText,
   Globe,
   Smartphone,
   Monitor,
 } from "lucide-react"
 import { AnalyticsChart } from "./analytics-chart"
 import { TopPagesTable } from "./top-pages-table"
-import { FormSubmissionsInfo } from "./form-submissions-info"
+import { granularityForAnalyticsDateRange } from "@/lib/analytics/chart-time-format"
 import type { MetricCount } from "@/lib/types/analytics"
 import { api } from "@/lib/api"
 import { formatDuration } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
-import { OrganizationEvents } from "@/lib/ably/events"
-import { useOrganization } from "@/lib/contexts/organization-context"
+import { useAnalyticsPresence } from "@/lib/ably/client"
 import { LiveVisitorsBadges, LiveViewersMetricCard } from "@/components/analytics/live-visitors-counter"
 
 interface AnalyticsDashboardProps {
@@ -47,12 +44,10 @@ interface OverviewData {
 }
 
 export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDashboardProps) {
-  const { organization } = useOrganization()
   const [data, setData] = useState<OverviewData | null>(null)
   const [timeseriesData, setTimeseriesData] = useState<any[]>([])
   const [topPages, setTopPages] = useState<MetricCount[]>([])
   const [apiLiveViewers, setApiLiveViewers] = useState(0)
-  const [formSubmissions, setFormSubmissions] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [dateRange, setDateRange] = useState("7d")
@@ -100,7 +95,6 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
           bounceRate: 0,
           newVisitors: Math.round((overview.uniqueSessions || 0) * 0.7),
         })
-        setFormSubmissions(overview.formSubmissions || 0)
       }
       setTimeseriesData(timeseries?.data ?? [])
       setTopPages(pages ?? [])
@@ -117,14 +111,6 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
 
   fetchRef.current = fetchAnalyticsData
 
-  const { connected: ablyConnected } = useOrganizationChannel(
-    analyticsEnabled && organization ? organization.id : null,
-    useCallback((eventType: string) => {
-      if (eventType === OrganizationEvents.FORM_SUBMISSION_CREATED || eventType === OrganizationEvents.FORM_SUBMISSION_UPDATED) {
-        fetchRef.current?.()
-      }
-    }, [])
-  )
   const { liveCount: presenceLiveCount, connected: presenceConnected } = useAnalyticsPresence(
     analyticsEnabled ? websiteId : null
   )
@@ -165,7 +151,7 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
                   Analytics tracking is currently disabled for this website. Enable comprehensive tracking to unlock
                   powerful insights.
                 </p>
-                <Button variant="outline" className="bg-background/50 backdrop-blur-sm">
+                <Button variant="outline" className="bg-background">
                   Contact Administrator
                 </Button>
               </div>
@@ -180,7 +166,7 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
     return (
       <div className="space-y-8">
         {/* Header skeleton */}
-        <Card className="bg-card/50 backdrop-blur-sm">
+        <Card className="bg-card">
           <CardContent className="p-6">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-4">
@@ -203,8 +189,8 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
         </Card>
 
         {/* Stats cards skeleton */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
-          {[0, 1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
             <Card key={i} className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/50 dark:to-slate-900/30">
               <CardContent className="p-6 text-center">
                 <Skeleton className="h-14 w-14 rounded-xl mx-auto mb-4" staggerIndex={8 + i} />
@@ -216,7 +202,7 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
         </div>
 
         {/* Chart skeleton */}
-        <Card className="bg-card/50 backdrop-blur-sm">
+        <Card className="bg-card">
           <CardHeader>
             <Skeleton className="h-6 w-48" staggerIndex={13} />
             <Skeleton className="h-4 w-64" staggerIndex={14} />
@@ -228,7 +214,7 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
 
         {/* Bottom row skeleton */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="bg-card/50 backdrop-blur-sm">
+          <Card className="bg-card">
             <CardHeader>
               <Skeleton className="h-6 w-32" staggerIndex={16} />
             </CardHeader>
@@ -245,7 +231,7 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
             </CardContent>
           </Card>
 
-          <Card className="bg-card/50 backdrop-blur-sm">
+          <Card className="bg-card">
             <CardHeader>
               <Skeleton className="h-6 w-40" staggerIndex={22} />
             </CardHeader>
@@ -271,7 +257,7 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
 
   return (
     <div className="space-y-8">
-      <Card className="bg-card/50 backdrop-blur-sm">
+      <Card className="bg-card">
         <CardContent className="p-6">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
@@ -300,18 +286,12 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
             </div>
             <div className="flex items-center gap-3">
               <LiveVisitorsBadges liveCount={liveViewers} connected={liveConnected} />
-              {formSubmissions > 0 && (
-                <Badge variant="outline" className="flex items-center gap-2 px-3 py-1">
-                  <FileText className="h-3 w-3" />
-                  {formSubmissions} submissions
-                </Badge>
-              )}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="bg-background/50 backdrop-blur-sm"
+                className="bg-background"
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
                 Refresh
@@ -322,7 +302,7 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
       </Card>
 
       {data && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-950/50 dark:to-slate-900/30">
             <CardContent className="p-6 text-center">
               <div className="p-3 bg-slate-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
@@ -381,25 +361,15 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
           </Card>
 
           <LiveViewersMetricCard liveCount={liveViewers} connected={liveConnected} />
-
-
-          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-gradient-to-br from-cyan-50/50 to-cyan-100/30 dark:from-cyan-950/30 dark:to-cyan-900/20">
-            <CardContent className="p-6 text-center">
-              <div className="p-3 bg-cyan-500/10 rounded-xl w-fit mx-auto mb-4 group-hover:scale-110 transition-transform">
-                <FileText className="h-8 w-8 text-cyan-600 dark:text-cyan-400" />
-              </div>
-              <div className="text-3xl font-bold mb-2 text-cyan-900 dark:text-cyan-100">{formSubmissions}</div>
-              <div className="text-sm text-cyan-700 dark:text-cyan-300 font-medium">Form Submissions</div>
-            </CardContent>
-          </Card>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:gap-8">
         <AnalyticsChart
           data={timeseriesData}
           title="Traffic Over Time"
           description={`Website traffic for the last ${dateRange}`}
+          timeGranularity={granularityForAnalyticsDateRange(dateRange)}
         />
         <TopPagesTable pages={topPages} />
       </div>
@@ -545,8 +515,6 @@ export function AnalyticsDashboard({ websiteId, analyticsEnabled }: AnalyticsDas
         </Card>
       </div>
 
-      {/* Form Submissions Section */}
-      <FormSubmissionsInfo websiteId={websiteId} />
     </div>
   )
 }

@@ -49,8 +49,9 @@ export function MailboxSidebar({
   return (
     <aside
       className={cn(
-        "bg-card/90 flex shrink-0 flex-col border-b border-border/60 backdrop-blur-sm",
-        "md:sticky md:top-0 md:self-stretch",
+        "bg-card flex shrink-0 flex-col border-b border-border/60 max-md:shadow-sm",
+        "md:sticky md:top-0 md:self-stretch md:shadow-none",
+        "pt-[max(0.25rem,env(safe-area-inset-top,0px))] md:pt-0",
         className
       )}
     >
@@ -61,7 +62,7 @@ export function MailboxSidebar({
         </div>
 
         <ScrollArea className="md:min-h-0 md:flex-1">
-          <nav className="flex flex-row gap-1 overflow-x-auto px-2 py-2 md:flex-col md:gap-0.5 md:overflow-visible md:px-2 md:py-2 md:pr-3">
+          <nav className="flex flex-row gap-1 overflow-x-auto overscroll-x-contain px-2 py-2 [-ms-overflow-style:none] [scrollbar-width:none] md:flex-col md:gap-0.5 md:overflow-visible md:px-2 md:py-2 md:pr-3 [&::-webkit-scrollbar]:hidden">
             {items.map((item) => {
               const Icon = item.icon
               const n = item.countKey ? counts[item.countKey] : 0
@@ -74,7 +75,7 @@ export function MailboxSidebar({
                   type="button"
                   onClick={() => onSelect(item.id)}
                   className={cn(
-                    "relative flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors whitespace-nowrap md:w-full md:py-2",
+                    "relative flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors whitespace-nowrap md:min-h-0 md:w-full md:py-2",
                     isActive
                       ? "bg-primary/12 text-foreground ring-primary/20 font-medium shadow-sm ring-1"
                       : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
@@ -100,11 +101,14 @@ export function MailboxSidebar({
 
         <Separator className="hidden opacity-40 md:block" />
 
-        <div className="flex flex-row gap-2 border-t border-border/50 p-2 md:flex-col md:border-t-0 md:px-2 md:pb-4 md:pt-2">
+        <div className="flex flex-row gap-2 border-t border-border/50 bg-muted/20 p-2 md:flex-col md:bg-transparent md:border-t-0 md:px-2 md:pb-4 md:pt-2">
           <Button
             asChild
             variant={activeSection === "compose" ? "default" : "secondary"}
-            className={cn("h-10 flex-1 md:h-10 md:w-full", activeSection === "compose" && "shadow-sm")}
+            className={cn(
+              "h-11 min-h-11 flex-1 touch-manipulation md:h-10 md:min-h-10 md:w-full",
+              activeSection === "compose" && "shadow-sm"
+            )}
           >
             <Link href={composeHref} className="gap-2">
               <PenSquare className="h-4 w-4" />
@@ -114,7 +118,10 @@ export function MailboxSidebar({
           <Button
             asChild
             variant={activeSection === "settings" ? "default" : "outline"}
-            className={cn("h-10 flex-1 md:h-10 md:w-full", activeSection === "settings" && "shadow-sm")}
+            className={cn(
+              "h-11 min-h-11 flex-1 touch-manipulation md:h-10 md:min-h-10 md:w-full",
+              activeSection === "settings" && "shadow-sm"
+            )}
           >
             <Link href={settingsHref} className="gap-2">
               <Settings2 className="h-4 w-4" />

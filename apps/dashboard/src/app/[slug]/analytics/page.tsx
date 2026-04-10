@@ -4,13 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Area, AreaChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Pie, PieChart, Cell } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import {
@@ -40,20 +33,34 @@ import { api } from "@/lib/api"
 import { formatDuration, cn } from "@/lib/utils"
 import { cleanAnalyticsPath } from "@/lib/analytics/clean-route"
 import { getCountryFlag } from "@/components/analytics/analytics-country-flags"
-import { ANALYTICS_DATE_RANGES } from "@/components/analytics/analytics-date-ranges"
+import {
+  ANALYTICS_DATE_RANGES,
+  getAnalyticsPresetBounds,
+  type AnalyticsDateRangeValue,
+  type AnalyticsPresetRange,
+} from "@/components/analytics/analytics-date-ranges"
+import {
+  DateRangePicker,
+  type DateRangeValue,
+} from "@/components/ui/date-range-picker"
 import { AnalyticsKpiGrid } from "@/components/analytics/analytics-kpi-grid"
 import { AnalyticsSetupBanner } from "@/components/analytics/analytics-setup-banner"
-import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import type { Website } from "@/lib/types/websites"
 import { useRouter } from "next/navigation"
-import { AnalyticsSkeleton } from "@/components/ui/skeleton-loader"
-import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
-import { OrganizationEvents } from "@/lib/ably/events"
+import { PageDataSpinner } from "@/components/shell/page-data-spinner"
+import { useAnalyticsPresence } from "@/lib/ably/client"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { LiveVisitorsBadges } from "@/components/analytics/live-visitors-counter"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import {
+  formatChartAxisTick,
+  formatChartTooltipTime,
+  granularityForAnalytics,
+  timeseriesGranularityForAnalytics,
+} from "@/lib/analytics/chart-time-format"
 import { Separator } from "@/components/ui/separator"
+import { min } from "date-fns"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Table,
@@ -71,6 +78,7 @@ interface LiveData {
   recentEvents: Array<{
     timestamp: string
     url: string
+    pageTitle?: string
     country: string
     deviceType: string
   }>
@@ -89,7 +97,8 @@ export default function AnalyticsPage() {
   const { organization, userRole, loading: orgLoading, error: orgError } = useOrganization()
   
   // Core state
-  const [dateRange, setDateRange] = useState("7d")
+  const [dateRange, setDateRange] = useState<AnalyticsDateRangeValue>("7d")
+  const [customRange, setCustomRange] = useState<DateRangeValue | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [website, setWebsite] = useState<Website | null>(null)
@@ -118,14 +127,7 @@ export default function AnalyticsPage() {
   const [analyticsAccess, setAnalyticsAccess] = useState<boolean | null>(null)
   const [verifyingScript, setVerifyingScript] = useState(false)
 
-  // Realtime: refetch when form created/updated (Ably organization channel)
   const fetchAnalyticsDataRef = useRef<() => void>(() => {})
-  const onOrgEvent = useCallback((eventType: string) => {
-    if (eventType === OrganizationEvents.FORM_SUBMISSION_CREATED || eventType === OrganizationEvents.FORM_SUBMISSION_UPDATED) {
-      fetchAnalyticsDataRef.current?.()
-    }
-  }, [])
-  const { connected: ablyConnected } = useOrganizationChannel(organization?.id ?? null, onOrgEvent)
   const { liveCount: presenceLiveCount, livePages: presenceLivePages, connected: presenceConnected } = useAnalyticsPresence(website?.id ?? null)
   const liveViewersCount = presenceConnected ? presenceLiveCount : liveData.activeVisitors
   const liveConnected = presenceConnected
@@ -204,20 +206,28 @@ export default function AnalyticsPage() {
     }
   }
 
-  // Calculate date range
-  const getDateRange = useCallback((range: string) => {
-    const end = new Date()
-    const start = new Date()
+  const getDateRange = useCallback((range: AnalyticsDateRangeValue, custom: DateRangeValue | null) => {
+    const now = new Date()
 
-    const selectedRange = ANALYTICS_DATE_RANGES.find(r => r.value === range)
-    if (!selectedRange) return { start: start.toISOString(), end: end.toISOString() }
-
-    if ("hours" in selectedRange) {
-      start.setHours(end.getHours() - selectedRange.hours)
-    } else if ("days" in selectedRange) {
-      start.setDate(end.getDate() - selectedRange.days)
+    if (range === "custom" && custom?.from && custom?.to) {
+      const start = new Date(custom.from)
+      start.setHours(0, 0, 0, 0)
+      const endDay = new Date(custom.to)
+      endDay.setHours(23, 59, 59, 999)
+      const end = min([endDay, now])
+      if (end.getTime() < start.getTime()) {
+        return { start: start.toISOString(), end: now.toISOString() }
+      }
+      return { start: start.toISOString(), end: end.toISOString() }
     }
 
+    // Custom without a complete range, or unknown key: use rolling 7 days (avoids empty/invalid API bounds).
+    if (range === "custom") {
+      const { start, end } = getAnalyticsPresetBounds("7d")
+      return { start: start.toISOString(), end: end.toISOString() }
+    }
+
+    const { start, end } = getAnalyticsPresetBounds(range)
     return { start: start.toISOString(), end: end.toISOString() }
   }, [])
 
@@ -226,11 +236,16 @@ export default function AnalyticsPage() {
     if (!website) return
 
     try {
-      const { start, end } = getDateRange(dateRange)
+      const { start, end } = getDateRange(dateRange, customRange)
+      const tsGranularity = timeseriesGranularityForAnalytics(
+        dateRange,
+        customRange?.from,
+        customRange?.to
+      )
 
       const [overview, timeseries, pages, countries, devices, realtime, flow, entryExitData, paths, stats] = await Promise.all([
         api.analytics.getOverview(website.id, start, end).catch(() => null),
-        api.analytics.getTimeSeries(website.id, start, end, dateRange === "24h" ? "hour" : "day").catch(() => null),
+        api.analytics.getTimeSeries(website.id, start, end, tsGranularity).catch(() => null),
         api.analytics.getTopPages(website.id, start, end, 10).catch(() => []),
         api.analytics.getCountries(website.id, start, end, 10).catch(() => []),
         api.analytics.getDevices(website.id, start, end, 5).catch(() => []),
@@ -260,7 +275,7 @@ export default function AnalyticsPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [website, dateRange, getDateRange])
+  }, [website, dateRange, customRange, getDateRange])
 
   fetchAnalyticsDataRef.current = fetchAnalyticsData
 
@@ -291,6 +306,21 @@ export default function AnalyticsPage() {
   }
 
   // Enhanced chart configurations with better colors
+  const chartTimeGranularity = useMemo(
+    () => granularityForAnalytics(dateRange, customRange?.from, customRange?.to),
+    [dateRange, customRange]
+  )
+
+  /** Calendar control: presets show their rolling window; custom uses chosen inclusive days. */
+  const datePickerValue = useMemo((): DateRangeValue => {
+    if (dateRange === "custom" && customRange?.from && customRange?.to) {
+      return { from: customRange.from, to: customRange.to }
+    }
+    const preset: AnalyticsPresetRange = dateRange === "custom" ? "7d" : dateRange
+    const { start, end } = getAnalyticsPresetBounds(preset)
+    return { from: start, to: end }
+  }, [dateRange, customRange])
+
   const chartConfig: ChartConfig = {
     pageViews: {
       label: "Page views",
@@ -299,10 +329,6 @@ export default function AnalyticsPage() {
     uniqueSessions: {
       label: "Sessions",
       color: "var(--color-chart-2)",
-    },
-    formSubmissions: {
-      label: "Form submissions",
-      color: "var(--color-chart-3)",
     },
   }
 
@@ -363,9 +389,7 @@ export default function AnalyticsPage() {
             </p>
           </div>
         </div>
-        <div className="py-16 sm:py-24">
-          <AnalyticsSkeleton />
-        </div>
+        <PageDataSpinner label="Loading organization…" />
       </AppPageContainer>
     )
   }
@@ -433,9 +457,7 @@ export default function AnalyticsPage() {
             </p>
           </div>
         </div>
-        <div className="py-16 sm:py-24">
-          <AnalyticsSkeleton />
-        </div>
+        <PageDataSpinner label="Checking analytics access…" />
       </AppPageContainer>
     )
   }
@@ -539,20 +561,61 @@ export default function AnalyticsPage() {
         <Separator />
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <span className="text-muted-foreground text-sm font-medium">Date range</span>
-            <Select value={dateRange} onValueChange={setDateRange}>
-              <SelectTrigger className="w-full sm:w-[min(100%,220px)]">
-                <SelectValue placeholder="Range" />
-              </SelectTrigger>
-              <SelectContent>
-                {ANALYTICS_DATE_RANGES.map((range) => (
-                  <SelectItem key={range.value} value={range.value}>
-                    {range.label}
-                  </SelectItem>
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+            <span className="text-muted-foreground shrink-0 text-sm font-medium">Date range</span>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="bg-muted flex flex-wrap gap-1 rounded-lg p-1">
+                {ANALYTICS_DATE_RANGES.map((r) => (
+                  <Button
+                    key={r.value}
+                    type="button"
+                    variant={dateRange === r.value ? "default" : "ghost"}
+                    size="sm"
+                    title={r.label}
+                    className={dateRange === r.value ? "shadow-sm" : "hover:bg-background/80"}
+                    onClick={() => {
+                      setDateRange(r.value)
+                      setCustomRange(null)
+                    }}
+                  >
+                    {r.shortLabel}
+                  </Button>
                 ))}
-              </SelectContent>
-            </Select>
+                <Button
+                  type="button"
+                  variant={dateRange === "custom" ? "default" : "ghost"}
+                  size="sm"
+                  className={dateRange === "custom" ? "shadow-sm" : "hover:bg-background/80"}
+                  onClick={() => {
+                    setDateRange("custom")
+                    setCustomRange((prev) => {
+                      if (prev?.from && prev?.to) return prev
+                      const end = new Date()
+                      const start = new Date()
+                      start.setDate(start.getDate() - 7)
+                      return { from: start, to: end }
+                    })
+                  }}
+                >
+                  Custom
+                </Button>
+              </div>
+              <DateRangePicker
+                value={datePickerValue}
+                onChange={(v) => {
+                  if (!v) {
+                    setDateRange("7d")
+                    setCustomRange(null)
+                    return
+                  }
+                  setDateRange("custom")
+                  setCustomRange(v)
+                }}
+                placeholder="Select date range"
+                className="w-full min-w-0 sm:w-auto sm:min-w-[260px]"
+                numberOfMonths={2}
+              />
+            </div>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
             <RefreshCw className={cn("mr-2 h-4 w-4", refreshing && "animate-spin")} />
@@ -577,12 +640,9 @@ export default function AnalyticsPage() {
         />
       ) : null}
 
-      <FormSubmissionsInfo websiteId={website.id} />
-
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
-        {/* Traffic Over Time Chart */}
-        <Card className="app-card border-0 bg-gradient-to-br from-background to-muted/10 shadow-lg">
+      {/* Traffic full width, then top pages */}
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
+        <Card className="app-card border-border/50 shadow-sm">
           <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
             <CardTitle className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-xl">
@@ -603,12 +663,8 @@ export default function AnalyticsPage() {
                       className="text-xs fill-muted-foreground"
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(value) => {
-                        const date = new Date(value)
-                        return dateRange === "24h" 
-                          ? date.toLocaleTimeString("en-US", { hour: "numeric", hour12: true })
-                          : date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                      }}
+                      minTickGap={28}
+                      tickFormatter={(value) => formatChartAxisTick(value, chartTimeGranularity)}
                     />
                     <YAxis
                       className="text-xs fill-muted-foreground"
@@ -617,7 +673,11 @@ export default function AnalyticsPage() {
                       domain={[0, "dataMax"]}
                     />
                     <ChartTooltip
-                      content={<ChartTooltipContent />}
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(label) => formatChartTooltipTime(label, chartTimeGranularity)}
+                        />
+                      }
                     />
                     <defs>
                       <linearGradient id="fillPageViews" x1="0" y1="0" x2="0" y2="1">
@@ -627,10 +687,6 @@ export default function AnalyticsPage() {
                       <linearGradient id="fillSessions" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.9} />
                         <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0.1} />
-                      </linearGradient>
-                      <linearGradient id="fillFormSubmissions" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-chart-3)" stopOpacity={0.9} />
-                        <stop offset="95%" stopColor="var(--color-chart-3)" stopOpacity={0.1} />
                       </linearGradient>
                     </defs>
                     <Area
@@ -663,21 +719,6 @@ export default function AnalyticsPage() {
                         fill: "var(--background)",
                       }}
                     />
-                    <Area
-                      dataKey="formSubmissions"
-                      type="monotone"
-                      fill="url(#fillFormSubmissions)"
-                      fillOpacity={0.6}
-                      stroke="var(--color-chart-3)"
-                      strokeWidth={3}
-                      dot={false}
-                      activeDot={{
-                        r: 6,
-                        stroke: "var(--color-chart-3)",
-                        strokeWidth: 2,
-                        fill: "var(--background)",
-                      }}
-                    />
                   </AreaChart>
                 </ResponsiveContainer>
               </ChartContainer>
@@ -693,8 +734,7 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
 
-        {/* Top Pages */}
-        <Card className="app-card border-0 bg-gradient-to-br from-background to-muted/10 shadow-lg">
+        <Card className="app-card border-border/50 shadow-sm">
           <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
             <CardTitle className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-xl">
@@ -724,7 +764,15 @@ export default function AnalyticsPage() {
                           {index + 1}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-foreground truncate font-mono">
+                          {page.title ? (
+                            <div className="font-medium text-foreground truncate">{page.title}</div>
+                          ) : null}
+                          <div
+                            className={cn(
+                              "truncate font-mono text-muted-foreground",
+                              page.title ? "text-xs" : "font-medium text-foreground"
+                            )}
+                          >
                             {cleanRoute}
                           </div>
                           <div className="text-sm text-muted-foreground">{percentage.toFixed(1)}% of traffic</div>
@@ -1017,7 +1065,12 @@ export default function AnalyticsPage() {
                                   <span className="bg-primary/10 text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold">
                                     {index + 1}
                                   </span>
-                                  <span className="font-mono text-sm break-all">{cleanRoute}</span>
+                                  <div className="min-w-0">
+                                    {page.title ? (
+                                      <div className="text-sm font-medium text-foreground">{page.title}</div>
+                                    ) : null}
+                                    <span className="break-all font-mono text-sm text-muted-foreground">{cleanRoute}</span>
+                                  </div>
                                 </div>
                               </div>
                               <div className="text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
@@ -1057,7 +1110,7 @@ export default function AnalyticsPage() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-[45%]">Page</TableHead>
+                            <TableHead className="w-[45%]">Page / URL</TableHead>
                             <TableHead className="text-right">Views</TableHead>
                             <TableHead className="text-right">Visitors</TableHead>
                             <TableHead className="text-right">Avg. time</TableHead>
@@ -1073,7 +1126,12 @@ export default function AnalyticsPage() {
                                     <span className="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold">
                                       {index + 1}
                                     </span>
-                                    <span className="font-mono text-sm">{cleanRoute}</span>
+                                    <div className="min-w-0">
+                                      {page.title ? (
+                                        <div className="truncate text-sm font-medium">{page.title}</div>
+                                      ) : null}
+                                      <div className="truncate font-mono text-xs text-muted-foreground">{cleanRoute}</div>
+                                    </div>
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right font-medium tabular-nums">
@@ -1228,7 +1286,12 @@ export default function AnalyticsPage() {
                               <div className="relative flex items-center justify-between p-3">
                                 <div className="flex items-center gap-2 min-w-0">
                                   <span className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-600 text-xs font-bold shrink-0">{index + 1}</span>
-                                  <span className="font-mono text-sm truncate">{cleanRoute}</span>
+                                  <div className="min-w-0">
+                                    {item.title ? (
+                                      <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+                                    ) : null}
+                                    <div className="truncate font-mono text-xs text-muted-foreground">{cleanRoute}</div>
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="text-xs text-muted-foreground">{pct}%</span>
@@ -1261,7 +1324,12 @@ export default function AnalyticsPage() {
                               <div className="relative flex items-center justify-between p-3">
                                 <div className="flex items-center gap-2 min-w-0">
                                   <span className="w-5 h-5 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 text-xs font-bold shrink-0">{index + 1}</span>
-                                  <span className="font-mono text-sm truncate">{cleanRoute}</span>
+                                  <div className="min-w-0">
+                                    {item.title ? (
+                                      <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+                                    ) : null}
+                                    <div className="truncate font-mono text-xs text-muted-foreground">{cleanRoute}</div>
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   <span className="text-xs text-muted-foreground">{pct}%</span>
@@ -1388,7 +1456,10 @@ export default function AnalyticsPage() {
                             <span className="text-xs text-muted-foreground capitalize">{event.deviceType}</span>
                           </div>
                         </div>
-                        <div className="text-sm text-muted-foreground truncate font-mono bg-muted/50 px-2 py-1 rounded text-xs">
+                        {event.pageTitle ? (
+                          <div className="text-sm font-medium text-foreground truncate">{event.pageTitle}</div>
+                        ) : null}
+                        <div className="truncate rounded bg-muted/50 px-2 py-1 font-mono text-xs text-muted-foreground">
                           {event.url}
                         </div>
                       </div>

@@ -1,127 +1,215 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { X, CheckCircle, AlertCircle, Info, AlertTriangle, Bell } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { X, CheckCircle, AlertCircle, Info, AlertTriangle, Bell, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNotifications } from '@/hooks/use-notifications';
-import type { Notification } from '@/lib/notifications/types';
+import type { Notification, NotificationAction } from '@/lib/notifications/types';
+import {
+  getVisibleNotificationActions,
+  isMarkResourceReadActionId,
+} from '@/lib/notifications/action-visibility';
+import { runNotificationAction } from '@/lib/notifications/run-notification-action';
 import { cn } from '@/lib/utils';
+import { toast as sonnerToast } from 'sonner';
+
+const AUTO_DISMISS_MS = 5200;
+const EXIT_MS = 200;
+
+function typeAccent(type: string): { bar: string; icon: string } {
+  switch (type) {
+    case 'success':
+      return {
+        bar: 'bg-emerald-500',
+        icon: 'text-emerald-600 dark:text-emerald-400',
+      };
+    case 'warning':
+      return {
+        bar: 'bg-amber-500',
+        icon: 'text-amber-600 dark:text-amber-400',
+      };
+    case 'error':
+      return {
+        bar: 'bg-red-500',
+        icon: 'text-red-600 dark:text-red-400',
+      };
+    case 'system':
+      return {
+        bar: 'bg-primary',
+        icon: 'text-primary',
+      };
+    default:
+      return {
+        bar: 'bg-muted-foreground/45',
+        icon: 'text-muted-foreground',
+      };
+  }
+}
+
+function ToastTypeIcon({ type }: { type: string }) {
+  const { icon } = typeAccent(type);
+  const cls = cn('h-4 w-4', icon);
+  switch (type) {
+    case 'success':
+      return <CheckCircle className={cls} aria-hidden />;
+    case 'warning':
+      return <AlertTriangle className={cls} aria-hidden />;
+    case 'error':
+      return <AlertCircle className={cls} aria-hidden />;
+    case 'system':
+      return <Bell className={cls} aria-hidden />;
+    default:
+      return <Info className={cls} aria-hidden />;
+  }
+}
 
 interface NotificationToastProps {
   notification: Notification;
   onClose: () => void;
-  onAction?: (action: string) => void;
-}
-
-function toastIcon(type: string) {
-  switch (type) {
-    case 'success':
-      return <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />;
-    case 'warning':
-      return <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />;
-    case 'error':
-      return <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />;
-    case 'system':
-      return <Bell className="h-5 w-5 text-primary" />;
-    default:
-      return <Info className="h-5 w-5 text-muted-foreground" />;
-  }
-}
-
-function toastSurface(type: string) {
-  switch (type) {
-    case 'success':
-      return 'border-emerald-500/25 bg-emerald-500/[0.06] dark:bg-emerald-500/[0.08]';
-    case 'warning':
-      return 'border-amber-500/25 bg-amber-500/[0.06] dark:bg-amber-500/[0.08]';
-    case 'error':
-      return 'border-red-500/25 bg-red-500/[0.06] dark:bg-red-500/[0.08]';
-    case 'system':
-      return 'border-primary/25 bg-primary/[0.06]';
-    default:
-      return 'border-border bg-card';
-  }
+  onAction?: (action: NotificationAction) => void | Promise<void>;
 }
 
 export function NotificationToast({ notification, onClose, onAction }: NotificationToastProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const visibleActions = useMemo(
+    () => getVisibleNotificationActions(notification, { includeOpen: true }),
+    [notification]
+  );
+
+  const accent = typeAccent(notification.type);
 
   useEffect(() => {
-    const showTimer = setTimeout(() => setIsVisible(true), 80);
-    let hideTimer: ReturnType<typeof setTimeout> | undefined;
-    if (!notification.persistent) {
-      hideTimer = setTimeout(() => {
-        setIsExiting(true);
-        setTimeout(() => onClose(), 280);
-      }, 5200);
-    }
-    return () => {
-      clearTimeout(showTimer);
-      if (hideTimer) clearTimeout(hideTimer);
-    };
-  }, [notification.persistent, notification.id, onClose]);
+    const enter = requestAnimationFrame(() => setIsVisible(true));
+    let dismissTimer: ReturnType<typeof setTimeout> | undefined;
+    let exitCompleteTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const handleClose = () => {
+    if (!notification.persistent) {
+      dismissTimer = setTimeout(() => {
+        setIsExiting(true);
+        exitCompleteTimer = setTimeout(() => onCloseRef.current(), EXIT_MS);
+      }, AUTO_DISMISS_MS);
+    }
+
+    return () => {
+      cancelAnimationFrame(enter);
+      if (dismissTimer) clearTimeout(dismissTimer);
+      if (exitCompleteTimer) clearTimeout(exitCompleteTimer);
+    };
+  }, [notification.persistent, notification.id]);
+
+  const finishClose = () => {
     setIsExiting(true);
-    setTimeout(() => onClose(), 280);
+    setTimeout(() => onCloseRef.current(), EXIT_MS);
   };
 
-  const handleAction = (action: string) => {
-    onAction?.(action);
-    handleClose();
+  const handleDismiss = () => {
+    if (pendingActionId) return;
+    finishClose();
+  };
+
+  const handleActionClick = async (action: NotificationAction) => {
+    if (pendingActionId) return;
+    setPendingActionId(action.id);
+    try {
+      await onAction?.(action);
+      finishClose();
+    } catch {
+      sonnerToast.error('Could not complete that action. Try again from notifications.');
+    } finally {
+      setPendingActionId(null);
+    }
   };
 
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
       className={cn(
-        'pointer-events-auto w-[min(100vw-1.5rem,22rem)] transition-all duration-300 ease-out',
-        isVisible && !isExiting ? 'translate-x-0 opacity-100' : 'translate-x-3 opacity-0'
+        'pointer-events-auto w-[min(100vw-2rem,20rem)] transition-[opacity,transform] duration-200 ease-out',
+        isVisible && !isExiting ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0'
       )}
     >
-      <div
-        className={cn(
-          'overflow-hidden rounded-2xl border shadow-xl backdrop-blur-xl',
-          'ring-1 ring-black/[0.04] dark:ring-white/[0.06]',
-          toastSurface(notification.type)
-        )}
-      >
-        <div className="flex gap-3 p-3.5">
-          <div className="mt-0.5 shrink-0">{toastIcon(notification.type)}</div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <h4 className="text-sm font-semibold leading-snug tracking-tight text-foreground">
-                {notification.title}
-              </h4>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 shrink-0 rounded-full p-0 text-muted-foreground hover:bg-muted"
-                onClick={handleClose}
-                aria-label="Dismiss"
-              >
-                <X className="h-4 w-4" />
-              </Button>
+      <div className="flex overflow-hidden rounded-lg border border-border/80 bg-card text-card-foreground shadow-md">
+        <div className={cn('w-[3px] shrink-0 self-stretch', accent.bar)} aria-hidden />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex gap-2.5 p-3 pr-2">
+            <div
+              className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/80"
+              aria-hidden
+            >
+              <ToastTypeIcon type={notification.type} />
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{notification.message}</p>
-            {notification.actions && notification.actions.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {notification.actions.map((action) => (
-                  <Button
-                    key={action.id}
-                    variant={
-                      action.style === 'primary' || action.variant === 'primary' ? 'default' : 'outline'
-                    }
-                    size="sm"
-                    className="h-8 rounded-lg px-3 text-xs"
-                    onClick={() => handleAction(action.action ?? action.id ?? 'open')}
-                  >
-                    {action.label}
-                  </Button>
-                ))}
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex items-start gap-1">
+                <h4 className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">
+                  {notification.title}
+                </h4>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 shrink-0 rounded-md p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={handleDismiss}
+                  disabled={!!pendingActionId}
+                  aria-label="Dismiss notification"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
               </div>
-            )}
+              {notification.message ? (
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{notification.message}</p>
+              ) : null}
+              {visibleActions.length > 0 ? (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {visibleActions.map((action) => (
+                    <Button
+                      key={action.id}
+                      type="button"
+                      variant={
+                        action.style === 'primary' || action.variant === 'primary'
+                          ? 'default'
+                          : isMarkResourceReadActionId(action.id)
+                            ? 'ghost'
+                            : 'outline'
+                      }
+                      size="sm"
+                      disabled={!!pendingActionId}
+                      className={cn(
+                        'h-7 rounded-md px-2.5 text-xs font-medium',
+                        isMarkResourceReadActionId(action.id) &&
+                          'text-muted-foreground hover:text-foreground'
+                      )}
+                      onClick={() => void handleActionClick(action)}
+                    >
+                      {pendingActionId === action.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        action.label
+                      )}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </div>
+          {!notification.persistent ? (
+            <div className="h-0.5 w-full shrink-0 overflow-hidden bg-muted" aria-hidden>
+              <motion.div
+                className="h-full bg-foreground/12 dark:bg-foreground/20"
+                initial={{ scaleX: 1 }}
+                animate={{ scaleX: 0 }}
+                transition={{ duration: AUTO_DISMISS_MS / 1000, ease: 'linear' }}
+                style={{ transformOrigin: 'left' }}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -144,16 +232,16 @@ export function NotificationToastManager() {
     setActiveToasts((prev) => prev.filter((n) => n.id !== notificationId));
   };
 
-  const handleAction = (notificationId: string, action: string) => {
-    console.log(`Action ${action} triggered for notification ${notificationId}`);
+  const handleToastAction = async (notification: Notification, action: NotificationAction) => {
+    await runNotificationAction(notification, action);
   };
 
   return (
     <div
       className={cn(
-        'fixed z-[190] flex flex-col gap-2 pointer-events-none',
+        'pointer-events-none fixed z-[190] flex flex-col gap-2',
         'bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(0.75rem,env(safe-area-inset-right))]',
-        'sm:bottom-auto sm:top-4 sm:right-4'
+        'sm:bottom-auto sm:right-4 sm:top-4'
       )}
     >
       {activeToasts.map((notification) => (
@@ -161,7 +249,7 @@ export function NotificationToastManager() {
           key={notification.id}
           notification={notification}
           onClose={() => void handleToastClose(notification.id)}
-          onAction={(action) => handleAction(notification.id, action)}
+          onAction={(action) => handleToastAction(notification, action)}
         />
       ))}
     </div>

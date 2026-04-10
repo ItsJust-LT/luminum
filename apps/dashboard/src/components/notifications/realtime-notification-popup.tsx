@@ -140,7 +140,7 @@ export function RealtimeNotificationPopup({
         }}
         className={cn(
           'relative cursor-pointer overflow-hidden rounded-2xl border border-border/60',
-          'bg-card/95 shadow-xl backdrop-blur-xl ring-1 ring-black/[0.04] dark:ring-white/[0.06]'
+          'bg-card shadow-xl ring-1 ring-black/[0.04] dark:ring-white/[0.06]'
         )}
       >
         <div className="absolute left-0 top-0 h-full w-1 rounded-l-2xl" style={{ backgroundColor: accent }} />

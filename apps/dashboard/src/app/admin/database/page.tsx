@@ -758,7 +758,7 @@ export default function AdminDatabasePage() {
                           ) : (
                             <table className="w-max min-w-full caption-bottom text-sm border-collapse">
                               <thead className="sticky top-0 z-20">
-                                <tr className="border-b border-border/80 bg-muted/95 dark:bg-muted/90 backdrop-blur-sm shadow-sm">
+                                <tr className="border-b border-border/80 bg-muted shadow-sm dark:bg-muted/90">
                                   {visibleColumns.map((c) => (
                                     <th
                                       key={c.name}
@@ -770,7 +770,7 @@ export default function AdminDatabasePage() {
                                   ))}
                                   <th
                                     scope="col"
-                                    className="h-10 px-2 text-right align-middle font-medium text-xs text-muted-foreground w-[4.5rem] sticky right-0 z-30 bg-muted/95 dark:bg-muted/90 backdrop-blur-sm border-l border-border/60 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.08)]"
+                                    className="sticky right-0 z-30 h-10 w-[4.5rem] border-l border-border/60 bg-muted px-2 text-right align-middle text-xs font-medium text-muted-foreground shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.08)] dark:bg-muted/90"
                                   >
                                     Actions
                                   </th>
@@ -893,7 +893,7 @@ export default function AdminDatabasePage() {
                       {sqlResult.type === "select" && sqlResult.rows && sqlResult.rows.length > 0 && (
                         <div className="flex-1 min-h-0 rounded-md border border-border/50 bg-background overflow-auto">
                           <table className="w-max min-w-full text-sm border-collapse">
-                            <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur-sm border-b border-border">
+                            <thead className="sticky top-0 z-10 border-b border-border bg-muted">
                               <tr>
                                 {Object.keys(sqlResult.rows[0]).map((k) => (
                                   <th

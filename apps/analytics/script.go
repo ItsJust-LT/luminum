@@ -56,9 +56,9 @@ var cur=location.href;
 if(cur===_lastUrl)return;
 var prev=_lastUrl;_lastUrl=cur;
 if(_ws&&_ws.readyState===1&&_eid){
-try{_ws.send(JSON.stringify({eventId:_eid,sessionId:sid,url:cur,referrer:prev,screenSize:innerWidth+"x"+innerHeight}));}catch(e){}
+try{_ws.send(JSON.stringify({eventId:_eid,sessionId:sid,url:cur,referrer:prev,screenSize:innerWidth+"x"+innerHeight,pageTitle:(document.title||"").slice(0,500)}));}catch(e){}
 }
-trackPage(cur,prev);
+Promise.resolve().then(function(){trackPage(cur,prev);});
 }
 var _origPush=history.pushState,_origReplace=history.replaceState;
 history.pushState=function(){_origPush.apply(history,arguments);onNav();};

@@ -8,6 +8,10 @@ import { createLiveToken, getLivePages } from "../lib/analytics-live.js";
 import { cacheGet, cacheSet, isAnalyticsDirty } from "../lib/redis-cache.js";
 import { config } from "../config.js";
 import { logger } from "../lib/logger.js";
+import {
+  aggregateUrlCountsWithTitles,
+  dominantTitleFromVotes,
+} from "../lib/analytics-url-titles.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -279,19 +283,10 @@ router.get("/top-pages", async (req: Request, res: Response) => {
         created_at: { gte: new Date(start), lte: new Date(end) },
         url: { not: null },
       },
-      select: { url: true },
+      select: { url: true, page_title: true },
     });
 
-    const counts: Record<string, number> = {};
-    for (const e of events) {
-      const url = (e.url || "/").trim() || "/";
-      counts[url] = (counts[url] || 0) + 1;
-    }
-
-    const result = Object.entries(counts)
-      .map(([key, count]) => ({ key, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, parseInt(limit));
+    const result = aggregateUrlCountsWithTitles(events).slice(0, parseInt(limit));
 
     res.json(result);
   } catch (error: any) {
@@ -380,7 +375,7 @@ router.get("/realtime", async (req: Request, res: Response) => {
     const [recentEvents, sessionIds, count30] = await Promise.all([
       prisma.events.findMany({
         where: { website_id: website.id, created_at: { gte: since2min } },
-        select: { created_at: true, url: true, country: true, device_type: true },
+        select: { created_at: true, url: true, country: true, device_type: true, page_title: true },
         orderBy: { created_at: "desc" },
         take: 20,
       }),
@@ -397,17 +392,9 @@ router.get("/realtime", async (req: Request, res: Response) => {
     // Top pages last 30 min
     const pageEvents = await prisma.events.findMany({
       where: { website_id: website.id, created_at: { gte: since30min }, url: { not: null } },
-      select: { url: true },
+      select: { url: true, page_title: true },
     });
-    const pageCounts: Record<string, number> = {};
-    for (const e of pageEvents) {
-      const url = (e.url || "/").trim() || "/";
-      pageCounts[url] = (pageCounts[url] || 0) + 1;
-    }
-    const topPages = Object.entries(pageCounts)
-      .map(([key, count]) => ({ key, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
+    const topPages = aggregateUrlCountsWithTitles(pageEvents).slice(0, 5);
 
     // Top countries last 30 min
     const countryCounts: Record<string, number> = {};
@@ -432,6 +419,7 @@ router.get("/realtime", async (req: Request, res: Response) => {
       recentEvents: recentEvents.map((e) => ({
         timestamp: (e.created_at ?? new Date()).toISOString(),
         url: e.url ?? "",
+        pageTitle: e.page_title?.trim() || undefined,
         country: e.country ?? "Unknown",
         deviceType: e.device_type ?? "unknown",
       })),
@@ -557,37 +545,47 @@ router.get("/top-entry-exit", async (req: Request, res: Response) => {
         url: { not: null },
         session_id: { not: null },
       },
-      select: { session_id: true, url: true, created_at: true },
+      select: { session_id: true, url: true, page_title: true, created_at: true },
       orderBy: { created_at: "asc" },
     });
 
-    const sessionPages: Record<string, Array<{ url: string; time: Date }>> = {};
+    const sessionPages: Record<string, Array<{ url: string; pageTitle: string | null }>> = {};
     for (const e of events) {
       const sid = e.session_id!;
       if (!sessionPages[sid]) sessionPages[sid] = [];
-      sessionPages[sid].push({ url: e.url!, time: e.created_at ?? new Date() });
+      sessionPages[sid].push({ url: e.url!, pageTitle: e.page_title });
     }
 
-    const entryCounts: Record<string, number> = {};
-    const exitCounts: Record<string, number> = {};
+    type UrlAgg = { count: number; titleVotes: Record<string, number> };
+    const bump = (agg: Record<string, UrlAgg>, url: string, pageTitle: string | null) => {
+      if (!agg[url]) agg[url] = { count: 0, titleVotes: {} };
+      agg[url].count += 1;
+      const t = (pageTitle || "").trim();
+      if (t) agg[url].titleVotes[t] = (agg[url].titleVotes[t] || 0) + 1;
+    };
+
+    const entryAgg: Record<string, UrlAgg> = {};
+    const exitAgg: Record<string, UrlAgg> = {};
 
     for (const pages of Object.values(sessionPages)) {
       if (pages.length === 0) continue;
-      const entry = pages[0].url;
-      const exit = pages[pages.length - 1].url;
-      entryCounts[entry] = (entryCounts[entry] || 0) + 1;
-      exitCounts[exit] = (exitCounts[exit] || 0) + 1;
+      const first = pages[0];
+      const last = pages[pages.length - 1];
+      bump(entryAgg, first.url, first.pageTitle);
+      bump(exitAgg, last.url, last.pageTitle);
     }
 
-    const topEntryPages = Object.entries(entryCounts)
-      .map(([page, count]) => ({ page, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, parseInt(limit));
+    const toTopList = (agg: Record<string, UrlAgg>) =>
+      Object.entries(agg)
+        .map(([page, v]) => {
+          const title = dominantTitleFromVotes(v.titleVotes);
+          return { page, count: v.count, ...(title ? { title } : {}) };
+        })
+        .sort((a, b) => b.count - a.count)
+        .slice(0, parseInt(limit));
 
-    const topExitPages = Object.entries(exitCounts)
-      .map(([page, count]) => ({ page, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, parseInt(limit));
+    const topEntryPages = toTopList(entryAgg);
+    const topExitPages = toTopList(exitAgg);
 
     const payload = {
       totalSessions: Object.keys(sessionPages).length,
@@ -696,7 +694,7 @@ router.get("/page-stats", async (req: Request, res: Response) => {
         created_at: { gte: startDate, lte: endDate },
         url: { not: null },
       },
-      select: { url: true, session_id: true, duration: true },
+      select: { url: true, session_id: true, duration: true, page_title: true },
     });
 
     const pageStats: Record<string, {
@@ -704,19 +702,23 @@ router.get("/page-stats", async (req: Request, res: Response) => {
       sessions: Set<string>;
       totalDuration: number;
       durCount: number;
+      titleVotes: Record<string, number>;
     }> = {};
 
     for (const e of events) {
       const url = (e.url || "/").trim() || "/";
       if (!pageStats[url]) {
-        pageStats[url] = { views: 0, sessions: new Set(), totalDuration: 0, durCount: 0 };
+        pageStats[url] = { views: 0, sessions: new Set(), totalDuration: 0, durCount: 0, titleVotes: {} };
       }
-      pageStats[url].views += 1;
-      if (e.session_id) pageStats[url].sessions.add(e.session_id);
+      const s = pageStats[url];
+      s.views += 1;
+      if (e.session_id) s.sessions.add(e.session_id);
       if (e.duration && e.duration > 0) {
-        pageStats[url].totalDuration += e.duration;
-        pageStats[url].durCount += 1;
+        s.totalDuration += e.duration;
+        s.durCount += 1;
       }
+      const t = (e.page_title || "").trim();
+      if (t) s.titleVotes[t] = (s.titleVotes[t] || 0) + 1;
     }
 
     const totalViews = events.length;
@@ -727,6 +729,7 @@ router.get("/page-stats", async (req: Request, res: Response) => {
         uniqueVisitors: s.sessions.size,
         avgDuration: s.durCount > 0 ? Math.round(s.totalDuration / s.durCount) : 0,
         sharePercent: totalViews > 0 ? Math.round((s.views / totalViews) * 1000) / 10 : 0,
+        ...(dominantTitleFromVotes(s.titleVotes) ? { title: dominantTitleFromVotes(s.titleVotes) } : {}),
       }))
       .sort((a, b) => b.views - a.views)
       .slice(0, parseInt(limit));

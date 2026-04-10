@@ -308,7 +308,7 @@ export function AdminDashboard() {
         </div>
 
         {/* Recent Organizations */}
-        <Card className="border-0 shadow-lg bg-card/50 backdrop-blur-sm">
+        <Card className="border-0 bg-card shadow-lg">
           <CardHeader className="pb-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -386,7 +386,7 @@ export function AdminDashboard() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.3, delay: index * 0.05 }}
                       >
-                        <Card className="group border hover:border-primary/50 hover:shadow-lg transition-all duration-300 bg-card/80 backdrop-blur-sm cursor-pointer"
+                        <Card className="group cursor-pointer border bg-card transition-all duration-300 hover:border-primary/50 hover:shadow-lg"
                               onClick={() => router.push(`/${org.slug}/dashboard`)}>
                           <CardContent className="p-4">
                             <div className="flex items-start justify-between mb-3">

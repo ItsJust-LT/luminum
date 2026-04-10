@@ -151,7 +151,7 @@ export function AcceptOrganizationInvitationForm({ invitation }: AcceptOrganizat
 
   if (success) {
     return (
-      <Card className="w-full max-w-lg mx-auto shadow-xl border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-lg border-0 bg-card shadow-xl">
         <CardHeader className="text-center pb-6">
           <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
@@ -176,7 +176,7 @@ export function AcceptOrganizationInvitationForm({ invitation }: AcceptOrganizat
   }
 
   return (
-    <Card className="w-full max-w-lg mx-auto shadow-xl border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+    <Card className="mx-auto w-full max-w-lg border-0 bg-card shadow-xl">
       <CardHeader className="text-center pb-6">
         <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
           <Building2 className="h-8 w-8 text-white" />
@@ -194,7 +194,7 @@ export function AcceptOrganizationInvitationForm({ invitation }: AcceptOrganizat
           <Button
             type="button"
             variant="outline"
-            className="w-full h-12 text-foreground border-border hover:bg-accent hover:border-accent-foreground/20 transition-all duration-300 bg-background/50 backdrop-blur-sm font-medium"
+            className="h-12 w-full border-border bg-background font-medium text-foreground transition-all duration-300 hover:border-accent-foreground/20 hover:bg-accent"
             onClick={handleGoogleSignUp}
             disabled={isGoogleLoading}
           >

@@ -11,6 +11,8 @@
 export interface MetricCount {
   key: string
   count: number
+  /** Dominant document title for this URL in the selected period */
+  title?: string
 }
 
 export interface StatsOverview {
@@ -45,6 +47,7 @@ export interface TimeSeriesResponse {
 export interface RecentEvent {
   timestamp: string // ISO 8601 date string
   url: string
+  pageTitle?: string
   country: string
   deviceType: string
 }

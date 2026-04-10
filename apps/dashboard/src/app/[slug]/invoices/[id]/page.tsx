@@ -278,7 +278,7 @@ export default function InvoiceViewPage() {
   return (
     <div className="min-h-screen pb-8">
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b">
+      <div className="sticky top-0 z-30 border-b bg-background">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/${slug}/invoices`}><ArrowLeft className="h-4 w-4" /></Link>

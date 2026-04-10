@@ -131,7 +131,7 @@ export function ChatUI({ className }: ChatUIProps) {
   return (
     <Card className={cn("h-[600px] flex flex-col", className)}>
       {/* Header */}
-      <div className="p-4 border-b bg-gradient-to-r from-muted/50 to-muted/30 backdrop-blur-sm">
+      <div className="border-b bg-muted/40 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -249,7 +249,7 @@ export function ChatUI({ className }: ChatUIProps) {
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t bg-background/50 backdrop-blur-sm">
+      <div className="border-t bg-background p-4">
         {/* Attachments Preview */}
         {attachments.length > 0 && (
           <div className="mb-3 p-3 bg-muted/50 rounded-xl border border-dashed border-muted-foreground/25">

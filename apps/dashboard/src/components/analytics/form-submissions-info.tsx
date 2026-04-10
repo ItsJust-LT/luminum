@@ -10,7 +10,7 @@ import { api } from "@/lib/api"
 import type { FormSubmission } from "@/lib/types/forms"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { detectFormFields, getPrimaryFields } from "@/lib/utils/field-detection"
-import { CardSkeleton } from "@/components/ui/skeleton-loader"
+import { PageDataSpinner } from "@/components/shell/page-data-spinner"
 import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 
@@ -178,7 +178,7 @@ export function FormSubmissionsInfo({ websiteId }: FormSubmissionsInfoProps) {
 
   if (loading) {
     return (
-      <Card className="group hover:shadow-lg transition-all duration-300 border-border/60 bg-card/50 backdrop-blur-sm">
+      <Card className="group hover:shadow-lg transition-all duration-300 border-border/60 bg-card">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-3 text-xl font-semibold text-balance">
             <div className="p-2 rounded-lg bg-primary/10 dark:bg-primary/20">
@@ -191,7 +191,7 @@ export function FormSubmissionsInfo({ websiteId }: FormSubmissionsInfoProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <CardSkeleton />
+          <PageDataSpinner label="Loading submissions…" className="py-10 sm:py-12" />
         </CardContent>
       </Card>
     )
@@ -199,7 +199,7 @@ export function FormSubmissionsInfo({ websiteId }: FormSubmissionsInfoProps) {
 
   if (error) {
     return (
-      <Card className="group hover:shadow-lg transition-all duration-300 border-destructive/20 bg-card/50 backdrop-blur-sm">
+      <Card className="group hover:shadow-lg transition-all duration-300 border-destructive/20 bg-card">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center gap-3 text-xl font-semibold text-balance">
             <div className="p-2 rounded-lg bg-destructive/10">
@@ -228,7 +228,7 @@ export function FormSubmissionsInfo({ websiteId }: FormSubmissionsInfoProps) {
   }
 
   return (
-    <Card className="group hover:shadow-lg transition-all duration-300 border-border/60 bg-card/50 backdrop-blur-sm">
+    <Card className="group hover:shadow-lg transition-all duration-300 border-border/60 bg-card">
       <CardHeader className="pb-6">
         <CardTitle className="flex items-center gap-3 text-xl font-semibold text-balance">
           <div className="p-2 rounded-lg bg-primary/10 dark:bg-primary/20 group-hover:bg-primary/20 dark:group-hover:bg-primary/30 transition-colors">
@@ -383,7 +383,6 @@ export function FormSubmissionsInfo({ websiteId }: FormSubmissionsInfoProps) {
               <div className="p-6 rounded-2xl bg-gradient-to-br from-muted/50 to-muted/20 border border-border/50">
                 <FileText className="h-16 w-16 text-muted-foreground/40" />
               </div>
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-primary/10 to-transparent rounded-2xl blur-xl"></div>
             </div>
             <div className="space-y-3 max-w-md mx-auto">
               <h3 className="text-xl font-semibold text-foreground text-balance">No submissions yet</h3>

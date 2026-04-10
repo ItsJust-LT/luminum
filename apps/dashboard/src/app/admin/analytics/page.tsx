@@ -31,20 +31,53 @@ import { formatNumber } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { DateRangePicker, type DateRangeValue } from "@/components/ui/date-range-picker"
+import { customAnalyticsRangeDayCount } from "@/lib/analytics/chart-time-format"
+import { min } from "date-fns"
 
-type DateRange = "7d" | "30d" | "90d"
+type AdminDateRange = "24h" | "7d" | "30d" | "90d" | "custom"
 
-function getDateRange(range: DateRange): { start: string; end: string } {
+function getAdminDateBounds(
+  range: AdminDateRange,
+  custom: DateRangeValue | null
+): { start: string; end: string } {
+  const now = new Date()
+
+  if (range === "custom" && custom?.from && custom?.to) {
+    const start = new Date(custom.from)
+    start.setHours(0, 0, 0, 0)
+    const endDay = new Date(custom.to)
+    endDay.setHours(23, 59, 59, 999)
+    const end = min([endDay, now])
+    if (end.getTime() < start.getTime()) {
+      return { start: start.toISOString(), end: now.toISOString() }
+    }
+    return { start: start.toISOString(), end: end.toISOString() }
+  }
+
   const end = new Date()
   const start = new Date()
-  if (range === "7d") start.setDate(start.getDate() - 7)
+  if (range === "24h") start.setHours(end.getHours() - 24)
+  else if (range === "7d") start.setDate(start.getDate() - 7)
   else if (range === "30d") start.setDate(start.getDate() - 30)
   else start.setDate(start.getDate() - 90)
   return { start: start.toISOString(), end: end.toISOString() }
 }
 
+function adminTimeseriesGranularity(
+  range: AdminDateRange,
+  custom: DateRangeValue | null
+): "hour" | "day" {
+  if (range === "24h" || range === "7d") return "hour"
+  if (range === "custom" && custom?.from && custom?.to) {
+    return customAnalyticsRangeDayCount(custom.from, custom.to) <= 2 ? "hour" : "day"
+  }
+  return "day"
+}
+
 export default function AdminAnalyticsPage() {
-  const [range, setRange] = useState<DateRange>("30d")
+  const [range, setRange] = useState<AdminDateRange>("30d")
+  const [customRange, setCustomRange] = useState<DateRangeValue | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [overview, setOverview] = useState<any>(null)
@@ -58,8 +91,8 @@ export default function AdminAnalyticsPage() {
   const fetchData = async () => {
     setLoading(true)
     setError(null)
-    const { start, end } = getDateRange(range)
-    const granularity = range === "7d" ? "hour" : "day"
+    const { start, end } = getAdminDateBounds(range, customRange)
+    const granularity = adminTimeseriesGranularity(range, customRange)
 
     try {
       const [overviewRes, timeseriesRes, breakdownRes, topPagesRes, countriesRes, devicesRes] = await Promise.all([
@@ -84,7 +117,9 @@ export default function AdminAnalyticsPage() {
     }
   }
 
-  useEffect(() => { fetchData() }, [range, breakdownBy])
+  useEffect(() => {
+    fetchData()
+  }, [range, customRange, breakdownBy])
 
   const chartData = useMemo(() => {
     return timeseries.map((item: any) => ({
@@ -120,17 +155,43 @@ export default function AdminAnalyticsPage() {
             Cross-platform metrics across all organizations and websites
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start">
-          <Select value={range} onValueChange={(v) => setRange(v as DateRange)}>
-            <SelectTrigger className="w-28 h-9">
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <Select
+            value={range}
+            onValueChange={(v) => {
+              const next = v as AdminDateRange
+              setRange(next)
+              if (next === "custom") {
+                setCustomRange((prev) => {
+                  if (prev) return prev
+                  const end = new Date()
+                  const start = new Date()
+                  start.setDate(start.getDate() - 7)
+                  return { from: start, to: end }
+                })
+              }
+            }}
+          >
+            <SelectTrigger className="w-[min(100%,9rem)] h-9">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="24h">24 hours</SelectItem>
               <SelectItem value="7d">7 days</SelectItem>
               <SelectItem value="30d">30 days</SelectItem>
               <SelectItem value="90d">90 days</SelectItem>
+              <SelectItem value="custom">Custom range…</SelectItem>
             </SelectContent>
           </Select>
+          {range === "custom" ? (
+            <DateRangePicker
+              value={customRange}
+              onChange={setCustomRange}
+              placeholder="Select range"
+              className="min-w-0 sm:min-w-[240px]"
+              numberOfMonths={2}
+            />
+          ) : null}
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} className="gap-2">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
@@ -346,9 +407,22 @@ export default function AdminAnalyticsPage() {
                   return (
                     <div key={i} className="flex items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        <div className="relative h-8 rounded-md overflow-hidden bg-muted/30">
+                        <div className="relative min-h-10 rounded-md overflow-hidden bg-muted/30 py-1.5">
                           <div className="absolute inset-y-0 left-0 bg-blue-500/10 rounded-md" style={{ width: `${width}%` }} />
-                          <span className="absolute inset-0 flex items-center px-3 text-xs font-medium truncate">{page.key}</span>
+                          <div className="relative z-[1] flex min-h-7 flex-col justify-center px-3">
+                            {page.title ? (
+                              <span className="truncate text-xs font-semibold text-foreground">{page.title}</span>
+                            ) : null}
+                            <span
+                              className={
+                                page.title
+                                  ? "truncate font-mono text-[11px] text-muted-foreground"
+                                  : "truncate text-xs font-medium"
+                              }
+                            >
+                              {page.key}
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <span className="text-xs font-medium text-muted-foreground w-12 text-right flex-shrink-0">{formatNumber(page.count)}</span>

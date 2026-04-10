@@ -138,7 +138,7 @@ export default function EmailDetailPage() {
   if (state.status === "unavailable") {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <div className="border-b bg-background/95 backdrop-blur">
+        <div className="border-b bg-background">
           <div className="rounded-b-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 px-4 py-3">
             <Button variant="ghost" size="sm" asChild>
               <Link href={`/${slug}/dashboard`} className="flex items-center gap-2">
@@ -163,7 +163,7 @@ export default function EmailDetailPage() {
   if (state.status === "loading" || state.status === "redirect") {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <div className="border-b bg-background/95 backdrop-blur">
+        <div className="border-b bg-background">
           <div className="rounded-b-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 px-4 py-3">
             <Button variant="ghost" size="sm" asChild>
               <Link href={`/${slug}/emails`} className="flex items-center gap-2">
@@ -183,7 +183,7 @@ export default function EmailDetailPage() {
   if (state.status === "error") {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <div className="border-b bg-background/95 backdrop-blur">
+        <div className="border-b bg-background">
           <div className="rounded-b-2xl bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 px-4 py-3">
             <Button variant="ghost" size="sm" asChild>
               <Link href={`/${slug}/emails`} className="flex items-center gap-2">

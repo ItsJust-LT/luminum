@@ -21,7 +21,6 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Building2, Settings, LogOut, ChevronDown, AlertTriangle, Menu } from "lucide-react"
-import Image from "next/image"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Breadcrumb,
@@ -31,7 +30,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
-import { Separator } from "@/components/ui/separator"
 import { OrganizationProvider } from "@/lib/contexts/organization-context"
 import { EmailsProvider } from "@/lib/contexts/emails-context"
 import { OrganizationSidebarWrapper } from "@/components/organization/organization-sidebar-wrapper"
@@ -431,13 +429,13 @@ export default function SlugLayout({
   const getRoleColor = (role: string) => {
     switch (role) {
       case "owner":
-        return "bg-primary/15 text-primary border-primary/35 border"
+        return "bg-primary/12 text-primary"
       case "admin":
-        return "bg-chart-2/15 text-chart-2 border-chart-2/35 border"
+        return "bg-chart-2/12 text-chart-2"
       case "member":
-        return "bg-chart-5/15 text-chart-5 border-chart-5/35 border"
+        return "bg-chart-5/12 text-chart-5"
       default:
-        return "bg-muted text-muted-foreground border"
+        return "bg-muted/80 text-muted-foreground"
     }
   }
 
@@ -468,9 +466,9 @@ export default function SlugLayout({
       <SheetContent side="left" className="w-80 p-0">
         <div className="flex flex-col h-full">
           {/* Mobile Header */}
-          <div className="p-4 border-b border-border/50">
+          <div className="bg-muted/30 p-4">
             <div className="flex items-center gap-3">
-              <Avatar className="h-8 w-8 ring-2 ring-primary/20">
+              <Avatar className="h-10 w-10 rounded-xl shadow-none ring-0">
                 <AvatarImage
                   src={orgLogoOrBrandProxy(state.organization?.logo, state.organization?.name || "Organization")}
                 />
@@ -488,7 +486,7 @@ export default function SlugLayout({
           </div>
 
           {/* Mobile Navigation - Match Desktop Sidebar */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="scrollbar-app flex-1 overflow-y-auto p-4">
             <div className="space-y-6">
               <div>
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
@@ -650,7 +648,9 @@ export default function SlugLayout({
       <UserNotificationProvider>
         <EmailsProvider>
         <SidebarProvider>
-        <div className="flex min-h-screen w-full bg-background/55 backdrop-blur-md">
+        {/* No backdrop-blur here: it creates a containing block for position:fixed, so the
+            shadcn Sidebar (fixed) would scroll with this ancestor. Blur stays on header/inset only. */}
+        <div className="flex h-dvh min-h-0 w-full overflow-hidden bg-gradient-to-br from-background via-background/92 to-muted/25">
           {/* Desktop Sidebar */}
           <div className="hidden md:block">
             <OrganizationSidebarWrapper
@@ -680,52 +680,56 @@ export default function SlugLayout({
             />
           </div>
 
-          <SidebarInset className="flex-1">
+          <SidebarInset className="min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
             {/* Enhanced Responsive Header */}
-            <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-3 border-b border-border/60 bg-background/75 px-3 backdrop-blur-xl md:gap-4 md:px-6 lg:px-8">
+            <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-3 border-b border-border/60 bg-background px-3 md:gap-4 md:px-6 lg:px-8">
               {/* Desktop Sidebar Trigger */}
-              <SidebarTrigger className="hover:bg-accent hidden rounded-md p-2 md:flex" />
+              <SidebarTrigger className="text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground hidden rounded-xl p-2 md:flex" />
 
               {/* Mobile Menu Trigger */}
               <MobileMenu />
 
-              {/* Brand Section */}
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="bg-primary/10 ring-primary/20 flex-shrink-0 rounded-2xl p-2 ring-1">
-                  <Image
+              {/* Brand — glass chip, no hard rings */}
+              <div className="flex min-w-0 max-w-[min(100%,18rem)] items-center gap-2.5 rounded-2xl bg-muted/50 px-2 py-1.5 pr-3 md:max-w-[min(100%,22rem)] md:gap-3 md:px-2.5 md:py-2 md:pr-3.5">
+                <Avatar className="h-9 w-9 shrink-0 rounded-xl shadow-none ring-0 md:h-10 md:w-10">
+                  <AvatarImage
                     src={
                       state.organization
                         ? orgLogoOrBrandProxy(state.organization.logo, state.organization.name)
                         : "/images/logo.png"
                     }
                     alt={state.organization?.name || "Workspace"}
-                    width={20}
-                    height={20}
-                    className="h-4 w-4 md:h-5 md:w-5 object-contain"
-                    unoptimized={!!state.organization}
+                    className="object-contain p-1.5"
                   />
-                </div>
-                <div className="flex min-w-0 flex-col">
-                  <span className="font-semibold text-foreground text-sm md:text-base tracking-tight truncate">
+                  <AvatarFallback className="rounded-xl bg-primary/15 text-sm font-semibold text-primary md:text-base">
+                    {(state.organization?.name || "L").charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex min-w-0 flex-col leading-tight">
+                  <span className="text-foreground truncate text-sm font-semibold tracking-tight md:text-[0.95rem]">
                     {state.organization?.name || "Dashboard"}
                   </span>
                   {!isCustomDomain && (
-                    <span className="text-muted-foreground/80 hidden text-xs font-medium sm:block">
+                    <span className="text-muted-foreground/75 hidden text-[11px] font-medium sm:block">
                       Dashboard
                     </span>
                   )}
                 </div>
               </div>
 
-              <Separator orientation="vertical" className="hidden h-6 md:block" />
-              <Breadcrumb className="hidden md:block">
-                <BreadcrumbList>
+              <Breadcrumb className="text-muted-foreground/90 hidden min-w-0 flex-1 md:block">
+                <BreadcrumbList className="flex-nowrap gap-1.5 sm:gap-2">
                   <BreadcrumbItem>
-                    <BreadcrumbLink href={orgNavPath(slug, flatRoutes, "dashboard")}>Dashboard</BreadcrumbLink>
+                    <BreadcrumbLink
+                      href={orgNavPath(slug, flatRoutes, "dashboard")}
+                      className="text-muted-foreground hover:text-foreground font-medium transition-colors"
+                    >
+                      Dashboard
+                    </BreadcrumbLink>
                   </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage className="capitalize">
+                  <BreadcrumbSeparator className="text-muted-foreground/40 [&>svg]:size-3.5" />
+                  <BreadcrumbItem className="min-w-0">
+                    <BreadcrumbPage className="text-foreground/90 max-w-[12rem] truncate capitalize md:max-w-[20rem]">
                       {pathname?.split("/").filter(Boolean).at(-1) ?? "overview"}
                     </BreadcrumbPage>
                   </BreadcrumbItem>
@@ -747,7 +751,7 @@ export default function SlugLayout({
                 </div>
 
                 <Badge
-                  className={`${getRoleColor(state.userRole || "member")} hidden md:inline-flex text-xs font-medium px-3 py-1 rounded-full capitalize`}
+                  className={`${getRoleColor(state.userRole || "member")} hidden border-0 shadow-none md:inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize`}
                   variant="secondary"
                 >
                   {(state.userRole || "member").replace(/^./, (c) => c.toUpperCase())}
@@ -758,9 +762,9 @@ export default function SlugLayout({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="hover:bg-accent flex h-10 items-center gap-2 rounded-lg border border-transparent px-3 md:h-11 md:gap-3 md:px-4"
+                      className="hover:bg-foreground/[0.06] flex h-10 items-center gap-2 rounded-xl px-3 md:h-11 md:gap-3 md:px-4"
                     >
-                      <Avatar className="h-7 w-7 border md:h-8 md:w-8">
+                      <Avatar className="h-7 w-7 shadow-none ring-0 md:h-8 md:w-8">
                         <AvatarImage src={session?.user?.image || ""} />
                         <AvatarFallback className="bg-muted text-sm font-semibold text-foreground">
                           {session?.user?.name?.charAt(0).toUpperCase() || "U"}
@@ -832,7 +836,7 @@ export default function SlugLayout({
 
             <main className={cn(
               "flex-1 min-h-0 flex flex-col bg-transparent",
-              isWhatsappRoute || isMailRoute ? "overflow-hidden p-0" : "overflow-auto px-3 py-3 sm:px-4 md:px-6 md:py-5 lg:px-8",
+              isWhatsappRoute || isMailRoute ? "overflow-hidden p-0" : "scrollbar-app overflow-auto px-3 py-3 sm:px-4 md:px-6 md:py-5 lg:px-8",
             )}>
               <OrgRouteGuard slug={slug} flatRoutes={flatRoutes}>
                 {children}

@@ -1,10 +1,11 @@
 import type { ComponentProps } from "react"
+import { BONEYARD_STAGGER_MS } from "@/lib/boneyard-skeleton-tokens"
 import { cn } from "@/lib/utils"
 
-const STAGGER_MS = 72
+const STAGGER_MS = BONEYARD_STAGGER_MS
 
 export interface SkeletonProps extends ComponentProps<"div"> {
-  /** Stagger wave offset for list layouts (multiplied by ${STAGGER_MS}ms). */
+  /** Stagger offset; delay = index × `BONEYARD_STAGGER_MS` (see `BoneyardInit`). */
   staggerIndex?: number
 }
 

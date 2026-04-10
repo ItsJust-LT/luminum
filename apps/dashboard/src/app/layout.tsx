@@ -175,7 +175,7 @@ function PWAUpdatePrompt() {
   return (
     <div
       id="pwa-update-available"
-      className="bg-popover/90 text-popover-foreground border-border/70 hidden fixed right-4 bottom-4 z-50 rounded-lg border p-4 shadow-lg backdrop-blur-md"
+      className="bg-popover text-popover-foreground border-border/70 hidden fixed right-4 bottom-4 z-50 rounded-lg border p-4 shadow-lg"
     >
       <p className="text-sm font-medium">App update available!</p>
       <button 

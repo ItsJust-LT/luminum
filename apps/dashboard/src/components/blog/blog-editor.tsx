@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -49,6 +50,7 @@ import { BlogRichEditor, type BlogRichEditorHandle } from "./blog-rich-editor";
 import { BlogAssetUploadContext } from "./blog-upload-context";
 import { BlogCategoryCombobox } from "./blog-category-combobox";
 import { cn } from "@/lib/utils";
+import { format as formatDate } from "date-fns";
 import {
   Loader2,
   ArrowLeft,
@@ -130,6 +132,33 @@ export function BlogEditor(props: {
   const [markdownHints, setMarkdownHints] = React.useState<string[]>([]);
 
   const markDirty = React.useCallback(() => setDirty(true), []);
+
+  const scheduleDateStr = React.useMemo(() => {
+    const s = scheduleLocal.trim();
+    if (!s) return "";
+    const i = s.indexOf("T");
+    return i >= 0 ? s.slice(0, i) : s.slice(0, 10);
+  }, [scheduleLocal]);
+
+  const scheduleTimeStr = React.useMemo(() => {
+    const s = scheduleLocal.trim();
+    if (!s) return "";
+    const i = s.indexOf("T");
+    if (i >= 0) {
+      const t = s.slice(i + 1);
+      return t.length >= 5 ? t.slice(0, 5) : "09:00";
+    }
+    return "09:00";
+  }, [scheduleLocal]);
+
+  const mergeScheduleLocal = React.useCallback((date: string, time: string) => {
+    if (!date.trim()) {
+      setScheduleLocal("");
+      return;
+    }
+    const t = /^\d{2}:\d{2}$/.test(time) ? time : "09:00";
+    setScheduleLocal(`${date}T${t}`);
+  }, []);
 
   const metaDescLen = seoDescription.length;
   const metaDescHint =
@@ -595,7 +624,7 @@ export function BlogEditor(props: {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="sticky top-0 z-20 flex shrink-0 flex-col gap-4 border-b border-border/50 bg-background/90 px-4 py-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/75 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-6"
+        className="sticky top-0 z-20 flex shrink-0 flex-col gap-4 border-b border-border/50 bg-background px-4 py-4 md:flex-row md:flex-wrap md:items-center md:justify-between md:px-6"
       >
         <div className="flex items-start gap-3">
           <Button variant="outline" size="icon" className="shrink-0 rounded-lg" asChild>
@@ -878,14 +907,32 @@ export function BlogEditor(props: {
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                     <div className="min-w-0 flex-1 space-y-1.5">
-                      <Label htmlFor="blog_schedule_at" className="text-xs">
-                        Date and time
+                      <Label htmlFor="blog_schedule_date" className="text-xs">
+                        Date
+                      </Label>
+                      <DatePicker
+                        id="blog_schedule_date"
+                        value={scheduleDateStr}
+                        onChange={(v) => mergeScheduleLocal(v, scheduleTimeStr)}
+                        allowClear
+                        placeholder="Pick a date"
+                        disabled={scheduling}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Label htmlFor="blog_schedule_time" className="text-xs">
+                        Time
                       </Label>
                       <Input
-                        id="blog_schedule_at"
-                        type="datetime-local"
-                        value={scheduleLocal}
-                        onChange={(e) => setScheduleLocal(e.target.value)}
+                        id="blog_schedule_time"
+                        type="time"
+                        value={scheduleTimeStr}
+                        onChange={(e) => {
+                          const t = e.target.value;
+                          const d =
+                            scheduleDateStr || formatDate(new Date(), "yyyy-MM-dd");
+                          mergeScheduleLocal(d, t);
+                        }}
                         disabled={scheduling}
                         className="font-mono text-sm"
                       />

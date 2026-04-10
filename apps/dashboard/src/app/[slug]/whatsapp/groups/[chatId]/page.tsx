@@ -265,7 +265,7 @@ export default function GroupInfoPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
       {/* Header */}
-      <div className="h-14 px-4 border-b flex items-center gap-3 bg-background/95 backdrop-blur-sm flex-shrink-0">
+      <div className="flex h-14 flex-shrink-0 items-center gap-3 border-b bg-background px-4">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.push(`/${slug}/whatsapp`)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>

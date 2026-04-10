@@ -15,7 +15,6 @@ export function MailProvisioningView(props: { workspaceName?: string | null }) {
     <AppPageContainer fullWidth>
       <div className="relative flex min-h-[min(85dvh,720px)] items-center justify-center overflow-hidden px-4 py-16">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,hsl(var(--primary)/0.18),transparent)]" />
-        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[min(90vw,520px)] w-[min(90vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-tr from-sky-500/10 via-violet-500/8 to-amber-500/10 blur-3xl" />
 
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -30,7 +29,7 @@ export function MailProvisioningView(props: { workspaceName?: string | null }) {
               transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
             />
             <motion.div
-              className="absolute inset-[10%] flex items-center justify-center rounded-3xl bg-card/90 ring-1 ring-border/60 backdrop-blur-md"
+              className="absolute inset-[10%] flex items-center justify-center rounded-3xl bg-card ring-1 ring-border/60"
               animate={{ y: [0, -6, 0] }}
               transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
             >
@@ -64,7 +63,7 @@ export function MailProvisioningView(props: { workspaceName?: string | null }) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.15, duration: 0.4 }}
-            className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm"
+            className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/80 bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground"
           >
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
             Mail for your workspace

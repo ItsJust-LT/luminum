@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -31,7 +32,6 @@ import {
   MapPin,
   DollarSign,
   CreditCard,
-  Calendar,
   Gift,
   Search,
   Clock,
@@ -805,17 +805,17 @@ export function AdminOrganizationCreatorDialog({ onOrganizationCreated }: AdminO
                           <Label htmlFor="trialEndDate" className="text-sm font-medium">
                             Trial End Date
                           </Label>
-                          <div className="relative">
-                            <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            <Input
-                              id="trialEndDate"
-                              type="date"
-                              value={trialEndDate}
-                              onChange={(e) => setTrialEndDate(e.target.value)}
-                              className="pl-10 bg-background/50 border-border/50 focus:border-primary/50 focus:ring-primary/20"
-                              min={new Date().toISOString().split("T")[0]}
-                            />
-                          </div>
+                          <DatePicker
+                            id="trialEndDate"
+                            value={trialEndDate}
+                            onChange={setTrialEndDate}
+                            fromDate={(() => {
+                              const t = new Date()
+                              t.setHours(0, 0, 0, 0)
+                              return t
+                            })()}
+                            className="bg-background/50 border-border/50"
+                          />
                         </div>
                       </CardContent>
                     )}

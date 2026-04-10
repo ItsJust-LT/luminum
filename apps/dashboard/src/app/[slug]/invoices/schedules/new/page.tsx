@@ -467,7 +467,7 @@ export default function NewRecurringSchedulePage() {
 
   return (
     <div className="min-h-screen pb-12 bg-gradient-to-b from-background via-background to-muted/20">
-      <div className="sticky top-0 z-30 border-b bg-background/90 backdrop-blur-md">
+      <div className="sticky top-0 z-30 border-b bg-background">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <Button variant="ghost" size="icon" className="shrink-0" asChild>

@@ -6,8 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { api } from "@/lib/api"
 import { useAnalyticsPresence } from "@/lib/ably/client"
 import { formatDuration } from "@/lib/utils"
-import { Eye, Users, Clock, TrendingUp, Activity, FileText, BarChart3 } from "lucide-react"
-import { AnalyticsSkeleton } from "@/components/ui/skeleton-loader"
+import { Eye, Users, Clock, TrendingUp, Activity, FileText, BarChart3, Loader2 } from "lucide-react"
 
 interface AnalyticsOverviewProps {
   websiteId: string
@@ -91,8 +90,9 @@ export function AnalyticsOverview({ websiteId, analyticsEnabled }: AnalyticsOver
           </CardTitle>
           <CardDescription>Website analytics tracking</CardDescription>
         </CardHeader>
-        <CardContent>
-          <AnalyticsSkeleton />
+        <CardContent className="flex flex-col items-center justify-center gap-3 py-14 text-muted-foreground">
+          <Loader2 className="h-6 w-6 shrink-0 animate-spin" aria-hidden />
+          <p className="text-sm">Loading analytics…</p>
         </CardContent>
       </Card>
     )
@@ -110,21 +110,18 @@ export function AnalyticsOverview({ websiteId, analyticsEnabled }: AnalyticsOver
         </CardHeader>
         <CardContent>
           <div className="text-center py-12">
-            <div className="relative mb-6">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-primary/10 rounded-2xl blur-xl" />
-              <div className="relative p-8">
-                <div className="w-16 h-16 bg-gradient-to-br from-primary/10 to-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <BarChart3 className="w-8 h-8 text-primary/60" />
-                </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">No Analytics Data Yet</h3>
-                <p className="text-muted-foreground mb-4">
-                  Your website analytics will appear here once visitors start browsing your site.
-                </p>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <p>• Share your website link to get visitors</p>
-                  <p>• Analytics data updates in real-time</p>
-                  <p>• Check back after some traffic</p>
-                </div>
+            <div className="mb-6 rounded-2xl bg-muted/30 p-8">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+                <BarChart3 className="h-8 w-8 text-primary/60" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">No Analytics Data Yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Your website analytics will appear here once visitors start browsing your site.
+              </p>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>• Share your website link to get visitors</p>
+                <p>• Analytics data updates in real-time</p>
+                <p>• Check back after some traffic</p>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-export type MetricCount = { key: string; count: number }
+export type MetricCount = { key: string; count: number; title?: string }
 
 export type StatsOverview = {
   websiteId: string
@@ -26,6 +26,8 @@ export type TimeSeriesResponse = {
 export type RecentEvent = {
   timestamp: string
   url: string
+  /** Document title captured with the page view (when provided by the tracker). */
+  pageTitle?: string
   country: string
   deviceType: string
 }
@@ -53,7 +55,7 @@ export type PageFlowResponse = {
   uniqueSessions: number
 }
 
-export type EntryExitPage = { page: string; count: number }
+export type EntryExitPage = { page: string; count: number; title?: string }
 export type EntryExitResponse = {
   totalSessions: number
   topEntryPages: EntryExitPage[]
@@ -78,6 +80,7 @@ export type PageStat = {
   uniqueVisitors: number
   avgDuration: number
   sharePercent: number
+  title?: string
 }
 export type PageStatsResponse = {
   pages: PageStat[]

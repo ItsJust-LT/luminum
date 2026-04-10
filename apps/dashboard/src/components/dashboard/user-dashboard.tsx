@@ -28,7 +28,7 @@ import {
 import Image from "next/image"
 import { authClient } from "@/lib/auth/client"
 import { useState, useEffect } from "react"
-import { CardSkeleton } from "@/components/ui/skeleton-loader"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ClientProjectManagement } from "@/components/dashboard/client-project-management"
 import { api } from "@/lib/api"
 import type { Website } from "@/lib/types/websites"
@@ -117,7 +117,7 @@ export function UserDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="bg-card/50 backdrop-blur-sm shadow-sm border-b border-border/50">
+      <header className="border-b border-border/50 bg-card shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-2">
@@ -270,8 +270,25 @@ export function UserDashboard() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-8">
-                  <CardSkeleton />
+                <div className="grid gap-4 py-2 md:grid-cols-2 lg:grid-cols-3">
+                  {[0, 1, 2].map((n) => (
+                    <div
+                      key={n}
+                      className="rounded-lg border border-border/50 bg-card/40 p-6"
+                    >
+                      <div className="flex items-start gap-4">
+                        <Skeleton className="h-10 w-10 shrink-0 rounded-lg" staggerIndex={n * 3} />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <Skeleton className="h-5 w-[min(100%,12rem)]" staggerIndex={n * 3 + 1} />
+                            <Skeleton className="h-5 w-14 shrink-0 rounded-full" staggerIndex={n * 3 + 1} />
+                          </div>
+                          <Skeleton className="h-4 w-2/3 max-w-[14rem]" staggerIndex={n * 3 + 2} />
+                          <Skeleton className="h-3 w-24" staggerIndex={n * 3 + 2} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : projects.length === 0 ? (
                 <div className="text-center py-8">

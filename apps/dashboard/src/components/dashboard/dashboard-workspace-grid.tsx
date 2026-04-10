@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import type { AuditListItem } from "@/lib/types/audits"
 import type { FolderCounts } from "@/components/emails/mailbox-sidebar"
-import { FormSubmissionsInfo } from "@/components/analytics/form-submissions-info"
 import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import {
@@ -311,55 +310,38 @@ export function DashboardWorkspaceGrid({ websiteId, websiteDomain, organizationS
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12 xl:gap-5">
         {canForms ? (
-          <Card
-            className={cn(
-              "app-card md:col-span-2",
-              formsUnseen != null && formsUnseen > 0 ? "xl:col-span-8" : "xl:col-span-12"
-            )}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ClipboardList className="text-primary h-4 w-4" />
-                    Form submissions
-                  </CardTitle>
-                  <CardDescription>Latest entries from your site forms</CardDescription>
+          <Card className="app-card md:col-span-2 xl:col-span-12">
+            <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:py-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div className="bg-primary/10 text-primary flex h-11 w-11 shrink-0 items-center justify-center rounded-xl">
+                  <ClipboardList className="h-5 w-5" />
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {formsUnseen != null && formsUnseen > 0 ? (
-                    <Badge variant="secondary" className="bg-primary/12 text-primary">
-                      {formsUnseen} new
-                    </Badge>
-                  ) : null}
-                  <Button size="sm" variant="outline" className="gap-1" asChild>
-                    <Link href={`${base}/forms`}>
-                      All forms
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
+                <div className="min-w-0">
+                  <p className="text-foreground font-medium leading-tight">Forms inbox</p>
+                  <p className="text-muted-foreground mt-0.5 text-xs sm:text-sm">
+                    {formsUnseen != null && formsUnseen > 0
+                      ? `${formsUnseen} unread — review on the Forms page`
+                      : "No unread submissions — you’re caught up"}
+                  </p>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <FormSubmissionsInfo websiteId={websiteId} />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {canForms && formsUnseen != null && formsUnseen > 0 ? (
-          <Card className="app-card xl:col-span-4">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">New leads</CardTitle>
-              <CardDescription>Unseen submissions waiting for review</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-foreground text-4xl font-semibold tabular-nums">{formsUnseen}</div>
-              <Progress value={Math.min(100, formsUnseen * 10)} className="h-2" />
-              <p className="text-muted-foreground text-xs">Open the forms workspace to mark items as seen or follow up.</p>
-              <Button className="w-full" size="sm" asChild>
-                <Link href={`${base}/forms`}>Review submissions</Link>
-              </Button>
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                {formsUnseen != null && formsUnseen > 0 ? (
+                  <Badge variant="secondary" className="bg-chart-4/15 text-chart-4 tabular-nums">
+                    {formsUnseen} new
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-muted-foreground font-normal">
+                    Inbox clear
+                  </Badge>
+                )}
+                <Button size="sm" className="gap-1.5" asChild>
+                  <Link href={`${base}/forms`}>
+                    Open forms
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ) : null}

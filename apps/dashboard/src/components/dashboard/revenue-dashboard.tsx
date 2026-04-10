@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
+import { isValid, parse } from "date-fns"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -190,18 +191,32 @@ export function RevenueDashboard({ onRefresh }: RevenueDashboardProps) {
           <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
             <div>
               <label className="text-sm font-medium mb-2 block">From Date</label>
-              <Input
-                type="date"
-                value={filters.from || ''}
-                onChange={(e) => handleFilterChange('from', e.target.value)}
+              <DatePicker
+                value={filters.from || ""}
+                onChange={(v) => handleFilterChange("from", v)}
+                toDate={
+                  filters.to
+                    ? (() => {
+                        const t = parse(filters.to, "yyyy-MM-dd", new Date())
+                        return isValid(t) ? t : undefined
+                      })()
+                    : undefined
+                }
               />
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">To Date</label>
-              <Input
-                type="date"
-                value={filters.to || ''}
-                onChange={(e) => handleFilterChange('to', e.target.value)}
+              <DatePicker
+                value={filters.to || ""}
+                onChange={(v) => handleFilterChange("to", v)}
+                fromDate={
+                  filters.from
+                    ? (() => {
+                        const f = parse(filters.from, "yyyy-MM-dd", new Date())
+                        return isValid(f) ? f : undefined
+                      })()
+                    : undefined
+                }
               />
             </div>
             <div>

@@ -119,7 +119,7 @@ export function AppTabBar({
   return (
     <>
       <nav
-        className="mobile-tab-bar fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-around border-t border-border/50 bg-background/92 backdrop-blur-xl pb-[max(0.35rem,env(safe-area-inset-bottom,0px))] pt-1 shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.45)]"
+        className="mobile-tab-bar fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-around border-t border-border/50 bg-background pb-[max(0.35rem,env(safe-area-inset-bottom,0px))] pt-1 shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.12)] dark:shadow-[0_-4px_24px_-8px_rgba(0,0,0,0.45)]"
         role="tablist"
         aria-label="Main navigation"
       >

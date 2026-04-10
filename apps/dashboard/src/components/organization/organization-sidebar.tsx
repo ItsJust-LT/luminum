@@ -145,29 +145,29 @@ export function OrganizationSidebar({
   // No polling needed - all updates are real-time
 
   return (
-    <Sidebar className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground flex h-full flex-col">
-      <SidebarHeader className="p-4 pb-2">
-        <div className="bg-card/70 text-card-foreground flex min-h-[72px] w-full min-w-0 items-center gap-3 rounded-lg border p-4 backdrop-blur-sm">
+    <Sidebar className="border-sidebar-border/20 bg-transparent text-sidebar-foreground flex h-full flex-col">
+      <SidebarHeader className="p-3 pb-2 md:p-4">
+        <div className="text-card-foreground flex min-h-[4.5rem] w-full min-w-0 items-center gap-3 rounded-2xl bg-card px-3 py-3">
           <div className="flex-shrink-0">
-            <Avatar className="h-11 w-11 border">
-              <AvatarImage src={orgBrandSrc} alt={organization.name} className="object-cover" />
-              <AvatarFallback className="bg-primary text-primary-foreground font-bold text-lg">
+            <Avatar className="h-11 w-11 rounded-xl shadow-none ring-0">
+              <AvatarImage src={orgBrandSrc} alt={organization.name} className="object-contain p-1.5" />
+              <AvatarFallback className="rounded-xl bg-primary/18 text-lg font-bold text-primary">
                 {organization.name.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
           </div>
-          <div className="flex-1 min-w-0 text-left py-0.5">
-            <p className="font-bold text-foreground text-sm leading-snug line-clamp-2 break-words">
+          <div className="min-w-0 flex-1 py-0.5 text-left">
+            <p className="text-foreground line-clamp-2 break-words text-sm font-semibold leading-snug tracking-tight">
               {organization.name}
             </p>
-            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">Organization</p>
+            <p className="text-muted-foreground/80 mt-0.5 text-[11px] font-medium">Organization</p>
           </div>
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-3 flex-1 overflow-y-auto">
+      <SidebarContent className="flex-1 px-3">
         <SidebarGroup className="py-2">
-          <SidebarGroupLabel className="text-muted-foreground mx-2 mb-2 rounded-md bg-muted px-3 py-2 text-xs font-semibold uppercase tracking-wider">
+          <SidebarGroupLabel className="text-muted-foreground/80 mx-2 mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
             Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -220,7 +220,7 @@ export function OrganizationSidebar({
         </SidebarGroup>
 
         <SidebarGroup className="py-2">
-          <SidebarGroupLabel className="text-muted-foreground mx-2 mb-2 rounded-md bg-muted px-3 py-2 text-xs font-semibold uppercase tracking-wider">
+          <SidebarGroupLabel className="text-muted-foreground/80 mx-2 mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
             Management
           </SidebarGroupLabel>
           <SidebarGroupContent>

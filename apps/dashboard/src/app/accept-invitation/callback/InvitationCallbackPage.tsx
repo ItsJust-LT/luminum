@@ -61,7 +61,7 @@ export default function InvitationCallbackPage() {
 
   if (status === "loading") return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
-      <Card className="w-full max-w-md mx-auto shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-md border-0 bg-card shadow-xl">
         <CardContent className="flex items-center justify-center py-16">
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
@@ -75,7 +75,7 @@ export default function InvitationCallbackPage() {
 
   if (status === "success") return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
-      <Card className="w-full max-w-md mx-auto shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-md border-0 bg-card shadow-xl">
         <CardContent className="text-center py-16">
           <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Luminum Agency!</h2>
@@ -88,7 +88,7 @@ export default function InvitationCallbackPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
-      <Card className="w-full max-w-md mx-auto shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-md border-0 bg-card shadow-xl">
         <CardContent className="text-center py-16">
           <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Failed</h2>

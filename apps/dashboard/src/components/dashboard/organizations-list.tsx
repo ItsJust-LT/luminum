@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { authClient } from "@/lib/auth/client"
-import { CardSkeleton } from "@/components/ui/skeleton-loader"
+import { PageDataSpinner } from "@/components/shell/page-data-spinner"
 
 interface Organization {
   id: string
@@ -83,8 +83,15 @@ export function OrganizationsList() {
   if (loading) {
     return (
       <Card>
-        <CardContent className="py-8">
-          <CardSkeleton />
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Building2 className="w-5 h-5 text-blue-600" />
+            <span>Organizations Management</span>
+          </CardTitle>
+          <CardDescription>Manage all organizations in the system</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PageDataSpinner label="Loading organizations…" className="py-12" />
         </CardContent>
       </Card>
     )

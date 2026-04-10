@@ -150,9 +150,7 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <Card className="w-full max-w-md border-dashed border-2">
           <CardContent className="pt-8 text-center space-y-6">
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-muted/20 to-muted/5 rounded-2xl blur-xl" />
-              <div className="relative p-6">
+            <div className="relative rounded-2xl bg-muted/20 p-6">
                 {isAdmin ? (
                   <>
                     <Shield className="w-16 h-16 text-primary mx-auto mb-4" />
@@ -179,7 +177,6 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
                     </Button>
                   </>
                 )}
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -191,13 +188,10 @@ export function OrganizationSelector({ onOrganizationSelect }: OrganizationSelec
     <div className="min-h-[100dvh] bg-background py-8 px-4 sm:py-12 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-8 sm:mb-12 space-y-4 sm:space-y-6">
-          <div className="relative inline-block">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5 rounded-3xl blur-xl" />
-            <div className="relative p-4 sm:p-6">
-              <Building2 className="w-14 h-14 sm:w-20 sm:h-20 text-primary mx-auto mb-4 sm:mb-6" />
-              <h1 className="text-2xl sm:text-4xl font-bold text-foreground mb-2 sm:mb-4">Select Organization</h1>
-              <p className="text-muted-foreground text-base sm:text-lg">Choose an organization to access your dashboard</p>
-            </div>
+          <div className="inline-block rounded-3xl bg-primary/5 p-4 sm:p-6">
+            <Building2 className="w-14 h-14 sm:w-20 sm:h-20 text-primary mx-auto mb-4 sm:mb-6" />
+            <h1 className="text-2xl sm:text-4xl font-bold text-foreground mb-2 sm:mb-4">Select Organization</h1>
+            <p className="text-muted-foreground text-base sm:text-lg">Choose an organization to access your dashboard</p>
           </div>
         </div>
 

@@ -140,7 +140,7 @@ export default function AdminShell({
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background/55 backdrop-blur-md">
+      <div className="flex min-h-screen w-full bg-background">
         <div className="hidden md:block">
           <AdminSidebar
             sessionUser={{ name: session?.user?.name, image: session?.user?.image }}
@@ -150,7 +150,7 @@ export default function AdminShell({
         </div>
 
         <SidebarInset className="flex-1 flex flex-col">
-          <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-background/75 px-3 backdrop-blur-xl md:px-6">
+          <header className="sticky top-0 z-50 flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-background px-3 md:px-6">
             <SidebarTrigger className="hover:bg-accent hidden -ml-1 rounded-md transition-colors md:flex" />
 
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
@@ -177,7 +177,7 @@ export default function AdminShell({
                       </div>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4">
+                  <div className="scrollbar-app flex-1 overflow-y-auto p-4">
                     <div className="space-y-1">
                       {mobileNavItems.map((item) => (
                         <Button
@@ -304,7 +304,9 @@ export default function AdminShell({
           <main
             className={cn(
               "flex-1 min-h-0 flex flex-col",
-              pathname?.startsWith("/admin/database") ? "overflow-hidden" : "overflow-auto px-3 py-3 sm:px-4 md:px-6 md:py-5"
+              pathname?.startsWith("/admin/database")
+                ? "overflow-hidden"
+                : "scrollbar-app overflow-auto px-3 py-3 sm:px-4 md:px-6 md:py-5"
             )}
           >
             {children}

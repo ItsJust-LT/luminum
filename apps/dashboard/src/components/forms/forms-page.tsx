@@ -1,16 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useOrganizationChannel } from "@/lib/ably/client"
 import { OrganizationEvents } from "@/lib/ably/events"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
-import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
@@ -59,12 +58,27 @@ import {
 } from "@/lib/utils/field-detection"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { cn } from "@/lib/utils"
+import { mergeSearchParams } from "@/lib/url-state/list-query"
 
 type ReadFilter = "any" | "new" | "seen"
 type ContactFilter = "any" | "not_contacted" | "contacted"
 
+const FORM_SORT_CHOICES = ["latest", "oldest", "not_contacted", "contacted", "new", "seen"] as const
+type FormSortKey = (typeof FORM_SORT_CHOICES)[number]
+
 export function FormsPage() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const pushFormsUrl = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      const qs = typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString()
+      const merged = mergeSearchParams(qs, updates)
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false })
+    },
+    [pathname, router, searchParams]
+  )
   const { organization, loading: orgLoading, error: orgError } = useOrganization()
   const organizationId = organization?.id ?? ""
 
@@ -80,11 +94,41 @@ export function FormsPage() {
   const [contactFilter, setContactFilter] = useState<ContactFilter>("any")
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedSubmissions, setSelectedSubmissions] = useState<Set<string>>(new Set())
-  const [sortBy, setSortBy] = useState<
-    "latest" | "oldest" | "not_contacted" | "contacted" | "new" | "seen"
-  >("not_contacted")
+  const [sortBy, setSortBy] = useState<FormSortKey>("not_contacted")
 
   const primaryWebsite = websites?.[0]
+  const searchFieldFocusedRef = useRef(false)
+
+  useEffect(() => {
+    if (searchFieldFocusedRef.current) return
+    setSearchQuery(searchParams.get("q") ?? "")
+  }, [searchParams])
+
+  useEffect(() => {
+    const seen = searchParams.get("seen")
+    if (seen === "new") setReadFilter("new")
+    else if (seen === "seen") setReadFilter("seen")
+    else setReadFilter("any")
+
+    const contact = searchParams.get("contact")
+    if (contact === "not_contacted") setContactFilter("not_contacted")
+    else if (contact === "contacted") setContactFilter("contacted")
+    else setContactFilter("any")
+
+    const s = searchParams.get("sort")
+    if (s && (FORM_SORT_CHOICES as readonly string[]).includes(s)) setSortBy(s as FormSortKey)
+  }, [searchParams])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const qs = typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString()
+      const cur = new URLSearchParams(qs).get("q") ?? ""
+      if (searchQuery === cur) return
+      const merged = mergeSearchParams(qs, { q: searchQuery || null })
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false })
+    }, 380)
+    return () => window.clearTimeout(t)
+  }, [searchQuery, pathname, router, searchParams])
 
   const apiFilters = useMemo((): FormSubmissionFilters => {
     const f: FormSubmissionFilters = {}
@@ -362,78 +406,77 @@ export function FormsPage() {
   }
 
   return (
-    <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-6 sm:space-y-8">
-      <header className="space-y-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 space-y-2">
-            <div className="flex items-start gap-3">
-              <div className="bg-primary/10 text-primary mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
-                <Inbox className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">Forms</h1>
-                <p className="text-muted-foreground mt-1 max-w-2xl text-sm leading-relaxed sm:text-base">
-                  Submissions from{" "}
-                  <span className="text-foreground font-medium">
-                    {primaryWebsite?.domain || primaryWebsite?.name || "your site"}
+    <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-4 sm:space-y-5">
+      <header className="space-y-3">
+        <div className="flex flex-col gap-3 border-b border-border/50 pb-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2.5 sm:items-center">
+            <div className="bg-primary/10 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10 sm:rounded-xl">
+              <Inbox className="h-4 w-4 sm:h-[1.15rem] sm:w-[1.15rem]" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-foreground text-xl font-semibold tracking-tight sm:text-2xl">Forms</h1>
+              <p className="text-muted-foreground mt-0.5 max-w-2xl text-xs leading-snug sm:text-sm">
+                <span className="text-foreground font-medium">{primaryWebsite?.domain || primaryWebsite?.name || "Your site"}</span>
+                {filteredSubmissions.length !== submissions.length ? (
+                  <span>
+                    {" "}
+                    · {filteredSubmissions.length}/{submissions.length} match
                   </span>
-                  {filteredSubmissions.length !== submissions.length ? (
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · showing {filteredSubmissions.length} of {submissions.length} after search
-                    </span>
-                  ) : null}
-                </p>
-              </div>
+                ) : null}
+              </p>
             </div>
           </div>
         </div>
 
-        <Separator />
-
         {!listBusy && submissions.length > 0 && (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Card className="app-card">
-              <CardHeader className="pb-2">
-                <CardDescription>Inbox</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">{inboxStats.total}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="app-card">
-              <CardHeader className="pb-2">
-                <CardDescription>Unread</CardDescription>
-                <CardTitle className="text-chart-4 text-2xl tabular-nums">{inboxStats.unread}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="app-card">
-              <CardHeader className="pb-2">
-                <CardDescription>Needs follow-up</CardDescription>
-                <CardTitle className="text-chart-3 text-2xl tabular-nums">{inboxStats.needsFollowUp}</CardTitle>
-              </CardHeader>
-            </Card>
+          <div className="border-border/60 bg-card flex flex-wrap overflow-hidden rounded-xl border">
+            <div className="border-border/50 flex min-w-[5.5rem] flex-1 flex-col justify-center border-b px-3 py-2.5 sm:border-b-0 sm:border-r sm:px-4">
+              <span className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Total</span>
+              <span className="text-foreground text-lg font-semibold tabular-nums sm:text-xl">{inboxStats.total}</span>
+            </div>
+            <div className="border-border/50 flex min-w-[5.5rem] flex-1 flex-col justify-center border-b px-3 py-2.5 sm:border-b-0 sm:border-r sm:px-4">
+              <span className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Unread</span>
+              <span className="text-chart-4 text-lg font-semibold tabular-nums sm:text-xl">{inboxStats.unread}</span>
+            </div>
+            <div className="flex min-w-[6.5rem] flex-[1.2] flex-col justify-center px-3 py-2.5 sm:px-4">
+              <span className="text-muted-foreground text-[10px] font-semibold uppercase tracking-wider">Follow-up</span>
+              <span className="text-chart-3 text-lg font-semibold tabular-nums sm:text-xl">{inboxStats.needsFollowUp}</span>
+            </div>
           </div>
         )}
 
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
-            <div className="relative min-w-0 flex-1 sm:max-w-md">
-              <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative min-w-0 flex-1 sm:max-w-xs lg:max-w-sm">
+              <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
               <Input
-                placeholder="Search name, email, phone, message…"
+                placeholder="Search…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                onFocus={() => {
+                  searchFieldFocusedRef.current = true
+                }}
+                onBlur={() => {
+                  searchFieldFocusedRef.current = false
+                }}
+                className="h-9 pl-8 text-sm"
                 aria-label="Search submissions"
               />
             </div>
-            <div className="grid w-full grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:w-auto lg:flex lg:items-center">
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Read</Label>
+            <div className="flex w-full flex-wrap gap-2 min-[420px]:w-auto">
+              <div className="flex flex-col gap-1">
+                <Label className="sr-only">Read status</Label>
                 <Select
                   value={readFilter}
-                  onValueChange={(v) => setReadFilter(v as ReadFilter)}
+                  onValueChange={(v) => {
+                    const vf = v as ReadFilter
+                    setReadFilter(vf)
+                    pushFormsUrl({
+                      seen: vf === "any" ? null : vf === "new" ? "new" : "seen",
+                    })
+                  }}
                 >
-                  <SelectTrigger className="w-full sm:w-[158px]">
+                  <SelectTrigger className="h-9 w-full min-w-[7.5rem] text-sm sm:w-[140px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -443,13 +486,20 @@ export function FormsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Follow-up</Label>
+              <div className="flex flex-col gap-1">
+                <Label className="sr-only">Follow-up status</Label>
                 <Select
                   value={contactFilter}
-                  onValueChange={(v) => setContactFilter(v as ContactFilter)}
+                  onValueChange={(v) => {
+                    const cf = v as ContactFilter
+                    setContactFilter(cf)
+                    pushFormsUrl({
+                      contact:
+                        cf === "any" ? null : cf === "not_contacted" ? "not_contacted" : "contacted",
+                    })
+                  }}
                 >
-                  <SelectTrigger className="w-full sm:w-[168px]">
+                  <SelectTrigger className="h-9 w-full min-w-[8.5rem] text-sm sm:w-[150px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -462,10 +512,10 @@ export function FormsPage() {
             </div>
           </div>
 
-          <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm" className="min-w-[9rem] justify-between gap-2">
+                <Button type="button" variant="outline" size="sm" className="h-9 min-w-[8.5rem] justify-between gap-2 text-xs sm:text-sm">
                   {sortBy === "not_contacted" && <XCircle className="text-chart-3 h-4 w-4" />}
                   {sortBy === "contacted" && <CheckCircle className="text-chart-2 h-4 w-4" />}
                   {sortBy === "latest" && <ArrowDown className="text-primary h-4 w-4" />}
@@ -477,27 +527,57 @@ export function FormsPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[12rem]">
-                <DropdownMenuItem onClick={() => setSortBy("not_contacted")}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSortBy("not_contacted")
+                    pushFormsUrl({ sort: "not_contacted" })
+                  }}
+                >
                   <XCircle className="text-chart-3 mr-2 h-4 w-4" />
                   Not contacted first
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("contacted")}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSortBy("contacted")
+                    pushFormsUrl({ sort: "contacted" })
+                  }}
+                >
                   <CheckCircle className="text-chart-2 mr-2 h-4 w-4" />
                   Contacted first
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("latest")}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSortBy("latest")
+                    pushFormsUrl({ sort: "latest" })
+                  }}
+                >
                   <ArrowDown className="text-primary mr-2 h-4 w-4" />
                   Newest first
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("oldest")}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSortBy("oldest")
+                    pushFormsUrl({ sort: "oldest" })
+                  }}
+                >
                   <ArrowUp className="text-primary mr-2 h-4 w-4" />
                   Oldest first
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("new")}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSortBy("new")
+                    pushFormsUrl({ sort: "new" })
+                  }}
+                >
                   <EyeOff className="text-destructive mr-2 h-4 w-4" />
                   Unread first
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSortBy("seen")}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSortBy("seen")
+                    pushFormsUrl({ sort: "seen" })
+                  }}
+                >
                   <Eye className="text-muted-foreground mr-2 h-4 w-4" />
                   Read first
                 </DropdownMenuItem>
@@ -508,6 +588,7 @@ export function FormsPage() {
               type="button"
               variant="outline"
               size="sm"
+              className="h-9"
               onClick={() => void fetchSubmissions()}
               disabled={listBusy || !primaryWebsite}
             >
@@ -518,7 +599,7 @@ export function FormsPage() {
         </div>
 
         {selectedSubmissions.size > 0 && (
-          <div className="bg-muted/40 border-border flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="bg-muted/35 border-border/60 flex flex-col gap-2 rounded-lg border px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-muted-foreground text-sm">
               {selectedSubmissions.size} selected
             </span>
@@ -540,13 +621,9 @@ export function FormsPage() {
       </header>
 
       {listBusy && (
-        <div className="space-y-4 py-6">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-muted h-24 animate-pulse rounded-xl" />
-            ))}
-          </div>
-          <div className="bg-muted h-64 animate-pulse rounded-xl" />
+        <div className="space-y-3 py-4">
+          <div className="bg-muted h-14 animate-pulse rounded-xl" />
+          <div className="bg-muted h-56 animate-pulse rounded-xl sm:h-64" />
         </div>
       )}
 
@@ -596,7 +673,7 @@ export function FormsPage() {
                   onClick={() => handleViewSubmission(submission.id)}
                   onMouseEnter={() => handleSubmissionHover(submission.id)}
                 >
-                  <CardContent className="p-4">
+                  <CardContent className="p-3 sm:p-3.5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
                         <Checkbox
@@ -699,11 +776,11 @@ export function FormsPage() {
           </div>
 
           <Card className="app-card hidden md:block">
-            <ScrollArea className="max-h-[min(32rem,70vh)] w-full rounded-lg">
+            <ScrollArea className="max-h-[min(28rem,65vh)] w-full rounded-lg">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-muted-foreground h-9 w-10 py-2 text-xs font-medium">
                       <Checkbox
                         checked={
                           selectedSubmissions.size === filteredSubmissions.length && filteredSubmissions.length > 0
@@ -712,11 +789,11 @@ export function FormsPage() {
                         aria-label="Select all"
                       />
                     </TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="whitespace-nowrap">Submitted</TableHead>
-                    <TableHead>Message</TableHead>
-                    <TableHead className="w-[100px] text-right">Actions</TableHead>
+                    <TableHead className="text-muted-foreground h-9 py-2 text-xs font-medium">Contact</TableHead>
+                    <TableHead className="text-muted-foreground h-9 py-2 text-xs font-medium">Status</TableHead>
+                    <TableHead className="text-muted-foreground h-9 whitespace-nowrap py-2 text-xs font-medium">Submitted</TableHead>
+                    <TableHead className="text-muted-foreground h-9 py-2 text-xs font-medium">Message</TableHead>
+                    <TableHead className="text-muted-foreground h-9 w-[88px] py-2 text-right text-xs font-medium">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -732,20 +809,20 @@ export function FormsPage() {
                     return (
                       <TableRow
                         key={submission.id}
-                        className="hover:bg-muted/30 cursor-pointer"
+                        className="hover:bg-muted/30 cursor-pointer text-sm"
                         onClick={() => handleViewSubmission(submission.id)}
                         onMouseEnter={() => handleSubmissionHover(submission.id)}
                       >
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={selectedSubmissions.has(submission.id)}
                             onCheckedChange={() => handleSelectSubmission(submission.id)}
                             aria-label="Select row"
                           />
                         </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">
+                        <TableCell className="py-2">
+                          <div className="space-y-0.5">
+                            <div className="font-medium leading-tight">
                               {nameField
                                 ? formatFieldValue(nameField)
                                 : emailField
@@ -766,8 +843,8 @@ export function FormsPage() {
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap items-center gap-1.5">
+                        <TableCell className="py-2">
+                          <div className="flex flex-wrap items-center gap-1">
                             {!submission.seen && (
                               <span className="bg-chart-4 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full" />
                             )}
@@ -787,19 +864,19 @@ export function FormsPage() {
                             </Badge>
                           </div>
                         </TableCell>
-                        <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                        <TableCell className="text-muted-foreground whitespace-nowrap py-2 text-xs">
                           {formatDate(submission.submitted_at)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="py-2">
                           {messageField ? (
-                            <div className="text-muted-foreground max-w-[220px] truncate text-sm">
+                            <div className="text-muted-foreground max-w-[200px] truncate text-xs sm:max-w-[220px] sm:text-sm">
                               {formatFieldValue(messageField)}
                             </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="py-2 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-1">
                             <Button
                               type="button"

@@ -1,13 +1,13 @@
 "use client"
 
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSession } from "@/lib/auth/client"
 import { useOrganization } from "@/lib/contexts/organization-context"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation"
 import LoadingAnimation from "@/components/LoadingAnimation"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
@@ -40,7 +40,9 @@ import {
   FileDown, Eye, Pencil, Send, CheckCircle, Clock, FileText,
   AlertCircle, TrendingUp, DollarSign,
   ChevronDown, FileCheck, ArrowRightLeft, CalendarClock, Banknote, Link2, X,
+  ArrowDownUp,
 } from "lucide-react"
+import { mergeSearchParams } from "@/lib/url-state/list-query"
 
 type InvoiceRow = {
   id: string;
@@ -72,6 +74,9 @@ type InvoiceStats = {
 };
 
 type StatusFilter = "all" | "draft" | "sent" | "paid" | "overdue" | "cancelled" | "accepted" | "expired";
+
+type InvoiceSortKey = "date_desc" | "date_asc" | "amount_desc" | "client_asc";
+const INVOICE_SORT_CHOICES: InvoiceSortKey[] = ["date_desc", "date_asc", "amount_desc", "client_asc"];
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Receipt; badgeClass: string }> = {
   draft: { label: "Draft", icon: FileText, badgeClass: "border-border bg-muted/60 text-muted-foreground border" },
@@ -105,11 +110,13 @@ function chainRefLabel(inv: InvoiceRow): string | null {
   return r;
 }
 
-export default function OrgInvoicesListPage() {
+function OrgInvoicesListPageInner() {
   const { data: session, isPending: sessionPending } = useSession();
   const { organization, loading: orgLoading } = useOrganization();
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [stats, setStats] = useState<InvoiceStats | null>(null);
@@ -117,6 +124,48 @@ export default function OrgInvoicesListPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [docTypeFilter, setDocTypeFilter] = useState<"all" | "invoice" | "quote" | "receipt">("all");
+  const [sortBy, setSortBy] = useState<InvoiceSortKey>("date_desc");
+  const queryFocusRef = useRef(false);
+
+  const pushInvoiceUrl = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      const qs = typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString();
+      const merged = mergeSearchParams(qs, updates);
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  useEffect(() => {
+    if (queryFocusRef.current) return;
+    setQuery(searchParams.get("q") ?? "");
+  }, [searchParams]);
+
+  useEffect(() => {
+    const t = searchParams.get("type");
+    if (t === "invoice" || t === "quote" || t === "receipt") setDocTypeFilter(t);
+    else if (t === "all") setDocTypeFilter("all");
+
+    const st = searchParams.get("status");
+    if (!st || st === "all") setStatusFilter("all");
+    else setStatusFilter(st as StatusFilter);
+
+    const so = searchParams.get("sort");
+    if (so && (INVOICE_SORT_CHOICES as readonly string[]).includes(so)) {
+      setSortBy(so as InvoiceSortKey);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const qs = typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString();
+      const cur = new URLSearchParams(qs).get("q") ?? "";
+      if (query === cur) return;
+      const merged = mergeSearchParams(qs, { q: query || null });
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false });
+    }, 380);
+    return () => window.clearTimeout(t);
+  }, [query, pathname, router, searchParams]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [converting, setConverting] = useState<string | null>(null);
@@ -175,8 +224,25 @@ export default function OrgInvoicesListPage() {
           (i.client_email && i.client_email.toLowerCase().includes(q))
       );
     }
-    return list
-  }, [invoices, statusFilter, query])
+    const rows = [...list];
+    rows.sort((a, b) => {
+      switch (sortBy) {
+        case "date_asc":
+          return new Date(a.date).getTime() - new Date(b.date).getTime();
+        case "amount_desc":
+          return (
+            (typeof b.grand_total === "string" ? parseFloat(b.grand_total) : b.grand_total) -
+            (typeof a.grand_total === "string" ? parseFloat(a.grand_total) : a.grand_total)
+          );
+        case "client_asc":
+          return a.client_name.localeCompare(b.client_name, undefined, { sensitivity: "base" });
+        case "date_desc":
+        default:
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
+      }
+    });
+    return rows;
+  }, [invoices, statusFilter, query, sortBy])
 
   const filtersActive = useMemo(
     () => query.trim().length > 0 || statusFilter !== "all",
@@ -184,8 +250,9 @@ export default function OrgInvoicesListPage() {
   )
 
   function clearFilters() {
-    setQuery("")
-    setStatusFilter("all")
+    setQuery("");
+    setStatusFilter("all");
+    pushInvoiceUrl({ q: null, status: null });
   }
 
   async function handleDelete() {
@@ -333,8 +400,13 @@ export default function OrgInvoicesListPage() {
         <Tabs
           value={docTypeFilter}
           onValueChange={(v) => {
-            setDocTypeFilter(v as "all" | "invoice" | "quote" | "receipt")
-            setStatusFilter("all")
+            const vt = v as "all" | "invoice" | "quote" | "receipt";
+            setDocTypeFilter(vt);
+            setStatusFilter("all");
+            pushInvoiceUrl({
+              type: vt === "all" ? null : vt,
+              status: null,
+            });
           }}
           className="w-full gap-3"
         >
@@ -416,8 +488,17 @@ export default function OrgInvoicesListPage() {
               placeholder={searchPlaceholder}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => {
+                queryFocusRef.current = true;
+              }}
+              onBlur={() => {
+                queryFocusRef.current = false;
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Escape") setQuery("")
+                if (e.key === "Escape") {
+                  setQuery("");
+                  pushInvoiceUrl({ q: null });
+                }
               }}
               className="pr-9 pl-9"
               aria-label="Search documents"
@@ -426,7 +507,10 @@ export default function OrgInvoicesListPage() {
               <button
                 type="button"
                 className="text-muted-foreground hover:bg-muted hover:text-foreground absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1"
-                onClick={() => setQuery("")}
+                onClick={() => {
+                  setQuery("");
+                  pushInvoiceUrl({ q: null });
+                }}
                 aria-label="Clear search"
               >
                 <X className="h-4 w-4" />
@@ -436,7 +520,14 @@ export default function OrgInvoicesListPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="space-y-1.5">
               <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Status</span>
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => {
+                  const vf = v as StatusFilter;
+                  setStatusFilter(vf);
+                  pushInvoiceUrl({ status: vf === "all" ? null : vf });
+                }}
+              >
                 <SelectTrigger className="w-full sm:w-[220px]" aria-label="Filter by status">
                   <SelectValue />
                 </SelectTrigger>
@@ -447,6 +538,28 @@ export default function OrgInvoicesListPage() {
                       {tab.count != null && tab.count > 0 ? ` (${tab.count})` : ""}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Sort</span>
+              <Select
+                value={sortBy}
+                onValueChange={(v) => {
+                  const sv = v as InvoiceSortKey;
+                  setSortBy(sv);
+                  pushInvoiceUrl({ sort: sv });
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-[200px]" aria-label="Sort documents">
+                  <ArrowDownUp className="text-muted-foreground mr-2 h-4 w-4 shrink-0" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="date_desc">Newest first</SelectItem>
+                  <SelectItem value="date_asc">Oldest first</SelectItem>
+                  <SelectItem value="amount_desc">Amount (high → low)</SelectItem>
+                  <SelectItem value="client_asc">Client (A–Z)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -801,5 +914,13 @@ export default function OrgInvoicesListPage() {
         </AlertDialogContent>
       </AlertDialog>
     </AppPageContainer>
+  )
+}
+
+export default function OrgInvoicesListPage() {
+  return (
+    <Suspense fallback={<LoadingAnimation />}>
+      <OrgInvoicesListPageInner />
+    </Suspense>
   )
 }

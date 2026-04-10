@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useOrganization } from "@/lib/contexts/organization-context"
 import { useMailWorkspace } from "@/lib/contexts/mail-workspace-context"
 import { orgNavPath } from "@/lib/org-nav-path"
@@ -50,6 +50,7 @@ import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import { cn } from "@/lib/utils"
 import type { MailboxId, FolderCounts } from "@/components/emails/mailbox-sidebar"
 import { MailProvisioningView } from "@/components/emails/mail-provisioning-view"
+import { mergeSearchParams } from "@/lib/url-state/list-query"
 
 function formatScheduledSendInLocalTime(iso: Date | string): string {
   const d = typeof iso === "string" ? new Date(iso) : iso
@@ -90,7 +91,10 @@ function smartDate(date: Date | string): string {
   })
 }
 
-export default function EmailsPage() {
+function EmailsListPageInner() {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const { organization } = useOrganization()
   const { isCustomDomain } = useCustomDomain()
   const { mailbox, setMailbox, folderCounts, setFolderCounts, refreshFolderCounts } = useMailWorkspace()
@@ -134,11 +138,60 @@ export default function EmailsPage() {
   const lastPrefetchedIdRef = useRef<string | null>(null)
   const prevMailWsConnectedRef = useRef(false)
   const lastPolledInboxUnreadRef = useRef<number | null>(null)
+  const searchInputFocusedRef = useRef(false)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 400)
     return () => clearTimeout(t)
   }, [searchQuery, setDebouncedSearch])
+
+  // URL → filters (read / addresses). Query string `q` syncs below with focus guard.
+  useEffect(() => {
+    const r = searchParams.get("read")
+    if (r === "read") setFilterRead(true)
+    else if (r === "unread") setFilterRead(false)
+    else setFilterRead(undefined)
+
+    const raw = searchParams.get("addrs")
+    if (raw && raw.trim()) {
+      setSelectedEmailAddresses(
+        raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    } else {
+      setSelectedEmailAddresses([])
+    }
+  }, [searchParams, setFilterRead, setSelectedEmailAddresses])
+
+  useEffect(() => {
+    if (searchInputFocusedRef.current) return
+    const q = searchParams.get("q") ?? ""
+    setSearchQuery(q)
+    setDebouncedSearch(q)
+  }, [searchParams, setSearchQuery, setDebouncedSearch])
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const qs = typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString()
+      const cur = new URLSearchParams(qs).get("q") ?? ""
+      if (searchQuery === cur) return
+      const merged = mergeSearchParams(qs, { q: searchQuery || null })
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false })
+    }, 450)
+    return () => window.clearTimeout(t)
+  }, [searchQuery, pathname, router, searchParams])
+
+  const pushMailListUrl = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      const qs =
+        typeof window !== "undefined" ? window.location.search.slice(1) : searchParams.toString()
+      const merged = mergeSearchParams(qs, updates)
+      router.replace(merged ? `${pathname}?${merged}` : pathname, { scroll: false })
+    },
+    [pathname, router, searchParams]
+  )
 
   useEffect(() => {
     if (!organization?.id) return
@@ -170,7 +223,6 @@ export default function EmailsPage() {
     setEmails([])
   }, [mailbox, setPage, setLoadedForOrgId, setEmails])
 
-  const router = useRouter()
   const emailsBase =
     organization?.slug != null ? orgNavPath(organization.slug, isCustomDomain, "emails") : "/emails"
   const composeHref = `${emailsBase}/compose`
@@ -554,20 +606,26 @@ export default function EmailsPage() {
     return <MailProvisioningView workspaceName={organization?.name} />
   }
 
+  const showMarkAllRead = mailbox === "inbox"
+  const composeSpansMobileRow =
+    !showMarkAllRead
+
   return (
     <AppPageContainer
       fullWidth
-      className="mx-auto flex min-h-0 min-w-0 w-full max-w-[1600px] flex-1 flex-col gap-5 overflow-hidden px-0 py-4 sm:py-5 md:py-6"
+      className="mx-auto flex min-h-0 min-w-0 w-full max-w-[1600px] flex-1 flex-col gap-3 overflow-hidden px-2 py-3 sm:gap-4 sm:px-3 sm:py-4 md:gap-5 md:px-4 md:py-5 lg:px-6"
     >
-      <header className="shrink-0 space-y-4 px-1 sm:px-0">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="bg-primary/10 text-primary mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
-              <Mail className="h-5 w-5" />
+      <header className="shrink-0 space-y-3 sm:space-y-4">
+        <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
+            <div className="bg-primary/10 text-primary mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11">
+              <Mail className="h-[1.15rem] w-[1.15rem] sm:h-5 sm:w-5" />
             </div>
-            <div className="min-w-0 space-y-1">
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">{mailboxTitle}</h1>
-              <p className="text-muted-foreground text-sm sm:text-base">
+            <div className="min-w-0 space-y-0.5">
+              <h1 className="text-foreground text-lg font-semibold tracking-tight sm:text-xl md:text-2xl lg:text-3xl">
+                {mailboxTitle}
+              </h1>
+              <p className="text-muted-foreground text-xs leading-snug sm:text-sm">
                 {loading
                   ? "Loading…"
                   : displayTotal === 0
@@ -580,38 +638,54 @@ export default function EmailsPage() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
             <Button
               type="button"
               variant="outline"
               size="sm"
+              className="min-h-11 w-full sm:min-h-10 sm:w-auto"
               onClick={() => {
                 setPage(1)
                 void fetchEmails(1, true)
               }}
               disabled={loading}
             >
-              <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
+              <RefreshCw className={cn("mr-2 h-4 w-4 shrink-0", loading && "animate-spin")} />
               Refresh
             </Button>
-            {mailbox === "inbox" ? (
+            {showMarkAllRead ? (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="min-h-11 w-full sm:min-h-10 sm:w-auto"
                 onClick={() => void handleMarkAllAsRead()}
                 disabled={loading || displayUnread === 0}
               >
-                <Check className="mr-2 h-4 w-4" />
-                Mark all read
+                <Check className="mr-2 h-4 w-4 shrink-0" />
+                <span className="truncate">Mark all read</span>
               </Button>
             ) : null}
-            <Button type="button" variant="outline" size="sm" asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-h-11 w-full sm:min-h-10 sm:w-auto"
+              asChild
+            >
               <Link href={settingsHref}>Settings</Link>
             </Button>
-            <Button type="button" size="sm" asChild>
+            <Button
+              type="button"
+              size="sm"
+              className={cn(
+                "min-h-11 w-full sm:min-h-10 sm:w-auto",
+                composeSpansMobileRow && "col-span-2 sm:col-span-1"
+              )}
+              asChild
+            >
               <Link href={composeHref} className="gap-2">
-                <Send className="h-4 w-4" />
+                <Send className="h-4 w-4 shrink-0" />
                 Compose
               </Link>
             </Button>
@@ -620,26 +694,31 @@ export default function EmailsPage() {
 
         <Separator />
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="relative min-w-0 flex-1 lg:max-w-md">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
+          <div className="relative min-w-0 flex-1 lg:max-w-xl">
             <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
             <Input
               placeholder="Search subject, sender, body…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 pl-9"
-              disabled={orgLoading || loading}
+              onFocus={() => {
+                searchInputFocusedRef.current = true
+              }}
+              onBlur={() => {
+                searchInputFocusedRef.current = false
+              }}
+              className="h-11 pl-9 text-base sm:h-10 sm:text-sm"
               aria-label="Search mail"
             />
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex w-full flex-col gap-3 min-[520px]:flex-row min-[520px]:flex-wrap min-[520px]:items-end min-[520px]:gap-3">
             <Popover open={emailSelectorOpen} onOpenChange={setEmailSelectorOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant={selectedEmailAddresses.length > 0 ? "secondary" : "outline"}
-                  className="h-10 w-full justify-between sm:w-[min(100%,280px)]"
-                  disabled={orgLoading || loading || availableEmailAddresses.length === 0}
+                  className="h-11 w-full min-w-0 justify-between sm:h-10 sm:w-[min(100%,280px)]"
+                  disabled={orgLoading || availableEmailAddresses.length === 0}
                 >
                   <span className="flex items-center gap-2 truncate">
                     <Inbox className="h-4 w-4 shrink-0" />
@@ -664,6 +743,7 @@ export default function EmailsPage() {
                         onSelect={() => {
                           setSelectedEmailAddresses([])
                           setEmailSelectorOpen(false)
+                          pushMailListUrl({ addrs: null })
                         }}
                         className="cursor-pointer"
                       >
@@ -682,9 +762,11 @@ export default function EmailsPage() {
                         <CommandItem
                           key={email}
                           onSelect={() => {
-                            setSelectedEmailAddresses((prev) =>
-                              prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]
-                            )
+                            setSelectedEmailAddresses((prev) => {
+                              const next = prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]
+                              pushMailListUrl({ addrs: next.length ? next.join(",") : null })
+                              return next
+                            })
                           }}
                           className="cursor-pointer"
                         >
@@ -709,13 +791,20 @@ export default function EmailsPage() {
               <Select
                 value={readFilterValue}
                 onValueChange={(v) => {
-                  if (v === "all") setFilterRead(undefined)
-                  else if (v === "read") setFilterRead(true)
-                  else setFilterRead(false)
+                  if (v === "all") {
+                    setFilterRead(undefined)
+                    pushMailListUrl({ read: null })
+                  } else if (v === "read") {
+                    setFilterRead(true)
+                    pushMailListUrl({ read: "read" })
+                  } else {
+                    setFilterRead(false)
+                    pushMailListUrl({ read: "unread" })
+                  }
                 }}
-                disabled={orgLoading || loading}
+                disabled={orgLoading}
               >
-                <SelectTrigger className="h-10 w-full sm:w-[180px]">
+                <SelectTrigger className="h-11 w-full sm:h-10 sm:w-[min(100%,200px)]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -733,10 +822,16 @@ export default function EmailsPage() {
             {selectedEmailAddresses.map((email) => (
               <Badge key={email} variant="secondary" className="gap-1.5 rounded-md py-1.5 pr-1 text-xs font-normal">
                 <Mail className="h-3 w-3 shrink-0" />
-                <span className="max-w-[180px] truncate">{email}</span>
+                <span className="max-w-[min(180px,45vw)] truncate sm:max-w-[200px]">{email}</span>
                 <button
                   type="button"
-                  onClick={() => setSelectedEmailAddresses((prev) => prev.filter((e) => e !== email))}
+                  onClick={() =>
+                    setSelectedEmailAddresses((prev) => {
+                      const next = prev.filter((e) => e !== email)
+                      pushMailListUrl({ addrs: next.length ? next.join(",") : null })
+                      return next
+                    })
+                  }
                   className="hover:bg-secondary-foreground/15 rounded-sm p-0.5 transition-colors"
                   aria-label={`Remove ${email}`}
                 >
@@ -744,14 +839,22 @@ export default function EmailsPage() {
                 </button>
               </Badge>
             ))}
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setSelectedEmailAddresses([])}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => {
+                setSelectedEmailAddresses([])
+                pushMailListUrl({ addrs: null })
+              }}
+            >
               Clear all
             </Button>
           </div>
         )}
       </header>
 
-      <div className="app-card flex min-h-[min(280px,50vh)] flex-1 min-h-0 flex-col overflow-hidden rounded-xl border shadow-sm md:min-h-0">
+      <div className="app-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm max-md:min-h-[min(280px,50dvh)]">
         {!hasCachedList(organization?.id ?? "") && (orgLoading || loading) ? (
           <div className="divide-y">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -790,11 +893,11 @@ export default function EmailsPage() {
                     onMouseEnter={() => handleEmailHover(email.id)}
                     onKeyDown={(e) => e.key === "Enter" && handleEmailClick(email)}
                     className={cn(
-                      "group flex min-h-[72px] cursor-pointer items-start gap-3 px-3 py-3.5 transition-colors active:bg-muted/50 sm:gap-4 sm:px-4 sm:py-4 md:px-5",
-                      "hover:bg-muted/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
+                      "group grid min-h-[4.25rem] cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 px-2.5 py-3 transition-colors active:bg-muted/50 sm:min-h-[4.5rem] sm:gap-3 sm:px-4 sm:py-3.5 md:gap-4 md:px-5",
+                      "hover:bg-muted/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                       !email.read &&
                         mailbox === "inbox" &&
-                        "border-l-[3px] border-l-chart-4 bg-chart-4/[0.06] hover:bg-chart-4/10",
+                        "border-l-[3px] border-l-primary/70 bg-primary/[0.04] hover:bg-primary/[0.07]",
                       (email.read || mailbox !== "inbox") && "border-l-[3px] border-l-transparent"
                     )}
                   >
@@ -804,11 +907,11 @@ export default function EmailsPage() {
                       size={40}
                       className="ring-border/40 h-9 w-9 shrink-0 ring-1 sm:h-10 sm:w-10"
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-0.5 flex items-baseline justify-between gap-2">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <div className="mb-0.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
                         <span
                           className={cn(
-                            "truncate text-[13px] tracking-tight sm:text-sm",
+                            "min-w-0 max-w-full truncate text-[13px] tracking-tight sm:text-sm",
                             !email.read && mailbox === "inbox"
                               ? "text-foreground font-semibold"
                               : "text-foreground font-medium"
@@ -822,10 +925,10 @@ export default function EmailsPage() {
                             : smartDate(email.date)}
                         </span>
                       </div>
-                      <div className="mb-0.5 flex min-w-0 flex-wrap items-center gap-2">
+                      <div className="mb-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                         <p
                           className={cn(
-                            "min-w-0 flex-1 truncate text-[13px] leading-snug sm:text-sm",
+                            "min-w-0 flex-1 basis-[min(100%,12rem)] truncate text-[13px] leading-snug sm:basis-auto sm:text-sm",
                             !email.read && mailbox === "inbox"
                               ? "text-foreground font-medium"
                               : "text-muted-foreground"
@@ -868,31 +971,31 @@ export default function EmailsPage() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex shrink-0 items-center gap-0.5">
+                    <div className="flex shrink-0 flex-col items-end gap-0.5 pt-0.5 sm:flex-row sm:items-center sm:pt-0">
                       <Button
                         variant="ghost"
                         size="icon"
                         className={cn(
-                          "h-8 w-8 rounded-lg transition-colors",
+                          "h-10 w-10 rounded-lg transition-colors sm:h-8 sm:w-8",
                           email.starred
-                            ? "text-chart-3 opacity-100"
-                            : "text-muted-foreground opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
+                            ? "text-amber-500 opacity-100"
+                            : "text-muted-foreground opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                         )}
                         onClick={(e) => void toggleStar(e, email)}
                         aria-pressed={email.starred}
                       >
-                        <Star className={cn("h-4 w-4", email.starred && "fill-chart-3 text-chart-3")} />
+                        <Star className={cn("h-4 w-4", email.starred && "fill-amber-400 text-amber-500")} />
                         <span className="sr-only">{email.starred ? "Unstar" : "Star"}</span>
                       </Button>
                       {email.attachments?.length > 0 ? (
-                        <span className="text-muted-foreground p-1.5" title={`${email.attachments.length} attachment(s)`}>
-                          <Paperclip className="h-4 w-4" />
+                        <span className="text-muted-foreground inline-flex p-1.5" title={`${email.attachments.length} attachment(s)`}>
+                          <Paperclip className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </span>
                       ) : null}
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="text-muted-foreground hover:text-destructive h-8 w-8 rounded-lg opacity-0 transition-opacity sm:group-hover:opacity-100"
+                        className="text-muted-foreground hover:text-destructive h-10 w-10 rounded-lg opacity-100 transition-opacity sm:h-8 sm:w-8 sm:opacity-0 sm:group-hover:opacity-100"
                         onClick={(e) => handleDeleteEmail(e, email.id)}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -931,5 +1034,21 @@ export default function EmailsPage() {
         )}
       </div>
     </AppPageContainer>
+  )
+}
+
+export default function EmailsPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppPageContainer fullWidth className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-[40vh] flex-1 items-center justify-center px-4">
+            <Loader2 className="text-primary h-8 w-8 animate-spin" />
+          </div>
+        </AppPageContainer>
+      }
+    >
+      <EmailsListPageInner />
+    </Suspense>
   )
 }

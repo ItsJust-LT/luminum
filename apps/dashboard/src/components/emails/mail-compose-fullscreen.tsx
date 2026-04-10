@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from "framer-motion"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
+import { isValid, parse } from "date-fns"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -693,12 +695,16 @@ export function MailComposeFullscreen(props: {
                           <Label htmlFor="mc-schedule-date" className="text-xs font-medium text-foreground">
                             Date
                           </Label>
-                          <Input
+                          <DatePicker
                             id="mc-schedule-date"
-                            type="date"
-                            min={minDateStr}
                             value={scheduleDate}
-                            onChange={(e) => setScheduleDate(e.target.value)}
+                            onChange={setScheduleDate}
+                            fromDate={
+                              (() => {
+                                const d = parse(minDateStr, "yyyy-MM-dd", new Date())
+                                return isValid(d) ? d : undefined
+                              })()
+                            }
                             className="h-9 rounded-lg border-border/80 bg-background text-sm"
                           />
                         </div>
@@ -807,7 +813,7 @@ export function MailComposeFullscreen(props: {
           <motion.button
             type="button"
             aria-label="Close and save draft"
-            className="absolute inset-0 bg-background/80 backdrop-blur-md"
+            className="absolute inset-0 bg-background/90"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

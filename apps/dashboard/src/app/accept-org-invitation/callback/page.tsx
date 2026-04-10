@@ -81,7 +81,7 @@ function OrganizationInvitationCallbackContent() {
 
   if (status === "loading") return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-6">
-      <Card className="w-full max-w-md mx-auto shadow-xl border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-md border-0 bg-card shadow-xl">
         <CardContent className="flex items-center justify-center py-16">
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600 dark:text-blue-400" />
@@ -99,7 +99,7 @@ function OrganizationInvitationCallbackContent() {
 
   if (status === "success") return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-6">
-      <Card className="w-full max-w-md mx-auto shadow-xl border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-md border-0 bg-card shadow-xl">
         <CardContent className="flex items-center justify-center py-16">
           <div className="text-center">
             <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -122,7 +122,7 @@ function OrganizationInvitationCallbackContent() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-6">
-      <Card className="w-full max-w-md mx-auto shadow-xl border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-md border-0 bg-card shadow-xl">
         <CardContent className="flex items-center justify-center py-16">
           <div className="text-center">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4">

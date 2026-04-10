@@ -164,7 +164,7 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
 
   if (success) {
     return (
-      <Card className="w-full max-w-lg mx-auto shadow-xl border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+      <Card className="mx-auto w-full max-w-lg border-0 bg-card shadow-xl">
         <CardHeader className="text-center pb-6">
           <div className="mx-auto w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20 rounded-full flex items-center justify-center mb-6 shadow-lg animate-pulse">
             <CheckCircle className="h-10 w-10 text-green-600 dark:text-green-400" />
@@ -212,7 +212,7 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
   }
 
   return (
-    <Card className="w-full max-w-lg mx-auto shadow-xl border-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+    <Card className="mx-auto w-full max-w-lg border-0 bg-card shadow-xl">
       <CardHeader className="text-center pb-6">
         <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
           <Building2 className="h-8 w-8 text-green-600 dark:text-green-400" />
@@ -234,7 +234,7 @@ export function AcceptOwnerInvitationForm({ invitation }: AcceptOwnerInvitationF
           <Button
             type="button"
             variant="outline"
-            className="w-full h-12 text-foreground border-border hover:bg-accent hover:border-accent-foreground/20 transition-all duration-300 bg-background/50 backdrop-blur-sm font-medium"
+            className="h-12 w-full border-border bg-background font-medium text-foreground transition-all duration-300 hover:border-accent-foreground/20 hover:bg-accent"
             onClick={handleGoogleSignUp}
             disabled={isGoogleLoading}
           >

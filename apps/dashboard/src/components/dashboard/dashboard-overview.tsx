@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,6 @@ import {
   Eye,
   Users,
   Activity,
-  FileText,
   Globe,
   Smartphone,
   Monitor,
@@ -20,12 +19,15 @@ import type { MetricCount } from "@/lib/types/analytics"
 import type { TimeSeriesPoint } from "@/lib/types/analytics"
 import { api } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useOrganizationChannel, useAnalyticsPresence } from "@/lib/ably/client"
-import { OrganizationEvents } from "@/lib/ably/events"
-import { useOrganization } from "@/lib/contexts/organization-context"
+import { useAnalyticsPresence } from "@/lib/ably/client"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { cleanAnalyticsPath } from "@/lib/analytics/clean-route"
+import { cn } from "@/lib/utils"
+import {
+  formatChartAxisTick,
+  formatChartTooltipTime,
+} from "@/lib/analytics/chart-time-format"
 
 interface DashboardOverviewProps {
   websiteId: string
@@ -37,7 +39,6 @@ interface OverviewData {
   pageViews: number
   uniqueVisitors: number
   avgSessionDuration: number
-  formSubmissions: number
 }
 
 const trafficChartConfig = {
@@ -46,7 +47,6 @@ const trafficChartConfig = {
 } satisfies ChartConfig
 
 export function DashboardOverview({ websiteId, organizationSlug, analyticsEnabled }: DashboardOverviewProps) {
-  const { organization } = useOrganization()
   const [overview, setOverview] = useState<OverviewData | null>(null)
   const [apiLiveViewers, setApiLiveViewers] = useState(0)
   const [deviceData, setDeviceData] = useState<MetricCount[]>([])
@@ -54,8 +54,6 @@ export function DashboardOverview({ websiteId, organizationSlug, analyticsEnable
   const [timeSeries, setTimeSeries] = useState<TimeSeriesPoint[]>([])
   const [topPages, setTopPages] = useState<MetricCount[]>([])
   const [loading, setLoading] = useState(true)
-  const fetchRef = useRef<() => void>(() => {})
-
   const fetchData = useCallback(async () => {
     if (!analyticsEnabled) {
       setLoading(false)
@@ -82,13 +80,11 @@ export function DashboardOverview({ websiteId, organizationSlug, analyticsEnable
           pageViews?: number
           uniqueSessions?: number
           avgDuration?: number
-          formSubmissions?: number
         }
         setOverview({
           pageViews: o.pageViews || 0,
           uniqueVisitors: o.uniqueSessions || 0,
           avgSessionDuration: o.avgDuration || 0,
-          formSubmissions: o.formSubmissions || 0,
         })
       }
       setApiLiveViewers((realtimeRes as { activeVisitors?: number } | null)?.activeVisitors ?? 0)
@@ -103,20 +99,6 @@ export function DashboardOverview({ websiteId, organizationSlug, analyticsEnable
       setLoading(false)
     }
   }, [websiteId, analyticsEnabled])
-
-  fetchRef.current = fetchData
-
-  useOrganizationChannel(
-    analyticsEnabled && organization ? organization.id : null,
-    useCallback((eventType: string) => {
-      if (
-        eventType === OrganizationEvents.FORM_SUBMISSION_CREATED ||
-        eventType === OrganizationEvents.FORM_SUBMISSION_UPDATED
-      ) {
-        fetchRef.current?.()
-      }
-    }, [])
-  )
 
   const { liveCount: presenceLiveCount, connected: presenceConnected } = useAnalyticsPresence(
     analyticsEnabled ? websiteId : null
@@ -153,16 +135,12 @@ export function DashboardOverview({ websiteId, organizationSlug, analyticsEnable
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-[320px] w-full rounded-xl" />
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-28 w-full rounded-xl" />
-          ))}
-        </div>
+      <div className="space-y-4 sm:space-y-5">
+        <Skeleton className="h-20 w-full rounded-2xl sm:h-[5.25rem]" />
+        <Skeleton className="h-[260px] w-full rounded-xl sm:h-[300px]" />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Skeleton className="h-64 w-full rounded-xl" />
-          <Skeleton className="h-64 w-full rounded-xl" />
+          <Skeleton className="h-56 w-full rounded-xl" />
+          <Skeleton className="h-56 w-full rounded-xl" />
         </div>
       </div>
     )
@@ -181,7 +159,7 @@ export function DashboardOverview({ websiteId, organizationSlug, analyticsEnable
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-foreground text-lg font-semibold tracking-tight sm:text-xl">Website traffic</h2>
-            <p className="text-muted-foreground text-sm">Last 7 days · sessions, views, and form conversions from your site</p>
+            <p className="text-muted-foreground text-sm">Last 7 days · sessions and page views from your site</p>
           </div>
           <Button size="sm" variant="outline" className="shrink-0 gap-2 self-start sm:self-auto" asChild>
             <Link href={`/${organizationSlug}/analytics`}>
@@ -191,124 +169,121 @@ export function DashboardOverview({ websiteId, organizationSlug, analyticsEnable
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12 xl:gap-6">
-          <Card className="app-card xl:col-span-8">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <div className="bg-primary/10 rounded-lg p-2">
-                  <TrendingUp className="text-primary h-4 w-4" />
-                </div>
-                Visits over time
-              </CardTitle>
-              <CardDescription>Daily page views and unique sessions</CardDescription>
-            </CardHeader>
-            <CardContent className="pb-4">
-              {timeSeries.length > 0 ? (
-                <ChartContainer config={trafficChartConfig} className="aspect-auto h-[260px] w-full sm:h-[280px]">
-                  <AreaChart data={timeSeries} margin={{ left: 4, right: 4, top: 8, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="homePv" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.85} />
-                        <stop offset="95%" stopColor="var(--color-chart-1)" stopOpacity={0.08} />
-                      </linearGradient>
-                      <linearGradient id="homeSess" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.75} />
-                        <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0.06} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-muted/30" />
-                    <XAxis
-                      dataKey="time"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      className="text-[10px] fill-muted-foreground"
-                      tickFormatter={(v) =>
-                        new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })
-                      }
-                    />
-                    <YAxis hide />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Area
-                      type="monotone"
-                      dataKey="uniqueSessions"
-                      stroke="var(--color-chart-2)"
-                      strokeWidth={2}
-                      fill="url(#homeSess)"
-                      dot={false}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="pageViews"
-                      stroke="var(--color-chart-1)"
-                      strokeWidth={2}
-                      fill="url(#homePv)"
-                      dot={false}
-                    />
-                  </AreaChart>
-                </ChartContainer>
-              ) : (
-                <div className="text-muted-foreground flex h-[220px] items-center justify-center text-sm">
-                  No traffic data for this period yet
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-2 gap-3 xl:col-span-4 xl:grid-cols-1 xl:gap-3">
-            <Card className="app-card">
-              <CardContent className="p-4 sm:p-5">
-                <div className="bg-primary/10 mb-3 inline-flex rounded-lg p-2">
-                  <Eye className="text-primary h-5 w-5" />
-                </div>
-                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">
+        <div className="border-border/60 bg-card mb-4 flex flex-col gap-3 rounded-2xl border p-3 sm:p-4">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
+            <div className="bg-muted/35 flex min-w-[7.5rem] flex-1 items-center gap-3 rounded-xl px-3 py-2.5 sm:min-w-[9rem] sm:px-4 sm:py-3">
+              <div className="bg-primary/12 rounded-lg p-2">
+                <Eye className="text-primary h-4 w-4 sm:h-5 sm:w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide sm:text-[11px]">Views</p>
+                <p className="text-foreground text-lg font-bold tabular-nums sm:text-xl">
                   {(overview?.pageViews ?? 0).toLocaleString()}
                 </p>
-                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Page views</p>
-              </CardContent>
-            </Card>
-            <Card className="app-card">
-              <CardContent className="p-4 sm:p-5">
-                <div className="bg-primary/10 mb-3 inline-flex rounded-lg p-2">
-                  <Users className="text-primary h-5 w-5" />
-                </div>
-                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">
+              </div>
+            </div>
+            <div className="bg-muted/35 flex min-w-[7.5rem] flex-1 items-center gap-3 rounded-xl px-3 py-2.5 sm:min-w-[9rem] sm:px-4 sm:py-3">
+              <div className="bg-primary/12 rounded-lg p-2">
+                <Users className="text-primary h-4 w-4 sm:h-5 sm:w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide sm:text-[11px]">Sessions</p>
+                <p className="text-foreground text-lg font-bold tabular-nums sm:text-xl">
                   {(overview?.uniqueVisitors ?? 0).toLocaleString()}
                 </p>
-                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Sessions</p>
-              </CardContent>
-            </Card>
-            <Card className="app-card border-primary/20 ring-1 ring-primary/10">
-              <CardContent className="p-4 sm:p-5">
-                <div className="bg-primary/10 mb-3 inline-flex items-center gap-1.5 rounded-lg p-2">
-                  <Activity className="text-primary h-5 w-5" />
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${liveConnected ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`}
-                  />
-                </div>
-                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">{liveViewers}</p>
-                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Live now</p>
-              </CardContent>
-            </Card>
-            <Card className="app-card">
-              <CardContent className="p-4 sm:p-5">
-                <div className="bg-primary/10 mb-3 inline-flex rounded-lg p-2">
-                  <FileText className="text-primary h-5 w-5" />
-                </div>
-                <p className="text-foreground text-2xl font-bold tabular-nums sm:text-3xl">{overview?.formSubmissions ?? 0}</p>
-                <p className="text-muted-foreground text-xs font-medium sm:text-sm">Form submissions</p>
-              </CardContent>
-            </Card>
-            <Card className="app-card col-span-2 xl:col-span-1">
-              <CardContent className="p-4 sm:p-5">
-                <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">Avg. session</p>
-                <p className="text-foreground mt-1 text-xl font-semibold tabular-nums">
-                  {fmtDur(overview?.avgSessionDuration ?? 0)}
-                </p>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+            <div className="border-primary/15 bg-primary/[0.06] flex min-w-[7.5rem] flex-1 items-center gap-3 rounded-xl border px-3 py-2.5 ring-1 ring-primary/10 sm:min-w-[9rem] sm:px-4 sm:py-3">
+              <div className="bg-primary/12 flex items-center gap-1.5 rounded-lg p-2">
+                <Activity className="text-primary h-4 w-4 sm:h-5 sm:w-5" />
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${liveConnected ? "bg-primary animate-pulse" : "bg-muted-foreground/40"}`}
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide sm:text-[11px]">Live</p>
+                <p className="text-foreground text-lg font-bold tabular-nums sm:text-xl">{liveViewers}</p>
+              </div>
+            </div>
+            <div className="bg-muted/20 flex min-w-[8rem] flex-[1.15] items-center gap-3 rounded-xl border border-dashed border-border/60 px-3 py-2.5 sm:px-4 sm:py-3">
+              <div className="text-muted-foreground hidden text-[10px] font-semibold uppercase tracking-wider sm:block sm:w-14 sm:shrink-0">
+                Avg
+                <br />
+                visit
+              </div>
+              <div className="min-w-0 flex-1 sm:text-right">
+                <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide sm:hidden">Avg. session</p>
+                <p className="text-foreground font-semibold tabular-nums sm:text-xl">{fmtDur(overview?.avgSessionDuration ?? 0)}</p>
+              </div>
+            </div>
           </div>
         </div>
+
+        <Card className="app-card overflow-hidden">
+          <CardHeader className="pb-2 pt-4 sm:pt-5">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="bg-primary/10 rounded-lg p-2">
+                <TrendingUp className="text-primary h-4 w-4" />
+              </div>
+              Visits over time
+            </CardTitle>
+            <CardDescription>Daily page views and unique sessions</CardDescription>
+          </CardHeader>
+          <CardContent className="pb-4 sm:pb-5">
+            {timeSeries.length > 0 ? (
+              <ChartContainer config={trafficChartConfig} className="aspect-auto h-[240px] w-full sm:h-[280px]">
+                <AreaChart data={timeSeries} margin={{ left: 4, right: 8, top: 8, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id="homePv" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-chart-1)" stopOpacity={0.85} />
+                      <stop offset="95%" stopColor="var(--color-chart-1)" stopOpacity={0.08} />
+                    </linearGradient>
+                    <linearGradient id="homeSess" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--color-chart-2)" stopOpacity={0.75} />
+                      <stop offset="95%" stopColor="var(--color-chart-2)" stopOpacity={0.06} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-muted/30" />
+                  <XAxis
+                    dataKey="time"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={24}
+                    className="text-[10px] fill-muted-foreground"
+                    tickFormatter={(v) => formatChartAxisTick(v, "day")}
+                  />
+                  <YAxis hide />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent labelFormatter={(label) => formatChartTooltipTime(label, "day")} />
+                    }
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="uniqueSessions"
+                    stroke="var(--color-chart-2)"
+                    strokeWidth={2}
+                    fill="url(#homeSess)"
+                    dot={false}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="pageViews"
+                    stroke="var(--color-chart-1)"
+                    strokeWidth={2}
+                    fill="url(#homePv)"
+                    dot={false}
+                  />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="text-muted-foreground flex h-[220px] items-center justify-center text-sm">
+                No traffic data for this period yet
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {topPages.length > 0 ? (
@@ -328,7 +303,17 @@ export function DashboardOverview({ websiteId, organizationSlug, analyticsEnable
                       {(p.count || 0).toLocaleString()}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-mono text-xs sm:text-sm">{cleanAnalyticsPath(p.key || "/")}</p>
+                      {p.title ? (
+                        <p className="truncate text-sm font-medium text-foreground">{p.title}</p>
+                      ) : null}
+                      <p
+                        className={cn(
+                          "truncate font-mono text-xs sm:text-sm",
+                          p.title ? "text-muted-foreground" : "text-foreground"
+                        )}
+                      >
+                        {cleanAnalyticsPath(p.key || "/")}
+                      </p>
                       <div className="bg-muted mt-1 h-1.5 overflow-hidden rounded-full">
                         <div className="bg-chart-1 h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
                       </div>
