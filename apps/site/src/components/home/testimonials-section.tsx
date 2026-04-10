@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type CSSProperties } from "react"
 import { Star, Quote } from 'lucide-react'
 import Image from "next/image"
 
@@ -125,7 +125,7 @@ export default function TestimonialsSection() {
                 <div className="flex items-center gap-4">
                   <div
                     className="w-16 h-16 rounded-2xl overflow-hidden ring-2 ring-offset-2 shadow-md transition-transform duration-300 group-hover:scale-105"
-                    style={{ boxShadow: `0 0 0 2px ${testimonial.color}` }}
+                    style={{ "--tw-ring-color": testimonial.color } as CSSProperties}
                   >
                     <Image
                       src={testimonial.image || "/placeholder.svg"}

@@ -1,31 +1,23 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { CheckCircle2, ArrowRight, Phone, Zap, Heart, Star } from 'lucide-react'
+import { CheckCircle2, ArrowRight, Phone, Zap, Heart, Star } from "lucide-react"
 import { FaWhatsapp } from "react-icons/fa6"
 import Link from "next/link"
+import { motion, useReducedMotion } from "framer-motion"
+import { STAGGER_CHILDREN, FADE_UP } from "@/lib/motion"
+import { SITE } from "@/lib/site-copy"
 
 export default function CTASection() {
-  const [isVisible, setIsVisible] = useState(false)
-  const sectionRef = useRef<HTMLElement>(null)
+  const reduceMotion = useReducedMotion()
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true)
-        }
-      },
-      { threshold: 0.1 },
-    )
+  const stagger = reduceMotion
+    ? { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { duration: 0 } } }
+    : STAGGER_CHILDREN
 
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current)
-    }
-
-    return () => observer.disconnect()
-  }, [])
+  const fadeUp = reduceMotion
+    ? { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { duration: 0 } } }
+    : FADE_UP
 
   const benefits = [
     { icon: Zap, text: "Lightning-fast turnaround" },
@@ -34,89 +26,123 @@ export default function CTASection() {
   ]
 
   return (
-    <section ref={sectionRef} className="relative py-32 md:py-40 px-4 md:px-6 overflow-hidden">
+    <section
+      className="relative overflow-hidden px-4 py-24 sm:px-6 md:py-32"
+      aria-labelledby="cta-heading"
+    >
       <div className="absolute inset-0 bg-gradient-to-br from-[#302cff] via-[#5b57ff] to-[#00d9ff]" />
-
-      <div className="absolute inset-0 opacity-20">
-        <div className="absolute top-20 left-20 w-64 h-64 rounded-full bg-gradient-to-br from-[#ff6b35]/60 to-transparent blur-3xl" />
-        <div className="absolute bottom-20 right-20 w-72 h-72 rounded-full bg-gradient-to-br from-[#b846f5]/60 to-transparent blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-gradient-to-br from-[#7cff6b]/40 to-transparent blur-3xl" />
+      <div className="absolute inset-0 opacity-25">
+        <div className="absolute left-10 top-16 h-56 w-56 rounded-full bg-gradient-to-br from-[#ff6b35]/50 to-transparent blur-3xl sm:left-20" />
+        <div className="absolute bottom-16 right-10 h-64 w-64 rounded-full bg-gradient-to-br from-[#b846f5]/45 to-transparent blur-3xl sm:right-20" />
+        <div className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-br from-[#7cff6b]/30 to-transparent blur-3xl" />
       </div>
 
-      <div className="relative max-w-5xl mx-auto">
-        <div
-          className={`transition-all duration-700 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
+      <div className="relative z-10 mx-auto max-w-5xl">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-80px", amount: 0.25 }}
+          variants={stagger}
         >
-          <div className="inline-flex items-center gap-2.5 bg-white/20 backdrop-blur-xl border border-white/30 rounded-full px-6 py-3 mb-10 shadow-xl">
-            <Star className="w-5 h-5 text-[#7cff6b]" />
-            <span className="text-white text-base font-black tracking-wide">
-              Let's Build Something Extraordinary
-            </span>
-          </div>
+          <motion.div variants={fadeUp} className="mb-8 flex justify-center sm:mb-10">
+            <div className="inline-flex items-center gap-2.5 rounded-full border border-white/35 bg-white/18 px-5 py-2.5 shadow-lg backdrop-blur-xl sm:px-6 sm:py-3">
+              <Star className="h-5 w-5 text-[#7cff6b]" aria-hidden />
+              <span className="text-sm font-black tracking-wide text-white sm:text-base">
+                Let&apos;s Build Something Extraordinary
+              </span>
+            </div>
+          </motion.div>
 
-          <h2 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-black text-white mb-8 text-balance leading-[1.05] text-center">
+          <motion.h2
+            id="cta-heading"
+            variants={fadeUp}
+            className="font-heading mb-6 text-center text-4xl font-black leading-[1.06] text-balance text-white sm:text-5xl md:text-6xl lg:text-7xl"
+          >
             Ready to
             <br />
-            <span className="relative inline-block mt-2">
+            <span className="relative mt-1 inline-block sm:mt-2">
               <span className="bg-gradient-to-r from-[#7cff6b] via-[#00f5d4] to-white bg-clip-text text-transparent">
                 Transform
               </span>
-              <div className="absolute -bottom-2 left-0 right-0 h-1.5 bg-gradient-to-r from-[#7cff6b] via-[#00f5d4] to-white rounded-full" />
+              <span className="absolute -bottom-1 left-0 right-0 h-1 rounded-full bg-gradient-to-r from-[#7cff6b] via-[#00f5d4] to-white/90 sm:-bottom-2 sm:h-1.5" />
             </span>
             <br />
             Your Brand?
-          </h2>
+          </motion.h2>
 
-          <p className="text-white text-xl md:text-2xl mb-12 max-w-3xl mx-auto text-pretty leading-relaxed font-bold text-center">
-            Your success story starts here. Let's turn your vision into a digital masterpiece that captivates, converts,
-            and conquers.
-          </p>
+          <motion.p
+            variants={fadeUp}
+            className="mx-auto mb-10 max-w-3xl text-center text-lg font-bold leading-relaxed text-white text-pretty sm:mb-12 sm:text-xl md:text-2xl"
+          >
+            Your success story starts here. Let&apos;s turn your vision into a digital masterpiece that captivates,
+            converts, and conquers.
+          </motion.p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12 max-w-3xl mx-auto">
-            {benefits.map((benefit, index) => (
-              <div
-                key={index}
-                className={`flex items-center gap-3 bg-white/15 backdrop-blur-lg border border-white/30 rounded-2xl px-5 py-4 shadow-lg transition-all duration-500 hover:bg-white/20 hover:scale-105 ${
-                  isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-                }`}
-                style={{
-                  transitionDelay: `${index * 80 + 200}ms`,
-                }}
-              >
-                <div className="bg-white/20 rounded-xl p-2.5">
-                  <benefit.icon className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-white text-base font-bold flex-1">{benefit.text}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-col items-center gap-5 mb-10">
-            <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-              <Link href="https://wa.me/27689186043" className="w-full sm:w-auto">
-                <Button
-                  size="lg"
-                  className="group w-full sm:w-auto bg-white text-[#302cff] hover:bg-white/95 font-black text-lg px-10 py-7 h-auto shadow-2xl hover:shadow-[0_20px_50px_rgba(255,255,255,0.3)] transition-all duration-300 hover:scale-105 rounded-2xl"
+          <motion.div
+            className="mb-10 grid grid-cols-1 gap-3 sm:mb-12 sm:grid-cols-3 sm:gap-4"
+            variants={stagger}
+          >
+            {benefits.map((benefit, index) => {
+              const Icon = benefit.icon
+              return (
+                <motion.div
+                  key={benefit.text}
+                  variants={fadeUp}
+                  custom={index}
+                  className="flex min-h-[52px] items-center gap-3 rounded-2xl border border-white/35 bg-white/14 px-4 py-3 shadow-lg backdrop-blur-lg sm:px-5 sm:py-4"
+                  whileHover={reduceMotion ? undefined : { scale: 1.03, backgroundColor: "rgba(255,255,255,0.2)" }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 >
-                  <span className="flex items-center justify-center gap-3">
-                    <FaWhatsapp className="w-6 h-6 text-green-500" />
-                    <span>WhatsApp: 068 918 6043</span>
-                  </span>
-                </Button>
+                  <div className="rounded-xl bg-white/22 p-2.5">
+                    <Icon className="h-5 w-5 text-white sm:h-6 sm:w-6" aria-hidden />
+                  </div>
+                  <span className="text-left text-sm font-bold text-white sm:text-base">{benefit.text}</span>
+                </motion.div>
+              )
+            })}
+          </motion.div>
+
+          <motion.div
+            className="mb-10 flex flex-col items-center gap-4 sm:mb-10"
+            variants={fadeUp}
+          >
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:gap-4">
+              <Link
+                href={`https://wa.me/${SITE.phoneTel}`}
+                className="w-full sm:w-auto"
+                rel="noopener noreferrer"
+              >
+                <motion.div
+                  whileHover={reduceMotion ? undefined : { scale: 1.02 }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                >
+                  <Button
+                    size="lg"
+                    className="h-auto w-full rounded-2xl bg-white px-8 py-6 text-base font-black text-[#302cff] shadow-2xl hover:bg-white/95 sm:w-auto sm:px-10 sm:text-lg"
+                  >
+                    <span className="flex items-center justify-center gap-3">
+                      <FaWhatsapp className="h-6 w-6 text-green-600" aria-hidden />
+                      WhatsApp: {SITE.phoneDisplay}
+                    </span>
+                  </Button>
+                </motion.div>
               </Link>
               <Link href="tel:0689186043" className="w-full sm:w-auto">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="group w-full sm:w-auto bg-white/15 backdrop-blur-xl border-2 border-white/50 text-white hover:bg-white/25 hover:border-white/70 font-black text-lg px-10 py-7 h-auto transition-all duration-300 hover:scale-105 rounded-2xl"
+                <motion.div
+                  whileHover={reduceMotion ? undefined : { scale: 1.02 }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.98 }}
                 >
-                  <span className="flex items-center justify-center gap-3">
-                    <Phone className="w-6 h-6" />
-                    <span>Call Now</span>
-                  </span>
-                </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="h-auto w-full rounded-2xl border-2 border-white/55 bg-white/12 px-8 py-6 text-base font-black text-white backdrop-blur-xl hover:bg-white/22 sm:w-auto sm:px-10 sm:text-lg"
+                  >
+                    <span className="flex items-center justify-center gap-3">
+                      <Phone className="h-6 w-6" aria-hidden />
+                      Call Now
+                    </span>
+                  </Button>
+                </motion.div>
               </Link>
             </div>
 
@@ -124,33 +150,36 @@ export default function CTASection() {
               <Button
                 size="lg"
                 variant="ghost"
-                className="group w-full sm:w-auto text-white hover:bg-white/10 font-bold text-base px-8 py-4 h-auto rounded-2xl"
+                className="group h-auto w-full rounded-2xl px-8 py-4 text-base font-bold text-white hover:bg-white/12 sm:w-auto"
               >
                 <span className="flex items-center gap-2">
                   Or send us a message
-                  <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" />
+                  <ArrowRight className="h-5 w-5 transition-transform duration-200 group-hover:translate-x-1" />
                 </span>
               </Button>
             </Link>
-          </div>
+          </motion.div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 text-white text-base font-bold">
+          <motion.div
+            className="flex flex-col items-center justify-center gap-3 text-center text-sm font-bold text-white sm:flex-row sm:flex-wrap sm:gap-6 sm:text-base"
+            variants={fadeUp}
+          >
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-[#7cff6b]" />
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-[#7cff6b]" aria-hidden />
               <span>24h Response Time</span>
             </div>
-            <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-white/40" />
+            <span className="hidden h-1.5 w-1.5 rounded-full bg-white/45 sm:inline" aria-hidden />
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-[#7cff6b]" />
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-[#7cff6b]" aria-hidden />
               <span>No Obligation Chat</span>
             </div>
-            <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-white/40" />
+            <span className="hidden h-1.5 w-1.5 rounded-full bg-white/45 sm:inline" aria-hidden />
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-[#7cff6b]" />
-              <span>98% Client Satisfaction</span>
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-[#7cff6b]" aria-hidden />
+              <span>{SITE.stats.clientSatisfaction} client satisfaction</span>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </section>
   )

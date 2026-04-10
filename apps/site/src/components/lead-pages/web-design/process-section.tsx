@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MessageSquare, PenTool, Code, Rocket, CheckCircle, ArrowRight, Clock, Star, Zap } from "lucide-react"
+import { SITE } from "@/lib/site-copy"
 
 export function ProcessSection() {
   const steps = [
@@ -62,7 +63,7 @@ export function ProcessSection() {
 
   const openWhatsApp = () => {
     window.open(
-      "https://wa.me/27689186043?text=Hi%20I%27d%20like%20to%20know%20more%20about%20Luminum%20Agency%27s%207-day%20development%20process",
+      `https://wa.me/${SITE.phoneTel}?text=Hi%20I%27d%20like%20to%20know%20more%20about%20Luminum%20Agency%27s%207-day%20development%20process`,
       "_blank",
     )
   }

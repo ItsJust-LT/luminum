@@ -1,78 +1,56 @@
-import { MetadataRoute } from "next";
-import fs from "fs";
-import path from "path";
+import { MetadataRoute } from "next"
+import { getWebsiteSitemapEntries } from "@itsjust-lt/website-kit/metadata"
+import { tryLuminumBlogOpts } from "@/lib/luminum-blog"
 
-const baseUrl = "https://luminum.agency";
+const baseUrl = "https://luminum.agency"
+const STATIC_ROUTES = [
+  "/",
+  "/about",
+  "/blog",
+  "/careers",
+  "/case-studies",
+  "/contact",
+  "/cookies",
+  "/portfolio",
+  "/privacy-policy",
+  "/services",
+  "/terms-of-service",
+  "/web-design",
+]
+
+/** Match website-kit blog fetch revalidation so new posts can appear without redeploy. */
+export const revalidate = 300
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const sitemapEntries: MetadataRoute.Sitemap = [];
-  const appDir = path.join(process.cwd(), "src", "app");
-
-  // Helper function to recursively find all page.tsx files
-  function findPages(dir: string, baseRoute: string = ""): string[] {
-    const routes: string[] = [];
-    
-    if (!fs.existsSync(dir)) {
-      return routes;
-    }
-
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      
-      // Skip special directories and files
-      if (entry.name.startsWith("_") || entry.name.startsWith(".") || entry.name === "api") {
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        // Recursively search in subdirectories
-        const subRoute = baseRoute ? `${baseRoute}/${entry.name}` : `/${entry.name}`;
-        routes.push(...findPages(fullPath, subRoute));
-      } else if (entry.name === "page.tsx" || entry.name === "page.ts") {
-        // Found a page file
-        const route = baseRoute || "/";
-        routes.push(route);
-      }
-    }
-
-    return routes;
-  }
-
-  // Discover all pages automatically
-  const discoveredRoutes = findPages(appDir);
-
-  // Create sitemap entries for all discovered routes
-  for (const route of discoveredRoutes) {
-    // Automatically determine priority based on route depth and type
-    const depth = route.split("/").filter(Boolean).length;
-    const isHomepage = route === "/";
-    const isLegalPage = route.includes("privacy") || route.includes("terms") || route.includes("cookies");
-    
-    const priority = isHomepage 
-      ? 1.0 
-      : isLegalPage 
-        ? 0.3 
-        : depth === 1 
-          ? 0.8 
-          : 0.7;
-    
-    const changeFrequency = isLegalPage 
-      ? "yearly" 
-      : isHomepage || depth === 1 
-        ? "weekly" 
-        : "monthly";
-
-    sitemapEntries.push({
+  const blogFetch = tryLuminumBlogOpts()
+  const strictSitemap = process.env.SITEMAP_STRICT === "1"
+  if (!blogFetch) {
+    console.warn(
+      "[sitemap] LUMINUM_WEBSITE_ID missing; emitting static routes only."
+    )
+    return STATIC_ROUTES.map((route) => ({
       url: `${baseUrl}${route}`,
       lastModified: new Date(),
-      changeFrequency: changeFrequency as "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never",
-      priority: priority,
-    });
+      changeFrequency: route.includes("privacy") || route.includes("terms") || route.includes("cookies") ? "yearly" : "weekly",
+      priority: route === "/" ? 1 : route.includes("privacy") || route.includes("terms") || route.includes("cookies") ? 0.3 : 0.8,
+    }))
   }
 
-  return sitemapEntries;
+  const apiBaseUrl =
+    blogFetch.apiBaseUrl ?? process.env.LUMINUM_API_URL ?? "https://api.luminum.app"
+
+  return (await getWebsiteSitemapEntries({
+    ...blogFetch,
+    apiBaseUrl,
+    baseUrl,
+    staticRoutes: STATIC_ROUTES,
+    blogPathPrefix: "/blog",
+    includeCategories: false,
+    includeBlogIndex: true,
+    pageSize: 50,
+    strict: strictSitemap,
+    onError: (err, stage) => {
+      console.error(`[sitemap] getWebsiteSitemapEntries failed at "${stage}":`, err)
+    },
+  })) as MetadataRoute.Sitemap
 }
-
-

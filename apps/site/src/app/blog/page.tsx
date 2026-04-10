@@ -1,201 +1,273 @@
-"use client"
-
-import { motion } from "framer-motion"
+import Link from "next/link"
+import Image from "next/image"
+import { getPublishedPosts } from "@itsjust-lt/website-kit/blog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowRight, Calendar, User, Clock } from "lucide-react"
-import Image from "next/image"
-import Link from "next/link"
+import { tryLuminumBlogOpts } from "@/lib/luminum-blog"
+import { SITE } from "@/lib/site-copy"
+import { ArrowRight, CalendarDays, Sparkles } from "lucide-react"
 
-export default function BlogPage() {
-  const fadeIn = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.6, ease: "easeOut" },
-    },
+const PAGE_SIZE = 12
+
+function formatPostDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-ZA", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
+type Props = {
+  searchParams?: Promise<{ page?: string }>
+}
+
+export default async function BlogPage({ searchParams }: Props) {
+  const sp = await searchParams
+  const page = Math.max(1, Number.parseInt(sp?.page ?? "1", 10) || 1)
+
+  const opts = tryLuminumBlogOpts()
+  let posts: Awaited<ReturnType<typeof getPublishedPosts>> | null = null
+  let fetchError = false
+
+  if (opts) {
+    try {
+      posts = await getPublishedPosts({
+        ...opts,
+        page,
+        limit: PAGE_SIZE,
+      })
+    } catch {
+      fetchError = true
+    }
   }
 
-  const staggerContainer = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-        delayChildren: 0.2,
-      },
-    },
-  }
-
-  const itemVariant = {
-    hidden: { opacity: 0, y: 20 },
-    visible: {
-      opacity: 1,
-      y: 0,
-      transition: { duration: 0.5, ease: "easeOut" },
-    },
-  }
-
-  const blogPosts = [
-    {
-      title: "The Future of Web Development in South Africa",
-      excerpt: "Exploring emerging trends and technologies shaping the web development landscape in SA.",
-      image: "/placeholder.svg?height=400&width=600&query=south african web development trends",
-      author: "David Nkosi",
-      date: "May 15, 2023",
-      readTime: "5 min read",
-      category: "Industry Insights",
-    },
-    {
-      title: "Building Responsive Websites: Best Practices for 2023",
-      excerpt: "Learn the latest techniques for creating websites that work perfectly on all devices.",
-      image: "/placeholder.svg?height=400&width=600&query=responsive web design best practices",
-      author: "Sarah Johnson",
-      date: "May 10, 2023",
-      readTime: "8 min read",
-      category: "Web Design",
-    },
-    {
-      title: "SEO Strategies for South African Businesses",
-      excerpt: "Boost your local search rankings with these proven SEO techniques.",
-      image: "/placeholder.svg?height=400&width=600&query=seo strategies south africa",
-      author: "Michael Zuma",
-      date: "May 5, 2023",
-      readTime: "6 min read",
-      category: "SEO",
-    },
-    {
-      title: "E-commerce Trends: What's Working in 2023",
-      excerpt: "Discover the latest e-commerce trends that are driving sales and conversions.",
-      image: "/placeholder.svg?height=400&width=600&query=ecommerce trends 2023",
-      author: "Thandi Mbeki",
-      date: "April 28, 2023",
-      readTime: "7 min read",
-      category: "E-commerce",
-    },
-    {
-      title: "The Importance of Website Speed Optimization",
-      excerpt: "Why page speed matters and how to optimize your website for better performance.",
-      image: "/placeholder.svg?height=400&width=600&query=website speed optimization",
-      author: "David Nkosi",
-      date: "April 20, 2023",
-      readTime: "4 min read",
-      category: "Performance",
-    },
-    {
-      title: "User Experience Design: Creating Intuitive Interfaces",
-      excerpt: "Learn how to design user interfaces that are both beautiful and functional.",
-      image: "/placeholder.svg?height=400&width=600&query=user experience design interfaces",
-      author: "Sarah Johnson",
-      date: "April 15, 2023",
-      readTime: "9 min read",
-      category: "UX Design",
-    },
-  ]
+  const totalPages = posts?.totalPages ?? 1
+  const list = posts?.posts ?? []
+  const showFeatured = page === 1 && list.length > 0
+  const featured = showFeatured ? list[0] : null
+  const gridPosts = showFeatured ? list.slice(1) : list
 
   return (
     <>
-      {/* Hero Section */}
-      <section className="pt-32 pb-16 lg:pt-40 lg:pb-24 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0B22E1]/10 to-blue-50 z-0"></div>
+      <section className="relative overflow-hidden px-4 pb-16 pt-[calc(5.5rem+env(safe-area-inset-top))] sm:pb-20 sm:pt-28 md:pt-32">
+        <div className="pointer-events-none absolute inset-0 bg-white" />
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-gradient-to-br from-[#302cff]/18 to-transparent blur-3xl" />
+          <div className="absolute -bottom-32 -left-24 h-80 w-80 rounded-full bg-gradient-to-tr from-[#ff6b35]/14 to-transparent blur-3xl" />
+          <div className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full bg-gradient-to-br from-[#00d9ff]/10 to-transparent blur-3xl" />
+        </div>
 
-        <div className="container mx-auto px-4 lg:px-8 relative z-10">
-          <div className="max-w-4xl mx-auto text-center mb-16">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-              <Badge className="bg-[#0B22E1]/10 text-[#0B22E1] border-[#0B22E1]/20 mb-4">Blog</Badge>
-            </motion.div>
-            <motion.h1
-              className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
-              Insights & Updates
-            </motion.h1>
-            <motion.p
-              className="text-xl text-gray-600 mb-8"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
-              Stay updated with the latest trends, tips, and insights from the world of web development and design.
-            </motion.p>
+        <div className="relative z-10 mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#302cff]/20 bg-[#302cff]/5 px-4 py-2 text-sm font-semibold text-[#302cff]">
+              <Sparkles className="h-4 w-4" aria-hidden />
+              {SITE.name} · Blog
+            </span>
+            <h1 className="font-heading text-balance text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
+              Insights for{" "}
+              <span className="bg-gradient-to-r from-[#302cff] to-[#5b57ff] bg-clip-text text-transparent">
+                modern brands
+              </span>
+            </h1>
+            <p className="mt-6 text-pretty text-lg leading-relaxed text-slate-600 sm:text-xl">
+              Strategy, web, SEO, and product notes — published from your Luminum workspace and rendered here with care.
+            </p>
           </div>
         </div>
       </section>
 
-      {/* Blog Posts */}
-      <section className="py-16 bg-white">
-        <div className="container mx-auto px-4 lg:px-8">
-          <motion.div
-            className="grid md:grid-cols-2 lg:grid-cols-3 gap-8"
-            variants={staggerContainer}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-          >
-            {blogPosts.map((post, index) => (
-              <motion.div key={index} variants={itemVariant}>
-                <Card className="h-full hover:shadow-xl transition-shadow overflow-hidden group">
-                  <div className="relative h-48 overflow-hidden">
-                    <Image
-                      src={post.image || "/placeholder.svg"}
-                      alt={post.title}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute top-4 left-4">
-                      <Badge className="bg-[#0B22E1] text-white">{post.category}</Badge>
-                    </div>
-                  </div>
-                  <CardContent className="p-6 flex flex-col h-full">
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3 line-clamp-2">{post.title}</h3>
-                    <p className="text-gray-600 mb-4 flex-grow line-clamp-3">{post.excerpt}</p>
-                    <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-                      <div className="flex items-center space-x-4">
-                        <div className="flex items-center">
-                          <User className="h-4 w-4 mr-1" />
-                          {post.author}
-                        </div>
-                        <div className="flex items-center">
-                          <Calendar className="h-4 w-4 mr-1" />
-                          {post.date}
-                        </div>
+      <section className="relative border-t border-slate-100 bg-slate-50/40 px-4 py-14 sm:py-20">
+        <div className="mx-auto max-w-7xl">
+          {!opts ? (
+            <div className="mx-auto max-w-2xl rounded-2xl border-2 border-amber-200/80 bg-gradient-to-br from-amber-50 to-white px-6 py-8 text-center shadow-sm">
+              <p className="text-sm font-medium text-amber-950 sm:text-base">
+                Set{" "}
+                <kbd className="rounded-md border border-amber-300/60 bg-white px-1.5 py-0.5 font-mono text-xs">
+                  LUMINUM_WEBSITE_ID
+                </kbd>{" "}
+                (and optional{" "}
+                <kbd className="rounded-md border border-amber-300/60 bg-white px-1.5 py-0.5 font-mono text-xs">
+                  LUMINUM_API_URL
+                </kbd>
+                ) in your env file to load live posts from Luminum.
+              </p>
+            </div>
+          ) : fetchError ? (
+            <p className="mx-auto max-w-2xl text-center text-base leading-relaxed text-slate-600">
+              We couldn&apos;t load the blog right now. If blogs aren&apos;t enabled for your organization, the public API
+              returns 404 — that&apos;s expected until Luminum is configured.
+            </p>
+          ) : list.length === 0 ? (
+            <p className="mx-auto max-w-2xl text-center text-base leading-relaxed text-slate-600">
+              No published posts yet. Create and publish a post in the Luminum dashboard to see it here.
+            </p>
+          ) : (
+            <>
+              {featured ? (
+                <Link href={`/blog/${featured.slug}`} className="group mb-12 block sm:mb-14">
+                  <article className="overflow-hidden rounded-3xl border-2 border-slate-200/90 bg-white shadow-xl shadow-slate-900/5 transition-all duration-300 hover:border-[#302cff]/25 hover:shadow-2xl">
+                    <div className="grid gap-0 lg:grid-cols-12 lg:gap-0">
+                      <div className="relative aspect-[16/10] overflow-hidden bg-slate-100 lg:col-span-7 lg:aspect-auto lg:min-h-[22rem]">
+                        <Image
+                          src={featured.coverImageUrl || "/placeholder.svg"}
+                          alt=""
+                          fill
+                          className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                          sizes="(max-width: 1024px) 100vw, 58vw"
+                          priority
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 via-transparent to-transparent lg:bg-gradient-to-r" />
+                        {featured.categories?.[0] ? (
+                          <div className="absolute left-5 top-5">
+                            <Badge className="border-0 bg-[#302cff] px-3 py-1 text-xs font-bold text-white shadow-lg shadow-[#302cff]/30">
+                              {featured.categories[0]}
+                            </Badge>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="flex items-center">
-                        <Clock className="h-4 w-4 mr-1" />
-                        {post.readTime}
-                      </div>
+                      <CardContent className="flex flex-col justify-center p-8 lg:col-span-5 lg:p-10">
+                        <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#302cff]">
+                          <span className="rounded-full bg-[#302cff]/10 px-3 py-0.5 text-xs uppercase tracking-wider">
+                            Featured
+                          </span>
+                        </p>
+                        <h2 className="font-heading text-balance text-2xl font-black leading-tight text-slate-900 transition-colors group-hover:text-[#302cff] sm:text-3xl lg:text-4xl">
+                          {featured.title}
+                        </h2>
+                        {featured.publishedAt ? (
+                          <p className="mt-4 flex items-center gap-2 text-sm font-medium text-slate-500">
+                            <CalendarDays className="h-4 w-4 text-[#302cff]" aria-hidden />
+                            <time dateTime={featured.publishedAt}>{formatPostDate(featured.publishedAt)}</time>
+                          </p>
+                        ) : null}
+                        {featured.categories && featured.categories.length > 1 ? (
+                          <p className="mt-2 text-xs font-medium text-slate-400">
+                            {featured.categories.slice(1).join(" · ")}
+                          </p>
+                        ) : null}
+                        <span className="mt-6 inline-flex items-center text-sm font-bold text-[#302cff]">
+                          Read article
+                          <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                        </span>
+                      </CardContent>
                     </div>
-                    <Button variant="ghost" className="text-[#0B22E1] hover:bg-[#0B22E1]/5 p-0 h-auto justify-start">
-                      Read More
-                      <ArrowRight className="ml-2 h-4 w-4" />
+                  </article>
+                </Link>
+              ) : null}
+
+              {gridPosts.length > 0 ? (
+                <div className="grid gap-6 sm:gap-8 md:grid-cols-2 lg:grid-cols-3">
+                  {gridPosts.map((post) => (
+                    <Link key={post.id} href={`/blog/${post.slug}`} className="group block h-full">
+                      <Card className="h-full overflow-hidden rounded-2xl border-2 border-slate-200/90 bg-white shadow-md transition-all duration-300 hover:-translate-y-1 hover:border-[#302cff]/25 hover:shadow-xl">
+                        <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-100">
+                          <Image
+                            src={post.coverImageUrl || "/placeholder.svg"}
+                            alt=""
+                            fill
+                            className="object-cover transition-transform duration-500 group-hover:scale-105"
+                            sizes="(max-width: 768px) 100vw, 33vw"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/25 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                          {post.categories?.[0] ? (
+                            <div className="absolute left-4 top-4">
+                              <Badge className="border-0 bg-white/95 font-bold text-[#302cff] shadow-md backdrop-blur-sm">
+                                {post.categories[0]}
+                              </Badge>
+                            </div>
+                          ) : null}
+                        </div>
+                        <CardContent className="flex flex-col p-6">
+                          <h2 className="font-heading mb-3 line-clamp-2 text-lg font-bold leading-snug text-slate-900 transition-colors group-hover:text-[#302cff] sm:text-xl">
+                            {post.title}
+                          </h2>
+                          {post.publishedAt ? (
+                            <time
+                              dateTime={post.publishedAt}
+                              className="flex items-center gap-2 text-sm font-medium text-slate-500"
+                            >
+                              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden />
+                              {formatPostDate(post.publishedAt)}
+                            </time>
+                          ) : null}
+                          {post.categories && post.categories.length > 1 ? (
+                            <p className="mt-2 text-xs font-medium text-slate-400">
+                              {post.categories.slice(1).join(" · ")}
+                            </p>
+                          ) : null}
+                          <span className="mt-4 inline-flex items-center text-sm font-bold text-[#302cff]">
+                            Read more
+                            <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                          </span>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+
+              {totalPages > 1 ? (
+                <nav
+                  className="mt-14 flex flex-wrap items-center justify-center gap-4 text-sm"
+                  aria-label="Blog pagination"
+                >
+                  {page > 1 ? (
+                    <Button variant="outline" asChild className="rounded-xl border-2 font-semibold">
+                      <Link href={page === 2 ? "/blog" : `/blog?page=${page - 1}`}>Previous</Link>
                     </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </motion.div>
+                  ) : null}
+                  <span className="font-medium text-slate-600">
+                    Page {page} of {totalPages}
+                  </span>
+                  {page < totalPages ? (
+                    <Button variant="outline" asChild className="rounded-xl border-2 font-semibold">
+                      <Link href={`/blog?page=${page + 1}`}>Next</Link>
+                    </Button>
+                  ) : null}
+                </nav>
+              ) : null}
+            </>
+          )}
         </div>
       </section>
 
-      {/* Newsletter CTA */}
-      <section className="py-16 bg-gray-50">
-        <div className="container mx-auto px-4 lg:px-8 text-center">
-          <motion.div variants={fadeIn} initial="hidden" whileInView="visible" viewport={{ once: true }}>
-            <h2 className="text-3xl font-bold mb-6">Never Miss an Update</h2>
-            <p className="text-xl text-gray-600 mb-8">
-              Subscribe to our newsletter and get the latest insights delivered to your inbox.
-            </p>
-            <Link href="/#newsletter">
-              <Button className="bg-[#0B22E1] hover:bg-[#0B22E1]/90">
-                Subscribe Now
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </Link>
-          </motion.div>
+      <section
+        className="relative overflow-hidden px-4 py-20 sm:py-24"
+        aria-labelledby="blog-cta-heading"
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-[#302cff] via-[#5b57ff] to-[#00a8cc]" />
+        <div className="pointer-events-none absolute inset-0 opacity-30">
+          <div className="absolute left-10 top-10 h-48 w-48 rounded-full bg-[#ff6b35]/40 blur-3xl" />
+          <div className="absolute bottom-10 right-10 h-56 w-56 rounded-full bg-[#7cff6b]/30 blur-3xl" />
+        </div>
+        <div className="relative z-10 mx-auto max-w-3xl text-center">
+          <h2 id="blog-cta-heading" className="font-heading text-3xl font-black tracking-tight text-white sm:text-4xl">
+            Want this for your brand?
+          </h2>
+          <p className="mt-4 text-lg text-white/90 sm:text-xl">
+            We design and build the kind of sites these articles talk about — fast, SEO-ready, and built to convert.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Button
+              asChild
+              size="lg"
+              className="h-12 rounded-2xl border-0 bg-white px-8 font-bold text-[#302cff] shadow-xl hover:bg-white/95"
+            >
+              <Link href="/contact">
+                Start a project
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="h-12 rounded-2xl border-2 border-white/40 bg-white/10 px-8 font-bold text-white backdrop-blur-sm hover:bg-white/20"
+            >
+              <Link href="/services">View services</Link>
+            </Button>
+          </div>
         </div>
       </section>
     </>

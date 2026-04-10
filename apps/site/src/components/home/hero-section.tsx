@@ -1,56 +1,93 @@
 "use client"
 
 import { useRef, useState, useEffect } from "react"
-import { motion, useInView } from "framer-motion"
+import { motion, useInView, useReducedMotion } from "framer-motion"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Sparkles, Code2, Palette, TrendingUp, Zap, Rocket, Users, Award } from "lucide-react"
+import {
+  ArrowRight,
+  Sparkles,
+  Code2,
+  Palette,
+  TrendingUp,
+  Zap,
+  Rocket,
+  Users,
+  Award,
+} from "lucide-react"
+import { EASE_OUT } from "@/lib/motion"
+import { SITE } from "@/lib/site-copy"
+
+const { stats: S, statLabels: L } = SITE
 
 export default function HeroSection() {
   const heroRef = useRef(null)
-  const isInView = useInView(heroRef, { once: true, amount: 0.2 })
-  const [counters, setCounters] = useState({ projects: 0, satisfaction: 0, years: 0, revenue: 0 })
+  const isInView = useInView(heroRef, { once: true, amount: 0.15 })
+  const reduceMotion = useReducedMotion()
+  const [counters, setCounters] = useState({
+    projects: 0,
+    satisfaction: 0,
+    years: 0,
+    revenue: 0,
+  })
 
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-        delayChildren: 0.15,
-      },
+      transition: reduceMotion
+        ? { duration: 0 }
+        : {
+            staggerChildren: 0.09,
+            delayChildren: 0.08,
+          },
     },
   }
 
   const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
+    hidden: { opacity: 0, y: reduceMotion ? 0 : 18 },
     visible: {
       opacity: 1,
       y: 0,
-      transition: {
-        duration: 0.6,
-        ease: [0.23, 1, 0.32, 1],
-      },
+      transition: reduceMotion
+        ? { duration: 0 }
+        : { duration: 0.52, ease: EASE_OUT },
     },
   }
 
   useEffect(() => {
-    if (!isInView) return
+    if (!isInView || reduceMotion) {
+      if (isInView && reduceMotion) {
+        setCounters({
+          projects: S.projectsN,
+          satisfaction: S.satisfactionN,
+          years: S.yearsN,
+          revenue: S.revenueKN,
+        })
+      }
+      return
+    }
 
-    const duration = 2000
+    const duration = 1800
     const startTime = Date.now()
-    const targets = { projects: 200, satisfaction: 98, years: 15, revenue: 50 }
+    const targets = {
+      projects: S.projectsN,
+      satisfaction: S.satisfactionN,
+      years: S.yearsN,
+      revenue: S.revenueKN,
+    }
 
     const animate = () => {
       const elapsed = Date.now() - startTime
       const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - (1 - progress) ** 3
 
       setCounters({
-        projects: Math.floor(targets.projects * progress),
-        satisfaction: Math.floor(targets.satisfaction * progress),
-        years: Math.floor(targets.years * progress),
-        revenue: Math.floor(targets.revenue * progress),
+        projects: Math.floor(targets.projects * eased),
+        satisfaction: Math.floor(targets.satisfaction * eased),
+        years: Math.floor(targets.years * eased),
+        revenue: Math.floor(targets.revenue * eased),
       })
 
       if (progress < 1) {
@@ -59,7 +96,7 @@ export default function HeroSection() {
     }
 
     animate()
-  }, [isInView])
+  }, [isInView, reduceMotion])
 
   const services = [
     { icon: Code2, text: "Web Development", color: "from-[#302cff] to-[#5b57ff]" },
@@ -70,77 +107,78 @@ export default function HeroSection() {
   const achievements = [
     {
       value: `${counters.projects}+`,
-      label: "Projects Delivered",
-      highlight: "Award-winning solutions",
+      label: L.projectsDelivered,
+      highlight: "Strategy, design, and build",
       icon: Rocket,
       gradient: "from-[#302cff] to-[#5b57ff]",
     },
     {
       value: `${counters.satisfaction}%`,
-      label: "Client Satisfaction",
-      highlight: "Consistent excellence",
+      label: L.clientSatisfaction,
+      highlight: "Consistent quality",
       icon: Award,
       gradient: "from-[#ff6b35] to-[#ff8a5c]",
     },
     {
       value: `${counters.years}+`,
-      label: "Industry Experience",
-      highlight: "Trusted expertise",
+      label: L.yearsExperience,
+      highlight: "Across SA-focused work",
       icon: Users,
       gradient: "from-[#00d9ff] to-[#00f5d4]",
     },
     {
-      value: `$${counters.revenue}M+`,
-      label: "Revenue Generated",
-      highlight: "Real business growth",
+      value: `R${counters.revenue}k+`,
+      label: L.revenueImpact,
+      highlight: "Reported client impact",
       icon: TrendingUp,
       gradient: "from-[#b846f5] to-[#d175ff]",
     },
   ]
 
+  const floatTransition = reduceMotion
+    ? undefined
+    : { duration: 5.5, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" as const }
+
   return (
     <section
       ref={heroRef}
-      className="relative min-h-screen flex items-center justify-center pt-24 sm:pt-28 md:pt-32 pb-12 sm:pb-16 overflow-hidden bg-white"
+      className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden bg-white pb-14 pt-[calc(5.5rem+env(safe-area-inset-top))] sm:pb-16 sm:pt-28 md:pt-32"
     >
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-32 -right-32 w-80 h-80 bg-gradient-to-br from-[#302cff]/20 via-[#302cff]/10 to-transparent rounded-full blur-3xl" />
-
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-gradient-to-tr from-[#ff6b35]/15 via-[#ff6b35]/8 to-transparent rounded-full blur-3xl" />
-
-        <div className="absolute top-1/2 -translate-y-1/2 -right-32 w-72 h-72 bg-gradient-to-br from-[#00d9ff]/20 via-[#00d9ff]/10 to-transparent rounded-full blur-3xl" />
-
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-gradient-to-br from-[#b846f5]/15 via-[#b846f5]/8 to-transparent rounded-full blur-3xl" />
-
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white/50 pointer-events-none" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -right-24 -top-28 h-72 w-72 rounded-full bg-gradient-to-br from-[#302cff]/18 via-[#302cff]/8 to-transparent blur-3xl sm:h-80 sm:w-80" />
+        <div className="absolute -bottom-36 -left-28 h-[22rem] w-[22rem] rounded-full bg-gradient-to-tr from-[#ff6b35]/14 via-[#ff6b35]/6 to-transparent blur-3xl" />
+        <div className="absolute -right-20 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full bg-gradient-to-br from-[#00d9ff]/16 to-transparent blur-3xl" />
+        <div className="absolute left-1/4 top-1/4 h-56 w-56 rounded-full bg-gradient-to-br from-[#b846f5]/12 to-transparent blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white/60" />
         <div
-          className="absolute inset-0 opacity-20"
+          className="absolute inset-0 opacity-[0.14] sm:opacity-[0.18]"
           style={{
-            backgroundImage: `linear-gradient(0deg, transparent 24%, rgba(48, 44, 255, 0.05) 25%, rgba(48, 44, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(48, 44, 255, 0.05) 75%, rgba(48, 44, 255, 0.05) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(48, 44, 255, 0.05) 25%, rgba(48, 44, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(48, 44, 255, 0.05) 75%, rgba(48, 44, 255, 0.05) 76%, transparent 77%, transparent)`,
-            backgroundSize: "50px 50px",
+            backgroundImage: `linear-gradient(0deg, transparent 24%, rgba(48, 44, 255, 0.055) 25%, rgba(48, 44, 255, 0.055) 26%, transparent 27%, transparent 74%, rgba(48, 44, 255, 0.055) 75%, rgba(48, 44, 255, 0.055) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(48, 44, 255, 0.055) 25%, rgba(48, 44, 255, 0.055) 26%, transparent 27%, transparent 74%, rgba(48, 44, 255, 0.055) 75%, rgba(48, 44, 255, 0.055) 76%, transparent 77%, transparent)`,
+            backgroundSize: "48px 48px",
           }}
         />
       </div>
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 max-w-7xl">
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <motion.div
-          className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-12 lg:gap-16 items-center"
+          className="grid grid-cols-1 items-center gap-10 sm:gap-12 lg:grid-cols-2 lg:gap-16"
           variants={containerVariants}
           initial="hidden"
           animate={isInView ? "visible" : "hidden"}
         >
-          {/* Left content */}
           <motion.div className="space-y-6 sm:space-y-8" variants={itemVariants}>
             <motion.div
-              className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#302cff]/5 border border-[#302cff]/20"
-              whileHover={{ scale: 1.05 }}
-              transition={{ duration: 0.2 }}
+              className="inline-flex items-center gap-2 rounded-full border border-[#302cff]/20 bg-[#302cff]/5 px-3 py-1.5 sm:px-4 sm:py-2"
+              whileHover={reduceMotion ? {} : { scale: 1.03 }}
+              transition={{ type: "spring", stiffness: 400, damping: 24 }}
             >
-              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#302cff]" />
-              <span className="text-xs sm:text-sm font-semibold text-[#302cff]">Web Design & Development</span>
+              <Sparkles className="h-3.5 w-3.5 text-[#302cff] sm:h-4 sm:w-4" />
+              <span className="text-xs font-semibold text-[#302cff] sm:text-sm">
+                Web Design &amp; Development · South Africa
+              </span>
             </motion.div>
 
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold leading-tight tracking-tight text-slate-900">
+            <h1 className="font-heading text-balance text-4xl font-extrabold leading-[1.08] tracking-tight text-slate-900 sm:text-5xl md:text-6xl lg:text-7xl">
               <span className="block">Transform Your</span>
               <span className="block bg-gradient-to-r from-[#302cff] to-[#5b57ff] bg-clip-text text-transparent">
                 Online Success
@@ -148,7 +186,7 @@ export default function HeroSection() {
             </h1>
 
             <motion.p
-              className="text-base sm:text-lg md:text-xl text-slate-600 leading-relaxed max-w-2xl font-medium"
+              className="max-w-2xl text-pretty text-base font-medium leading-relaxed text-slate-600 sm:text-lg md:text-xl"
               variants={itemVariants}
             >
               We build high-performing websites, create unforgettable digital experiences, and drive real business
@@ -161,101 +199,135 @@ export default function HeroSection() {
                 return (
                   <motion.div
                     key={index}
-                    className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all duration-300"
-                    whileHover={{ y: -3, backgroundColor: "rgba(100, 116, 139, 0.05)" }}
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur-sm sm:gap-2 sm:px-4 sm:py-2"
+                    whileHover={reduceMotion ? {} : { y: -3 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 22 }}
                   >
-                    <div className={`bg-gradient-to-br ${service.color} p-1 sm:p-1.5 rounded-md`}>
-                      <Icon className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                    <div className={`rounded-md bg-gradient-to-br ${service.color} p-1 sm:p-1.5`}>
+                      <Icon className="h-3 w-3 text-white sm:h-4 sm:w-4" />
                     </div>
-                    <span className="font-semibold text-slate-800 text-xs sm:text-sm">{service.text}</span>
+                    <span className="text-xs font-semibold text-slate-800 sm:text-sm">{service.text}</span>
                   </motion.div>
                 )
               })}
             </motion.div>
 
-            <motion.div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-2 sm:pt-4" variants={itemVariants}>
+            <motion.div
+              className="flex flex-col gap-3 pt-1 sm:flex-row sm:gap-4 sm:pt-2"
+              variants={itemVariants}
+            >
               <Link href="/contact" className="w-full sm:w-auto">
-                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full">
+                <motion.div
+                  className="w-full"
+                  whileHover={reduceMotion ? {} : { scale: 1.02 }}
+                  whileTap={reduceMotion ? {} : { scale: 0.98 }}
+                >
                   <Button
                     size="lg"
-                    className="w-full sm:w-auto bg-gradient-to-r from-[#302cff] to-[#5b57ff] hover:from-[#2820dd] hover:to-[#4a46ee] text-white shadow-lg hover:shadow-xl shadow-[#302cff]/30 px-6 sm:px-12 py-2.5 sm:py-4 text-sm sm:text-lg font-semibold transition-all duration-300"
+                    className="w-full rounded-2xl bg-gradient-to-r from-[#302cff] to-[#5b57ff] px-8 py-6 text-base font-semibold text-white shadow-lg shadow-[#302cff]/28 transition-[box-shadow] hover:from-[#2820dd] hover:to-[#4a46ee] hover:shadow-xl sm:w-auto sm:px-12 sm:text-lg"
                   >
                     <span className="flex items-center justify-center gap-2">
                       Start Your Project
-                      <motion.div
-                        animate={{ x: [0, 4, 0] }}
-                        transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                      >
-                        <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                      </motion.div>
+                      {reduceMotion ? (
+                        <ArrowRight className="h-4 w-4 sm:h-5 sm:w-5" />
+                      ) : (
+                        <motion.span
+                          animate={{ x: [0, 4, 0] }}
+                          transition={{ duration: 2.2, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+                          className="inline-flex"
+                        >
+                          <ArrowRight className="h-4 w-4 sm:h-5 sm:w-5" />
+                        </motion.span>
+                      )}
                     </span>
                   </Button>
                 </motion.div>
               </Link>
-              <Button
-                variant="outline"
-                size="lg"
-                className="w-full sm:w-auto border-slate-300 text-slate-800 hover:bg-slate-50 px-6 sm:px-12 py-2.5 sm:py-4 text-sm sm:text-lg font-semibold bg-transparent"
-              >
-                View Our Work
-              </Button>
+              <Link href="/portfolio" className="w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="h-auto w-full rounded-2xl border-slate-300/90 bg-white/70 px-8 py-6 text-base font-semibold text-slate-800 backdrop-blur-sm hover:bg-white sm:w-auto sm:px-12 sm:text-lg"
+                >
+                  View Our Work
+                </Button>
+              </Link>
             </motion.div>
           </motion.div>
 
-          {/* Right image section - hidden on mobile, shown on lg+ */}
           <motion.div
             className="relative hidden lg:block"
-            initial={{ opacity: 0, x: 40 }}
-            animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: 40 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
+            initial={reduceMotion ? false : { opacity: 0, x: 32 }}
+            animate={isInView ? { opacity: 1, x: 0 } : { opacity: 0, x: 32 }}
+            transition={
+              reduceMotion ? { duration: 0 } : { duration: 0.65, delay: 0.12, ease: EASE_OUT }
+            }
           >
             <div className="relative">
               <motion.div
-                className="relative rounded-2xl overflow-hidden shadow-xl ring-1 ring-slate-200"
-                animate={{ y: [0, -10, 0] }}
-                transition={{ duration: 5, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+                className="relative overflow-hidden rounded-2xl shadow-2xl ring-1 ring-slate-200/80"
+                animate={
+                  reduceMotion ? {} : { y: [0, -8, 0] }
+                }
+                transition={floatTransition}
               >
-                <div className="absolute inset-0 bg-gradient-to-br from-[#302cff]/5 to-transparent pointer-events-none" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#302cff]/8 to-transparent" />
                 <Image
                   src="/modern-office-technology-team-collaboration.jpg"
                   alt="Web design and development team collaboration"
-                  width={500}
-                  height={600}
-                  className="w-full h-auto object-cover"
+                  width={560}
+                  height={680}
+                  className="h-auto w-full object-cover"
                   priority
+                  sizes="(min-width: 1024px) 42vw, 100vw"
                 />
               </motion.div>
 
-              {/* Stats floating card - top left */}
               <motion.div
-                className="absolute -top-8 -left-8 bg-white rounded-xl p-4 shadow-lg border border-slate-200 backdrop-blur-md w-56"
-                animate={{ y: [0, -15, 0], rotate: [-2, 0, -2] }}
-                transition={{ duration: 6, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+                className="absolute -left-6 top-10 w-56 rounded-xl border border-slate-200/80 bg-white/95 p-4 shadow-xl backdrop-blur-md sm:-left-8 sm:-top-8"
+                animate={
+                  reduceMotion ? {} : { y: [0, -10, 0], rotate: [-1.5, 0, -1.5] }
+                }
+                transition={
+                  reduceMotion
+                    ? undefined
+                    : { duration: 6, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }
+                }
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-[#302cff] to-[#5b57ff] rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Code2 className="w-6 h-6 text-white" />
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#302cff] to-[#5b57ff]">
+                    <Code2 className="h-6 w-6 text-white" />
                   </div>
-                  <div className="text-sm">
-                    <div className="font-bold text-slate-900 text-lg">200+</div>
-                    <div className="text-slate-600 text-xs">Sites Built</div>
+                  <div>
+                    <div className="text-lg font-bold text-slate-900">{S.projectsDelivered}</div>
+                    <div className="text-xs text-slate-600">{L.projectsDelivered}</div>
                   </div>
                 </div>
               </motion.div>
 
-              {/* Ratings floating card - bottom right */}
               <motion.div
-                className="absolute -bottom-8 -right-8 bg-white rounded-xl p-4 shadow-lg border border-slate-200 backdrop-blur-md w-56"
-                animate={{ y: [0, 15, 0], rotate: [2, 0, 2] }}
-                transition={{ duration: 6.5, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut", delay: 0.5 }}
+                className="absolute -bottom-6 -right-6 w-56 rounded-xl border border-slate-200/80 bg-white/95 p-4 shadow-xl backdrop-blur-md sm:-bottom-8 sm:-right-8"
+                animate={
+                  reduceMotion ? {} : { y: [0, 10, 0], rotate: [1.5, 0, 1.5] }
+                }
+                transition={
+                  reduceMotion
+                    ? undefined
+                    : {
+                        duration: 6.5,
+                        repeat: Number.POSITIVE_INFINITY,
+                        ease: "easeInOut",
+                        delay: 0.4,
+                      }
+                }
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-[#ff6b35] to-[#ff8a5c] rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Zap className="w-6 h-6 text-white" />
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#ff6b35] to-[#ff8a5c]">
+                    <Zap className="h-6 w-6 text-white" />
                   </div>
-                  <div className="text-sm">
-                    <div className="font-bold text-slate-900 text-lg">4.9/5</div>
-                    <div className="text-slate-600 text-xs">Client Rating</div>
+                  <div>
+                    <div className="text-lg font-bold text-slate-900">{S.clientRating}</div>
+                    <div className="text-xs text-slate-600">{L.clientRating}</div>
                   </div>
                 </div>
               </motion.div>
@@ -263,34 +335,33 @@ export default function HeroSection() {
           </motion.div>
         </motion.div>
 
-        {/* Completely redesigned stats section with icons, cards, and gradient backgrounds */}
         <motion.div
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 pt-16 sm:pt-20 mt-16 sm:pt-20"
+          className="mt-14 grid grid-cols-1 gap-4 pt-4 sm:mt-16 sm:grid-cols-2 sm:gap-5 sm:pt-6 lg:grid-cols-4"
           variants={containerVariants}
+          initial="hidden"
+          animate={isInView ? "visible" : "hidden"}
         >
           {achievements.map((stat, index) => {
             const Icon = stat.icon
             return (
               <motion.div
                 key={index}
-                className="relative group"
+                className="group relative"
                 variants={itemVariants}
-                whileHover={{ y: -6 }}
-                transition={{ duration: 0.3 }}
+                whileHover={reduceMotion ? {} : { y: -5 }}
+                transition={{ type: "spring", stiffness: 360, damping: 22 }}
               >
-                <div className="relative p-6 rounded-2xl bg-white border-2 border-slate-200 shadow-sm hover:shadow-xl hover:border-[#302cff]/30 transition-all duration-300 overflow-hidden">
+                <div className="relative overflow-hidden rounded-2xl border-2 border-slate-200/90 bg-white p-6 shadow-sm transition-shadow duration-300 group-hover:border-[#302cff]/35 group-hover:shadow-xl">
                   <div
-                    className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 group-hover:opacity-[0.03] transition-opacity duration-300`}
+                    className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 transition-opacity duration-300 group-hover:opacity-[0.04]`}
                   />
-
-                  {/* Icon */}
-                  <div className={`inline-flex p-3 rounded-xl bg-gradient-to-br ${stat.gradient} mb-4`}>
-                    <Icon className="w-6 h-6 text-white" />
+                  <div className={`mb-4 inline-flex rounded-xl bg-gradient-to-br ${stat.gradient} p-3`}>
+                    <Icon className="h-6 w-6 text-white" />
                   </div>
-
-                  {/* Content */}
-                  <div className="relative z-10 space-y-2">
-                    <div className={`text-4xl font-black bg-gradient-to-br ${stat.gradient} bg-clip-text text-transparent`}>
+                  <div className="relative z-10 space-y-1.5">
+                    <div
+                      className={`text-3xl font-black bg-gradient-to-br sm:text-4xl ${stat.gradient} bg-clip-text text-transparent`}
+                    >
                       {stat.value}
                     </div>
                     <div className="text-base font-bold text-slate-900">{stat.label}</div>
@@ -303,8 +374,7 @@ export default function HeroSection() {
         </motion.div>
       </div>
 
-      {/* Bottom fade gradient */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-white via-white/80 to-transparent pointer-events-none" />
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-white via-white/85 to-transparent" />
     </section>
   )
 }

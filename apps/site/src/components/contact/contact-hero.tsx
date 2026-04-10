@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { MessageCircle, Mail, Phone, Clock } from "lucide-react"
 import { FaWhatsapp, FaInstagram } from "react-icons/fa6"
 import { BsTwitterX } from "react-icons/bs"
+import { SITE } from "@/lib/site-copy"
 
 export default function ContactHero() {
   const [isVisible, setIsVisible] = useState(false)
@@ -16,8 +17,8 @@ export default function ContactHero() {
     {
       icon: FaWhatsapp,
       label: "WhatsApp",
-      value: "068 918 6043",
-      href: "https://wa.me/27689186043",
+      value: SITE.phoneDisplay,
+      href: `https://wa.me/${SITE.phoneTel}`,
       color: "text-green-500",
       bgColor: "bg-green-50",
       hoverColor: "hover:bg-green-100",
@@ -25,8 +26,8 @@ export default function ContactHero() {
     {
       icon: Phone,
       label: "Call Us",
-      value: "068 918 6043",
-      href: "tel:0689186043",
+      value: SITE.phoneDisplay,
+      href: `tel:${SITE.phoneTel}`,
       color: "text-[#302cff]",
       bgColor: "bg-[#302cff]/5",
       hoverColor: "hover:bg-[#302cff]/10",
@@ -34,8 +35,8 @@ export default function ContactHero() {
     {
       icon: Mail,
       label: "Email",
-      value: "hello@luminum.agency",
-      href: "mailto:hello@luminum.agency",
+      value: SITE.email,
+      href: `mailto:${SITE.email}`,
       color: "text-[#00d9ff]",
       bgColor: "bg-[#00d9ff]/5",
       hoverColor: "hover:bg-[#00d9ff]/10",

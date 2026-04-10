@@ -4,12 +4,13 @@ import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
 import { Star, Users, Clock, Award, Shield, CheckCircle } from "lucide-react"
 import Image from "next/image"
+import { SITE } from "@/lib/site-copy"
 
 export function TrustSection() {
   const stats = [
-    { icon: Users, value: "500+", label: "Happy Clients", color: "text-blue-600", bg: "bg-blue-50" },
+    { icon: Users, value: SITE.stats.projectsDelivered, label: SITE.statLabels.projectsDelivered, color: "text-blue-600", bg: "bg-blue-50" },
     { icon: Clock, value: "7 Days", label: "Average Delivery", color: "text-green-600", bg: "bg-green-50" },
-    { icon: Award, value: "4.9/5", label: "Client Rating", color: "text-yellow-600", bg: "bg-yellow-50" },
+    { icon: Award, value: SITE.stats.clientRating, label: SITE.statLabels.clientRating, color: "text-yellow-600", bg: "bg-yellow-50" },
     { icon: Shield, value: "100%", label: "Source Code Owned", color: "text-purple-600", bg: "bg-purple-50" },
   ]
 
@@ -59,7 +60,7 @@ export function TrustSection() {
         >
           <Badge className="mb-4 px-4 py-2 bg-blue-100 text-blue-700 border-blue-200">
             <Star className="w-4 h-4 mr-2 fill-current" />
-            Trusted by 500+ South African Businesses
+            Trusted across South Africa · {SITE.stats.projectsDelivered} {SITE.statLabels.projectsDelivered.toLowerCase()}
           </Badge>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
             Why Businesses Choose{" "}
@@ -224,7 +225,10 @@ export function TrustSection() {
                 {/* CTA */}
                 <div className="mt-6 p-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl text-white text-center">
                   <div className="font-bold text-lg mb-1">Ready to Get Started?</div>
-                  <div className="text-blue-100 text-sm">Join 500+ businesses that chose professional development</div>
+                  <div className="text-blue-100 text-sm">
+                    Professional development, proven delivery — {SITE.stats.projectsDelivered}{" "}
+                    {SITE.statLabels.projectsDelivered.toLowerCase()}
+                  </div>
                 </div>
               </div>
             </div>

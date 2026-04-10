@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion"
 import { Badge } from "@/components/ui/badge"
+import { EASE_OUT } from "@/lib/motion"
 
 export default function CookiesPage() {
   // Animation variants
@@ -10,7 +11,7 @@ export default function CookiesPage() {
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.6, ease: "easeOut" },
+      transition: { duration: 0.6, ease: EASE_OUT },
     },
   }
 

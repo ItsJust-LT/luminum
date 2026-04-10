@@ -9,9 +9,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { submitFormData } from "@/actions/form"
-import { trackWhatsAppClick, trackQuoteRequest } from "@/lib/gtm"
+import { submitLuminumForm } from "@/lib/luminum-forms"
 import { Send, CheckCircle, Star, CreditCard, Zap, MessageCircle, Clock, Shield, Award } from "lucide-react"
+import { SITE } from "@/lib/site-copy"
 
 export function LeadForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -28,15 +28,9 @@ export function LeadForm() {
     consent: false,
   })
 
-  // Track form view on component mount
-  React.useEffect(() => {
-    trackQuoteRequest()
-  }, [])
-
   const openWhatsApp = () => {
-    trackWhatsAppClick()
     window.open(
-      "https://wa.me/27689186043?text=Hi%20I%27m%20interested%20in%20Luminum%20Agency%27s%20professional%20web%20development%20service",
+      `https://wa.me/${SITE.phoneTel}?text=Hi%20I%27m%20interested%20in%20Luminum%20Agency%27s%20professional%20web%20development%20service`,
       "_blank",
     )
   }
@@ -77,15 +71,14 @@ export function LeadForm() {
         source: "website_lead_form",
       }
 
-      const result = await submitFormData(submissionData)
+      const result = await submitLuminumForm({
+        formName: "Website quote",
+        fields: submissionData as Record<string, string | number | boolean | null | undefined>,
+      })
 
-      if (result.success) {
+      if (result.ok) {
         setIsSubmitted(true)
-        // Optional: Track successful submission
-        console.log("Lead submitted successfully")
       } else {
-        // Handle error - show error message to the user
-        console.error("Form submission failed:", result.error)
         alert(result.error || "Something went wrong. Please try again.")
       }
     } catch (error) {
@@ -447,7 +440,8 @@ export function LeadForm() {
                 ))}
               </div>
               <p className="text-sm text-gray-600">
-                <span className="font-semibold">4.9/5</span> from 500+ happy clients
+                <span className="font-semibold">{SITE.stats.clientRating}</span> · {SITE.stats.projectsDelivered}{" "}
+                {SITE.statLabels.projectsDelivered.toLowerCase()}
               </p>
             </div>
           </motion.div>

@@ -1,29 +1,20 @@
 "use client"
 
-import { Zap, Shield, Rocket, Users, Globe, TrendingUp } from 'lucide-react'
-import { useEffect, useRef, useState } from "react"
+import { Zap, Shield, Rocket, Users, Globe, TrendingUp } from "lucide-react"
 import Image from "next/image"
+import { motion, useReducedMotion } from "framer-motion"
+import { EASE_OUT, STAGGER_CHILDREN, FADE_UP } from "@/lib/motion"
 
 export default function FeaturesSection() {
-  const [isVisible, setIsVisible] = useState(false)
-  const sectionRef = useRef<HTMLElement>(null)
+  const reduceMotion = useReducedMotion()
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true)
-        }
-      },
-      { threshold: 0.1 },
-    )
+  const stagger = reduceMotion
+    ? { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { duration: 0 } } }
+    : STAGGER_CHILDREN
 
-    if (sectionRef.current) {
-      observer.observe(sectionRef.current)
-    }
-
-    return () => observer.disconnect()
-  }, [])
+  const fadeUp = reduceMotion
+    ? { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { duration: 0 } } }
+    : FADE_UP
 
   const features = [
     {
@@ -71,90 +62,110 @@ export default function FeaturesSection() {
   ]
 
   return (
-    <section ref={sectionRef} className="py-24 md:py-32 px-4 md:px-6 bg-white relative overflow-hidden">
-      <div className="absolute top-20 right-0 w-[500px] h-[500px] bg-gradient-to-l from-[#302cff]/8 to-transparent rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-20 left-0 w-[500px] h-[500px] bg-gradient-to-r from-[#ff6b35]/8 to-transparent rounded-full blur-3xl pointer-events-none" />
+    <section
+      className="relative overflow-hidden bg-white px-4 py-20 sm:px-6 md:py-28"
+      aria-labelledby="features-heading"
+    >
+      <div className="pointer-events-none absolute top-24 right-0 h-[min(28rem,80vw)] w-[min(28rem,80vw)] rounded-full bg-gradient-to-l from-[#302cff]/10 to-transparent blur-3xl" />
+      <div className="pointer-events-none absolute bottom-24 left-0 h-[min(28rem,80vw)] w-[min(28rem,80vw)] rounded-full bg-gradient-to-r from-[#ff6b35]/10 to-transparent blur-3xl" />
 
-      <div className="max-w-7xl mx-auto relative z-10">
-        <div
-          className={`text-center mb-20 transition-all duration-700 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
+      <div className="relative z-10 mx-auto max-w-7xl">
+        <motion.div
+          className="mb-14 text-center md:mb-20"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-60px", amount: 0.3 }}
+          variants={stagger}
         >
-          <div className="inline-block mb-6">
-            <span className="px-4 py-2 bg-[#302cff]/10 text-[#302cff] rounded-full text-sm font-bold tracking-wide uppercase">
+          <motion.div variants={fadeUp}>
+            <span className="mb-5 inline-block rounded-full bg-[#302cff]/10 px-4 py-2 text-sm font-bold uppercase tracking-wide text-[#302cff]">
               What We Do Best
             </span>
-          </div>
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-black mb-6 text-balance leading-tight text-slate-900">
+          </motion.div>
+          <motion.h2
+            id="features-heading"
+            variants={fadeUp}
+            className="font-heading mb-6 text-balance text-4xl font-black leading-tight tracking-tight text-slate-900 md:text-5xl lg:text-6xl"
+          >
             Your Success is{" "}
             <span className="bg-gradient-to-r from-[#302cff] via-[#5b57ff] to-[#00d9ff] bg-clip-text text-transparent">
               Our Mission
             </span>
-          </h2>
-          <p className="text-slate-600 text-lg md:text-xl max-w-3xl mx-auto text-pretty leading-relaxed">
+          </motion.h2>
+          <motion.p
+            variants={fadeUp}
+            className="mx-auto max-w-3xl text-pretty text-lg leading-relaxed text-slate-600 md:text-xl"
+          >
             We pour our hearts into every project, combining technical excellence with creative passion to deliver
             solutions that truly make a difference for your business.
-          </p>
-        </div>
+          </motion.p>
+        </motion.div>
 
-        <div
-          className={`mb-20 transition-all duration-700 delay-200 ${
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          }`}
+        <motion.div
+          className="mb-14 md:mb-20"
+          initial={reduceMotion ? false : { opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-40px" }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.55, ease: EASE_OUT }}
         >
-          <div className="relative rounded-3xl overflow-hidden shadow-2xl max-w-5xl mx-auto group border-2 border-slate-100">
+          <div className="group relative mx-auto max-w-5xl overflow-hidden rounded-3xl border border-slate-200/90 shadow-2xl shadow-slate-900/8">
             <Image
               src="/creative-team-brainstorming-session.jpg"
               alt="Luminum Agency team collaborating on creative projects"
               width={1200}
               height={600}
-              className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+              className="h-auto w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+              sizes="(max-width: 1024px) 100vw, 64rem"
+              loading="lazy"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-            <div className="absolute bottom-8 left-8 right-8 text-white">
-              <p className="text-xl md:text-2xl font-bold text-balance leading-snug">
-                Our passionate team of designers, developers, and marketers working together to bring your vision to
-                life
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 p-6 text-white md:p-10">
+              <p className="text-balance text-lg font-bold leading-snug md:text-2xl">
+                Our passionate team of designers, developers, and marketers working together to bring your vision to life
               </p>
             </div>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feature, index) => (
-            <div
-              key={index}
-              className={`group relative bg-white border-2 border-slate-200 rounded-3xl p-8 hover:border-[#302cff]/40 transition-all duration-500 hover:shadow-xl hover:-translate-y-1 ${
-                isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-              }`}
-              style={{
-                transitionDelay: isVisible ? `${index * 80 + 400}ms` : "0ms",
-              }}
-            >
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110 shadow-lg"
-                style={{
-                  background: `linear-gradient(135deg, ${feature.color}, ${feature.color}dd)`,
-                }}
+        <motion.div
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-50px", amount: 0.12 }}
+          variants={stagger}
+        >
+          {features.map((feature, index) => {
+            const Icon = feature.icon
+            return (
+              <motion.article
+                key={index}
+                variants={fadeUp}
+                className="group relative rounded-3xl border-2 border-slate-200/90 bg-white p-6 shadow-sm transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-1 hover:border-[#302cff]/40 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0 sm:p-8"
+                whileHover={reduceMotion ? undefined : { y: -4 }}
+                transition={{ type: "spring", stiffness: 380, damping: 26 }}
               >
-                <feature.icon className="w-8 h-8 text-white" />
-              </div>
-
-              <h3 className="text-2xl font-black mb-3 text-slate-900 group-hover:text-[#302cff] transition-colors duration-300">
-                {feature.title}
-              </h3>
-              <p className="text-slate-600 text-base leading-relaxed">{feature.description}</p>
-
-              <div
-                className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-                style={{
-                  background: `radial-gradient(circle at top right, ${feature.color}06, transparent 70%)`,
-                }}
-              />
-            </div>
-          ))}
-        </div>
+                <div
+                  className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg transition-transform duration-300 group-hover:scale-105 motion-reduce:group-hover:scale-100"
+                  style={{
+                    background: `linear-gradient(135deg, ${feature.color}, ${feature.color}dd)`,
+                  }}
+                >
+                  <Icon className="h-7 w-7 text-white" />
+                </div>
+                <h3 className="mb-3 text-xl font-black text-slate-900 transition-colors duration-200 group-hover:text-[#302cff] sm:text-2xl">
+                  {feature.title}
+                </h3>
+                <p className="text-base leading-relaxed text-slate-600">{feature.description}</p>
+                <div
+                  className="pointer-events-none absolute inset-0 rounded-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+                  style={{
+                    background: `radial-gradient(circle at top right, ${feature.color}08, transparent 65%)`,
+                  }}
+                />
+              </motion.article>
+            )
+          })}
+        </motion.div>
       </div>
     </section>
   )

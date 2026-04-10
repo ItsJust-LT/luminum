@@ -1,6 +1,8 @@
 "use client"
 
 import Link from "next/link"
+import { useReducedMotion } from "framer-motion"
+import { Highlight, HighlightItem } from "@/components/animate-ui/primitives/effects/highlight"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   Sidebar,
@@ -15,9 +17,23 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, CreditCard, FileText, Globe, HelpCircle, LayoutDashboard, Settings, Users, Mail, MessageCircle, Gauge, Receipt } from "lucide-react"
+import {
+  BookOpen,
+  CreditCard,
+  FileText,
+  Globe,
+  HelpCircle,
+  LayoutDashboard,
+  Settings,
+  Users,
+  Mail,
+  MessageCircle,
+  Gauge,
+  Receipt,
+  type LucideIcon,
+} from "lucide-react"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { NAV_ITEM_REQUIRED_PERMISSIONS, hasAllPermissions } from "@luminum/org-permissions"
 import { orgNavPath } from "@/lib/org-nav-path"
 import { orgLogoOrBrandProxy } from "@/lib/org-display-logo"
@@ -31,6 +47,94 @@ interface Organization {
   analytics_enabled?: boolean
   blogs_enabled?: boolean
   invoices_enabled?: boolean
+}
+
+type SidebarNavItem = { title: string; icon: LucideIcon; href: string; badge?: number }
+
+function NavMenuWithHighlight({
+  reduceMotion,
+  items,
+  isActive,
+  isLoading,
+}: {
+  reduceMotion: boolean | null
+  items: SidebarNavItem[]
+  isActive: (href: string) => boolean
+  isLoading: boolean
+}) {
+  const row = (item: SidebarNavItem) => {
+    const isItemActive = isActive(item.href)
+    const btnSurface = reduceMotion
+      ? isItemActive
+        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+        : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      : "text-sidebar-foreground/90 hover:text-sidebar-foreground"
+
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild className={`group relative z-[1] rounded-lg p-2 transition-colors ${btnSurface}`}>
+          <Link href={item.href} className="flex w-full min-w-0 items-center gap-3">
+            <div
+              className={`flex-shrink-0 rounded-md p-2 transition-colors ${
+                isItemActive
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "bg-muted text-muted-foreground group-hover:text-foreground"
+              }`}
+            >
+              <item.icon
+                className={`h-4 w-4 transition-colors ${
+                  isItemActive ? "text-sidebar-primary-foreground" : "text-current"
+                }`}
+              />
+            </div>
+            <span className="flex-1 truncate text-left text-sm font-semibold">{item.title}</span>
+            {item.badge !== undefined && (
+              <Badge
+                variant="secondary"
+                className={`ml-auto h-5 min-w-[20px] flex-shrink-0 px-1.5 text-xs font-medium ${
+                  isLoading ? "animate-pulse bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"
+                }`}
+              >
+                {isLoading ? "..." : item.badge}
+              </Badge>
+            )}
+            {isItemActive ? <div className="h-2 w-2 shrink-0 rounded-full bg-sidebar-primary" /> : null}
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    )
+  }
+
+  if (reduceMotion) {
+    return (
+      <SidebarMenu className="space-y-2">
+        {items.map((item) => (
+          <Fragment key={item.href}>{row(item)}</Fragment>
+        ))}
+      </SidebarMenu>
+    )
+  }
+
+  return (
+    <Highlight
+      mode="parent"
+      controlledItems
+      hover
+      click={false}
+      enabled
+      transition={{ type: "spring", stiffness: 400, damping: 34, mass: 0.85 }}
+      className="pointer-events-none rounded-lg bg-primary/12 shadow-[inset_0_0_0_1px] shadow-primary/15 dark:bg-primary/18"
+      containerClassName="relative"
+    >
+      <SidebarMenu className="relative space-y-1">
+        {items.map((item) => (
+          <HighlightItem key={item.href} value={item.href}>
+            {row(item)}
+          </HighlightItem>
+        ))}
+      </SidebarMenu>
+    </Highlight>
+  )
 }
 
 export function OrganizationSidebar({
@@ -98,8 +202,7 @@ export function OrganizationSidebar({
     return hasAllPermissions(permissionSet, req)
   }
 
-  type SidebarEntry = { title: string; icon: typeof LayoutDashboard; href: string; badge?: number }
-  const sidebarItems: SidebarEntry[] = []
+  const sidebarItems: SidebarNavItem[] = []
   if (navOk("dashboard")) sidebarItems.push({ title: "Dashboard", icon: LayoutDashboard, href: nav("dashboard") })
   if (analyticsEnabled && navOk("analytics")) sidebarItems.push({ title: "Analytics", icon: Globe, href: nav("analytics") })
   if (navOk("audits")) sidebarItems.push({ title: "Site Audits", icon: Gauge, href: nav("audits") })
@@ -134,12 +237,13 @@ export function OrganizationSidebar({
   if (navOk("team")) sidebarItems.push({ title: "Team", icon: Users, href: nav("team") })
   if (navOk("settings")) sidebarItems.push({ title: "Settings", icon: Settings, href: nav("settings") })
 
-  const managementItems: { title: string; icon: typeof CreditCard; href: string }[] = []
+  const managementItems: SidebarNavItem[] = []
   if (navOk("billing")) managementItems.push({ title: "Billing", icon: CreditCard, href: nav("billing") })
   if (navOk("reports")) managementItems.push({ title: "Reports", icon: FileText, href: nav("reports") })
   if (navOk("support")) managementItems.push({ title: "Support", icon: HelpCircle, href: nav("support") })
 
   const isActive = (href: string) => pathname?.startsWith(href)
+  const reduceMotion = useReducedMotion()
 
   // Real-time updates come from Ably WebSocket via OrganizationSidebarWrapper
   // No polling needed - all updates are real-time
@@ -171,51 +275,12 @@ export function OrganizationSidebar({
             Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-2">
-              {sidebarItems.map((item) => {
-                const isItemActive = isActive(item.href)
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      className={`group relative rounded-lg p-2 transition-colors ${
-                        isItemActive 
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground" 
-                          : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      }`}
-                    >
-                      <Link href={item.href} className="flex items-center gap-3 w-full min-w-0">
-                        <div className={`p-2 rounded-md transition-colors flex-shrink-0 ${
-                          isItemActive 
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground" 
-                            : "bg-muted text-muted-foreground group-hover:text-foreground"
-                        }`}>
-                          <item.icon className={`h-4 w-4 transition-colors ${
-                            isItemActive ? "text-sidebar-primary-foreground" : "text-current"
-                          }`} />
-                        </div>
-                        <span className="font-semibold flex-1 text-left truncate text-sm">
-                          {item.title}
-                        </span>
-                        {item.badge !== undefined && (
-                          <Badge 
-                            variant="secondary" 
-                            className={`ml-auto h-5 min-w-[20px] flex-shrink-0 px-1.5 text-xs font-medium ${
-                              isLoading ? "animate-pulse bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"
-                            }`}
-                          >
-                            {isLoading ? "..." : item.badge}
-                          </Badge>
-                        )}
-                        {isItemActive && (
-                          <div className="bg-sidebar-primary h-2 w-2 rounded-full" />
-                        )}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
+            <NavMenuWithHighlight
+              reduceMotion={reduceMotion}
+              items={sidebarItems}
+              isActive={isActive}
+              isLoading={isLoading}
+            />
           </SidebarGroupContent>
         </SidebarGroup>
 
@@ -224,41 +289,12 @@ export function OrganizationSidebar({
             Management
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-2">
-              {managementItems.map((item) => {
-                const isItemActive = isActive(item.href)
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      className={`group rounded-lg p-2 transition-colors ${
-                        isItemActive 
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground" 
-                          : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      }`}
-                    >
-                      <Link href={item.href} className="flex items-center gap-3 w-full min-w-0">
-                        <div className={`p-2 rounded-md transition-colors flex-shrink-0 ${
-                          isItemActive 
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground" 
-                            : "bg-muted text-muted-foreground group-hover:text-foreground"
-                        }`}>
-                          <item.icon className={`h-4 w-4 transition-colors ${
-                            isItemActive ? "text-sidebar-primary-foreground" : "text-current"
-                          }`} />
-                        </div>
-                        <span className="font-semibold flex-1 text-left truncate text-sm">
-                          {item.title}
-                        </span>
-                        {isItemActive && (
-                          <div className="bg-sidebar-primary h-2 w-2 rounded-full" />
-                        )}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
+            <NavMenuWithHighlight
+              reduceMotion={reduceMotion}
+              items={managementItems}
+              isActive={isActive}
+              isLoading={false}
+            />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

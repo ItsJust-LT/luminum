@@ -3,6 +3,7 @@
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, MessageCircle, CheckCircle, Star, Clock, Shield, Zap } from "lucide-react"
+import { SITE } from "@/lib/site-copy"
 
 export function FinalCTA() {
   const scrollToForm = () => {
@@ -11,7 +12,7 @@ export function FinalCTA() {
 
   const openWhatsApp = () => {
     window.open(
-      "https://wa.me/27689186043?text=Hi%20I%27m%20ready%20to%20build%20my%20professional%20website%20with%20Luminum%20Agency",
+      `https://wa.me/${SITE.phoneTel}?text=Hi%20I%27m%20ready%20to%20build%20my%20professional%20website%20with%20Luminum%20Agency`,
       "_blank",
     )
   }
@@ -75,7 +76,9 @@ export function FinalCTA() {
             >
               <div className="inline-flex items-center px-4 py-2 bg-white/20 backdrop-blur-sm rounded-full border border-white/30 mb-6">
                 <Star className="w-4 h-4 text-yellow-400 mr-2 fill-current" />
-                <span className="text-white font-medium text-sm">Join 500+ Successful Businesses</span>
+                <span className="text-white font-medium text-sm">
+                  {SITE.stats.projectsDelivered} {SITE.statLabels.projectsDelivered.toLowerCase()}
+                </span>
               </div>
             </motion.div>
 
@@ -87,7 +90,7 @@ export function FinalCTA() {
             </h2>
 
             <p className="text-xl text-blue-100 mb-8 max-w-3xl mx-auto leading-relaxed">
-              Join hundreds of South African businesses who chose professional development over templates. Get started
+              Join South African businesses who chose professional development over templates. Get started
               today and be online in just 7 days with full source code ownership!
             </p>
           </div>
@@ -166,7 +169,10 @@ export function FinalCTA() {
                   <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />
                 ))}
               </div>
-              <span className="text-blue-100 font-semibold">4.9/5 from 500+ happy clients</span>
+              <span className="text-blue-100 font-semibold">
+                {SITE.stats.clientRating} · {SITE.stats.projectsDelivered}{" "}
+                {SITE.statLabels.projectsDelivered.toLowerCase()}
+              </span>
             </div>
 
             {/* Final Trust Elements */}

@@ -36,6 +36,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { useShortcutKeyLabels } from "@/hooks/use-shortcut-key-labels";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Bold,
@@ -605,6 +606,7 @@ export const BlogRichEditor = React.forwardRef<
   const [imageEditHeight, setImageEditHeight] = React.useState("");
   const [blogCompEditOpen, setBlogCompEditOpen] = React.useState(false);
   const [blogCompDraft, setBlogCompDraft] = React.useState("");
+  const shortcutKeys = useShortcutKeyLabels();
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -1053,36 +1055,40 @@ export const BlogRichEditor = React.forwardRef<
             onClick={() => editor?.chain().focus().toggleBold().run()}
             disabled={!editor}
           >
-            Bold
-            <ContextMenuShortcut>⌘B</ContextMenuShortcut>
+            <span className="min-w-0 flex-1">Bold</span>
+            <ContextMenuShortcut keys={[shortcutKeys.mod, "B"]} />
           </ContextMenuItem>
           <ContextMenuItem onClick={() => editor?.chain().focus().toggleItalic().run()} disabled={!editor}>
-            Italic
-            <ContextMenuShortcut>⌘I</ContextMenuShortcut>
+            <span className="min-w-0 flex-1">Italic</span>
+            <ContextMenuShortcut keys={[shortcutKeys.mod, "I"]} />
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => editor?.chain().focus().toggleBulletList().run()}
             disabled={!editor}
           >
-            Bullet list
+            <span className="min-w-0 flex-1">Bullet list</span>
+            <ContextMenuShortcut keys={[shortcutKeys.mod, shortcutKeys.shift, "8"]} />
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => editor?.chain().focus().toggleOrderedList().run()}
             disabled={!editor}
           >
-            Numbered list
+            <span className="min-w-0 flex-1">Numbered list</span>
+            <ContextMenuShortcut keys={[shortcutKeys.mod, shortcutKeys.shift, "7"]} />
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => editor?.chain().focus().toggleBlockquote().run()}
             disabled={!editor}
           >
-            Quote
+            <span className="min-w-0 flex-1">Quote</span>
+            <ContextMenuShortcut keys={[shortcutKeys.mod, shortcutKeys.shift, "B"]} />
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
             disabled={!editor}
           >
-            Code block
+            <span className="min-w-0 flex-1">Code block</span>
+            <ContextMenuShortcut keys={[shortcutKeys.mod, shortcutKeys.alt, "C"]} />
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() =>

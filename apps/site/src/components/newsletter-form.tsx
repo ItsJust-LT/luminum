@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { ArrowRight, Loader2, CheckCircle, AlertCircle, Mail, Settings, Bell, Clock, Tag } from "lucide-react"
-import { subscribeToNewsletter } from "@/actions/newsletter"
+import { submitLuminumForm } from "@/lib/luminum-forms"
 
 interface NewsletterPreferences {
   frequency: string
@@ -56,18 +56,30 @@ export default function NewsletterForm({
         subscribedAt: new Date().toISOString(),
       }
 
-      const result = await subscribeToNewsletter({
-        email,
-        preferences: JSON.stringify({
-          ...preferences,
+      const result = await submitLuminumForm({
+        formName: "Newsletter",
+        fields: {
+          email,
+          preferences: JSON.stringify({
+            ...preferences,
+            source,
+            clientInfo,
+          }),
           source,
-          clientInfo,
-        }),
+        },
       })
 
-      setResponse(result)
+      const mapped =
+        result.ok
+          ? {
+              success: true as const,
+              message: "Thank you for subscribing! You'll receive our latest insights and updates.",
+            }
+          : { success: false as const, message: result.error }
 
-      if (result.success) {
+      setResponse(mapped)
+
+      if (mapped.success) {
         setEmail("")
         setPreferences({
           frequency: "weekly",

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Plus, Minus, HelpCircle, MessageCircle, ArrowRight } from "lucide-react"
 import { useState } from "react"
+import { SITE } from "@/lib/site-copy"
 
 export function WebDesignFAQ() {
   const [openItems, setOpenItems] = useState<number[]>([0])
@@ -23,7 +24,7 @@ export function WebDesignFAQ() {
     {
       question: "How long does it take to build my website?",
       answer:
-        "We guarantee delivery within 7 days. Our proven process includes: Day 1 - Discovery & Planning, Days 2-3 - Design & Wireframing, Days 4-6 - Development & Coding, Day 7+ - Launch & Support. We've perfected this timeline through 500+ successful projects.",
+        `We guarantee delivery within 7 days. Our proven process includes: Day 1 - Discovery & Planning, Days 2-3 - Design & Wireframing, Days 4-6 - Development & Coding, Day 7+ - Launch & Support. We've refined this timeline across ${SITE.stats.projectsDelivered} delivered projects.`,
     },
     {
       question: "What's included in the monthly payment plan?",
@@ -63,7 +64,7 @@ export function WebDesignFAQ() {
 
   const openWhatsApp = () => {
     window.open(
-      "https://wa.me/27689186043?text=Hi%20I%20have%20some%20questions%20about%20Luminum%20Agency%27s%20web%20development%20services",
+      `https://wa.me/${SITE.phoneTel}?text=Hi%20I%20have%20some%20questions%20about%20Luminum%20Agency%27s%20web%20development%20services`,
       "_blank",
     )
   }

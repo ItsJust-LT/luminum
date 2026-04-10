@@ -5,14 +5,9 @@ import Image from "next/image"
 import { FaInstagram, FaWhatsapp } from "react-icons/fa6"
 import { BsTwitterX } from "react-icons/bs"
 import { Heart, ArrowRight, Phone, Mail } from "lucide-react"
-import { useState, useEffect } from "react"
+import { SITE } from "@/lib/site-copy"
 
 export default function Footer() {
-  const [isVisible, setIsVisible] = useState(false)
-
-  useEffect(() => {
-    setIsVisible(true)
-  }, [])
 
   const socialLinks = [
     {
@@ -25,9 +20,9 @@ export default function Footer() {
     {
       name: "WhatsApp",
       icon: FaWhatsapp,
-      href: "https://wa.me/27689186043",
+      href: `https://wa.me/${SITE.phoneTel}`,
       color: "from-[#25D366] to-[#128C7E]",
-      handle: "068 918 6043",
+      handle: SITE.phoneDisplay,
     },
     {
       name: "X",
@@ -42,14 +37,14 @@ export default function Footer() {
     {
       icon: Phone,
       label: "Call Us",
-      value: "068 918 6043",
-      href: "tel:0689186043",
+      value: SITE.phoneDisplay,
+      href: `tel:${SITE.phoneTel}`,
     },
     {
       icon: Mail,
       label: "Email",
-      value: "contact@luminum.agency",
-      href: "mailto:contact@luminum.agency",
+      value: SITE.email,
+      href: `mailto:${SITE.email}`,
     },
   ]
 
@@ -104,21 +99,24 @@ export default function Footer() {
                 ))}
               </div>
 
-              <div className="flex items-center gap-2 text-slate-900">
+              <div className="flex flex-wrap items-center gap-2 text-slate-900">
                 <span className="text-base font-medium">Made with</span>
-                <Heart className="w-5 h-5 text-[#ff6b35] fill-[#ff6b35] animate-pulse" />
+                <Heart className="w-5 h-5 text-[#ff6b35] fill-[#ff6b35] motion-safe:animate-pulse" aria-hidden />
                 <span className="text-base font-medium">in South Africa</span>
               </div>
             </div>
 
             {/* Quick links */}
             <div className="lg:col-span-3">
-              <h3 className="text-lg font-bold text-slate-900 mb-6">Quick Links</h3>
+              <h3 className="font-heading text-lg font-bold text-slate-900 mb-6">Quick Links</h3>
               <ul className="space-y-4">
                 {[
                   { name: "Home", href: "/" },
                   { name: "Services", href: "/services" },
-                  { name: "Contact Us", href: "/contact" },
+                  { name: "About", href: "/about" },
+                  { name: "Blog", href: "/blog" },
+                  { name: "Portfolio", href: "/portfolio" },
+                  { name: "Contact", href: "/contact" },
                 ].map((link, index) => (
                   <li key={index}>
                     <Link
@@ -134,7 +132,7 @@ export default function Footer() {
             </div>
 
             <div className="lg:col-span-4">
-              <h3 className="text-lg font-bold text-slate-900 mb-6">Connect With Us</h3>
+              <h3 className="font-heading text-lg font-bold text-slate-900 mb-6">Connect With Us</h3>
               <p className="text-slate-600 text-base mb-6 leading-relaxed">
                 Follow our journey and stay updated with the latest tips, projects, and behind-the-scenes content!
               </p>
@@ -173,15 +171,24 @@ export default function Footer() {
             <p className="text-slate-600 text-sm text-center md:text-left">
               © {new Date().getFullYear()} Luminum Agency. All rights reserved. Empowering businesses to shine online.
             </p>
-            <div className="flex gap-6">
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-6 md:justify-end">
               <Link
-                href="/privacy"
+                href="/privacy-policy"
                 className="text-slate-600 hover:text-[#302cff] transition-colors text-sm font-medium"
               >
                 Privacy Policy
               </Link>
-              <Link href="/terms" className="text-slate-600 hover:text-[#302cff] transition-colors text-sm font-medium">
+              <Link
+                href="/terms-of-service"
+                className="text-slate-600 hover:text-[#302cff] transition-colors text-sm font-medium"
+              >
                 Terms of Service
+              </Link>
+              <Link
+                href="/cookies"
+                className="text-slate-600 hover:text-[#302cff] transition-colors text-sm font-medium"
+              >
+                Cookies
               </Link>
             </div>
           </div>

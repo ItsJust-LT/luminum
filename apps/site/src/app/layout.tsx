@@ -3,9 +3,8 @@ import type { Metadata, Viewport } from "next"
 import { Inter, Poppins } from "next/font/google"
 import Header from "@/components/header"
 import Footer from "@/components/footer"
-import { GoogleTagManager } from "@/components/gtm"
+import { LuminumAnalytics } from "@/components/luminum-analytics"
 import "./globals.css"
-import Script from "next/script"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -20,9 +19,14 @@ const poppins = Poppins({
   display: "swap",
 })
 
+const siteUrl = "https://luminum.agency"
 
 export const metadata: Metadata = {
-  title: "Luminum Agency - Professional Web Development & Design Services",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: "Luminum Agency — Web Design & Development in South Africa",
+    template: "%s | Luminum Agency",
+  },
   description:
     "Transform your business with professional web development, custom design, and digital solutions. Expert team delivering modern, responsive websites that drive results.",
   keywords:
@@ -35,7 +39,6 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL("https://luminum.agency"),
   alternates: {
     canonical: "/",
   },
@@ -49,7 +52,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/og-image.png",
+        url: "/og-image.jpg",
         width: 1200,
         height: 630,
         alt: "Luminum Agency - Professional Web Development Services",
@@ -61,7 +64,7 @@ export const metadata: Metadata = {
     title: "Luminum Agency - Professional Web Development & Design Services",
     description:
       "Transform your business with professional web development, custom design, and digital solutions. Expert team delivering modern, responsive websites that drive results.",
-    images: ["/og-image.png"],
+    images: ["/og-image.jpg"],
     creator: "@luminum_agency",
   },
   robots: {
@@ -75,17 +78,42 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
-  verification: {
-    google: "your-google-verification-code",
-  },
 }
 
 export const viewport: Viewport = {
-  themeColor: "#0B22E1",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#0B22E1" },
+    { media: "(prefers-color-scheme: dark)", color: "#1e1b4b" },
+  ],
   width: "device-width",
   initialScale: 1,
+  colorScheme: "light",
 }
 
+const organizationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Luminum Agency",
+  url: siteUrl,
+  logo: `${siteUrl}/logo.png`,
+  description:
+    "Professional web design and development agency in South Africa. Custom websites, SEO, e-commerce, and digital marketing.",
+  address: {
+    "@type": "PostalAddress",
+    addressLocality: "Johannesburg",
+    addressRegion: "Gauteng",
+    addressCountry: "ZA",
+  },
+  sameAs: ["https://instagram.com/luminum_agency", "https://x.com/luminum_agency"],
+}
+
+const websiteJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Luminum Agency",
+  url: siteUrl,
+  publisher: { "@type": "Organization", name: "Luminum Agency" },
+}
 
 export default function RootLayout({
   children,
@@ -93,37 +121,30 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en-ZA" suppressHydrationWarning>
       <head>
-        {/* Google Analytics */}
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-9CNYPQJQHR"
-          strategy="afterInteractive"
-        />
-        <Script
-          id="google-analytics"
-          strategy="afterInteractive"
+        <script
+          type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: `
-              window.dataLayer = window.dataLayer || [];
-              function gtag(){dataLayer.push(arguments);}
-              gtag('js', new Date());
-              gtag('config', 'G-9CNYPQJQHR');
-            `,
+            __html: JSON.stringify([organizationJsonLd, websiteJsonLd]),
           }}
         />
-
-        {/* Luminum Analytics */}
-        <Script
-          src="https://analytics.luminum.agency/script.js?websiteId=ef4cc088-5c62-4cb6-8ce7-10204e266621"
-          strategy="afterInteractive"
-        />
       </head>
-      <body className={`${inter.variable} ${poppins.variable} font-sans`}>
-        <GoogleTagManager />
+      <body
+        className={`${inter.variable} ${poppins.variable} min-h-dvh bg-background font-sans antialiased`}
+      >
+        <LuminumAnalytics
+          websiteId={process.env.NEXT_PUBLIC_LUMINUM_WEBSITE_ID}
+          analyticsBaseUrl={process.env.NEXT_PUBLIC_LUMINUM_ANALYTICS_URL}
+        />
+        <a href="#main-content" className="sr-only-focusable">
+          Skip to main content
+        </a>
         <Header />
         <div className="flex min-h-screen flex-col">
-          <main className="flex-1">{children}</main>
+          <main id="main-content" className="flex-1 outline-none" tabIndex={-1}>
+            {children}
+          </main>
           <Footer />
         </div>
       </body>

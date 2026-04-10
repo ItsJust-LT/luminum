@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ArrowRight, MapPin, Clock, DollarSign, Users } from "lucide-react"
 import Link from "next/link"
+import { EASE_OUT } from "@/lib/motion"
 
 export default function CareersPage() {
   const fadeIn = {
@@ -13,7 +14,7 @@ export default function CareersPage() {
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.6, ease: "easeOut" },
+      transition: { duration: 0.6, ease: EASE_OUT },
     },
   }
 
@@ -33,7 +34,7 @@ export default function CareersPage() {
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.5, ease: "easeOut" },
+      transition: { duration: 0.5, ease: EASE_OUT },
     },
   }
 

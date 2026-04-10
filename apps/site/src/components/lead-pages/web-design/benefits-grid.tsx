@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Code, Smartphone, Search, Shield, Zap, Users, Globe, HeadphonesIcon, CheckCircle, Star } from "lucide-react"
 import Image from "next/image"
+import { SITE } from "@/lib/site-copy"
+import { EASE_OUT } from "@/lib/motion"
 
 export function BenefitsGrid() {
     const benefits = [
@@ -91,7 +93,7 @@ export function BenefitsGrid() {
             scale: 1,
             transition: {
                 duration: 0.6,
-                ease: "easeOut",
+                ease: EASE_OUT,
             },
         },
     }
@@ -157,7 +159,10 @@ export function BenefitsGrid() {
                     >
                         <Badge className="px-4 py-2 sm:px-8 sm:py-4 text-xs sm:text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-0 shadow-xl hover:shadow-blue-500/25 transition-all duration-300 max-w-[90vw] text-center">
                             <Star className="w-3 h-3 sm:w-5 sm:h-5 mr-1 sm:mr-2 fill-current flex-shrink-0" />
-                            <span className="truncate">Why 500+ Businesses Choose Luminum Agency</span>
+                            <span className="truncate">
+                              Why businesses choose Luminum · {SITE.stats.projectsDelivered}{" "}
+                              {SITE.statLabels.projectsDelivered.toLowerCase()}
+                            </span>
                         </Badge>
                     </motion.div>
 
@@ -308,8 +313,9 @@ export function BenefitsGrid() {
                             transition={{ duration: 0.8, delay: 0.3 }}
                             viewport={{ once: true }}
                         >
-                            Join 500+ businesses who chose Luminum Agency for their professional website development. Get your free
-                            quote and see how we can transform your online presence with custom development that actually works.
+                            Join South African businesses who work with Luminum — {SITE.stats.projectsDelivered}{" "}
+                            {SITE.statLabels.projectsDelivered.toLowerCase()} and counting. Get your free quote and see how custom
+                            development can support your goals.
                         </motion.p>
 
                         <motion.div

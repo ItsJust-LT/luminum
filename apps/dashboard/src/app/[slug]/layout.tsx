@@ -46,6 +46,7 @@ import { cn } from "@/lib/utils"
 import { CustomDomainCtx, type CustomDomainContext } from "@/lib/hooks/use-custom-domain"
 import { orgNavPath } from "@/lib/org-nav-path"
 import { orgLogoOrBrandProxy } from "@/lib/org-display-logo"
+import { MainContentMotion } from "@/components/motion/main-content-motion"
 
 interface Organization {
   id: string
@@ -839,7 +840,11 @@ export default function SlugLayout({
               isWhatsappRoute || isMailRoute ? "overflow-hidden p-0" : "scrollbar-app overflow-auto px-3 py-3 sm:px-4 md:px-6 md:py-5 lg:px-8",
             )}>
               <OrgRouteGuard slug={slug} flatRoutes={flatRoutes}>
-                {children}
+                {isWhatsappRoute || isMailRoute ? (
+                  children
+                ) : (
+                  <MainContentMotion routeKey={pathname ?? ""}>{children}</MainContentMotion>
+                )}
               </OrgRouteGuard>
             </main>
           </SidebarInset>

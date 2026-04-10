@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ArrowRight, MessageCircle, Star, CheckCircle, Sparkles } from 'lucide-react'
 import Image from "next/image"
+import { SITE } from "@/lib/site-copy"
 
 export function WebDesignHero() {
   const scrollToForm = () => {
@@ -13,7 +14,7 @@ export function WebDesignHero() {
 
   const openWhatsApp = () => {
     window.open(
-      "https://wa.me/27689186043?text=Hi%20I%27m%20interested%20in%20Luminum%20Agency%27s%20professional%20web%20development%20service",
+      `https://wa.me/${SITE.phoneTel}?text=Hi%20I%27m%20interested%20in%20Luminum%20Agency%27s%20professional%20web%20development%20service`,
       "_blank",
     )
   }
@@ -43,7 +44,7 @@ export function WebDesignHero() {
             </div>
             <Badge className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-0 shadow-lg">
               <Star className="w-4 h-4 mr-2 fill-current" />
-              500+ Happy Clients • Premium Development
+              {SITE.stats.projectsDelivered} {SITE.statLabels.projectsDelivered} · Premium development
             </Badge>
           </motion.div>
 
@@ -199,7 +200,10 @@ export function WebDesignHero() {
                   <Star key={i} className="w-5 h-5 fill-yellow-400 text-yellow-400" />
                 ))}
               </div>
-              <span className="text-gray-700 font-medium">4.9/5 from 500+ clients</span>
+              <span className="text-gray-700 font-medium">
+                {SITE.stats.clientRating} · {SITE.stats.projectsDelivered}{" "}
+                {SITE.statLabels.projectsDelivered.toLowerCase()}
+              </span>
             </div>
 
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200 max-w-3xl mx-auto">

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { MapPin, Clock, Heart, Award, Users, Zap } from "lucide-react"
 import Image from "next/image"
+import { SITE } from "@/lib/site-copy"
 
 export default function ContactInfo() {
   const [isVisible, setIsVisible] = useState(false)
@@ -26,10 +27,10 @@ export default function ContactInfo() {
   }, [])
 
   const stats = [
-    { icon: Users, value: "100+", label: "Happy Clients" },
-    { icon: Award, value: "150+", label: "Projects Completed" },
-    { icon: Zap, value: "98%", label: "Satisfaction Rate" },
-    { icon: Heart, value: "24/7", label: "Support Available" },
+    { icon: Users, value: SITE.stats.projectsDelivered, label: SITE.statLabels.projectsDelivered },
+    { icon: Award, value: SITE.stats.yearsExperience, label: SITE.statLabels.yearsExperience },
+    { icon: Zap, value: SITE.stats.clientSatisfaction, label: SITE.statLabels.clientSatisfaction },
+    { icon: Heart, value: "24/7", label: "Support available" },
   ]
 
   return (

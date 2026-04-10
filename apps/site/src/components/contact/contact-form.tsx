@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Send, CheckCircle2 } from "lucide-react"
+import { submitLuminumForm } from "@/lib/luminum-forms"
 
 export default function ContactForm() {
   const [isVisible, setIsVisible] = useState(false)
@@ -35,17 +36,34 @@ export default function ContactForm() {
     e.preventDefault()
     setIsSubmitting(true)
 
-    // Simulate form submission
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    const form = e.currentTarget
+    const fd = new FormData(form)
+
+    const result = await submitLuminumForm({
+      formName: "Contact",
+      fields: {
+        name: String(fd.get("name") ?? ""),
+        email: String(fd.get("email") ?? ""),
+        phone: String(fd.get("phone") ?? ""),
+        service: String(fd.get("service") ?? ""),
+        budget: String(fd.get("budget") ?? ""),
+        message: String(fd.get("message") ?? ""),
+        source: "contact_page",
+        submittedAt: new Date().toISOString(),
+      },
+    })
 
     setIsSubmitting(false)
-    setIsSubmitted(true)
 
-    // Reset form after 3 seconds
-    setTimeout(() => {
-      setIsSubmitted(false)
-      ;(e.target as HTMLFormElement).reset()
-    }, 3000)
+    if (result.ok) {
+      setIsSubmitted(true)
+      setTimeout(() => {
+        setIsSubmitted(false)
+        form.reset()
+      }, 3000)
+    } else {
+      alert(result.error)
+    }
   }
 
   return (

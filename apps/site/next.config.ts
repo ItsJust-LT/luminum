@@ -1,38 +1,33 @@
 import type { NextConfig } from "next";
+import { loadEnvConfig } from "@next/env";
 
-function apiImageRemotePattern(): { protocol: "http" | "https"; hostname: string; pathname: string } | null {
-  const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (!raw) return null;
-  try {
-    const u = new URL(raw);
-    const protocol = u.protocol === "http:" ? "http" : "https";
-    return { protocol, hostname: u.hostname, pathname: "/api/public/blog-assets/**" };
-  } catch {
-    return null;
-  }
-}
-
-const blogAssetRemote = apiImageRemotePattern();
-
-/** Permissive image policy: allow any http/https host for next/image. */
-const imageRemotePatterns: NonNullable<NonNullable<NextConfig["images"]>["remotePatterns"]> = [
-  {
-    protocol: "https",
-    hostname: "**",
-    pathname: "/**",
-  },
-  {
-    protocol: "http",
-    hostname: "**",
-    pathname: "/**",
-  },
-];
-if (blogAssetRemote) imageRemotePatterns.unshift(blogAssetRemote);
+const projectDir = process.cwd();
+loadEnvConfig(projectDir);
 
 const nextConfig: NextConfig = {
-  poweredByHeader: false,
+  transpilePackages: ["@itsjust-lt/website-kit", "@itsjust-lt/blog-renderer"],
+  // @itsjust-lt/* packages use ESM import specifiers (`./file.js`) while sources are `.ts`.
+  // Map those requests to TypeScript so webpack can resolve them.
+  webpack: (config) => {
+    config.resolve.extensionAlias = {
+      ".js": [".ts", ".tsx", ".js"],
+      ".jsx": [".tsx", ".jsx", ".js"],
+    };
+    return config;
+  },
   images: {
-    remotePatterns: imageRemotePatterns,
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "**",
+        pathname: "/**",
+      },
+      {
+        protocol: "http",
+        hostname: "**",
+        pathname: "/**",
+      },
+    ],
   },
 };
 

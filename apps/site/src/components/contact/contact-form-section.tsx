@@ -133,7 +133,7 @@ export default function ContactFormSection() {
       scale: 1,
       transition: {
         duration: 0.7,
-        ease: [0.25, 0.46, 0.45, 0.94],
+        ease: [0.25, 0.46, 0.45, 0.94] as const,
       },
     },
   }
@@ -144,9 +144,9 @@ export default function ContactFormSection() {
       x: [-4, 4, -4],
       rotate: [0, 360],
       transition: {
-        y: { duration: 4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" },
-        x: { duration: 6, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" },
-        rotate: { duration: 12, repeat: Number.POSITIVE_INFINITY, ease: "linear" },
+        y: { duration: 4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" as const },
+        x: { duration: 6, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" as const },
+        rotate: { duration: 12, repeat: Number.POSITIVE_INFINITY, ease: "linear" as const },
       },
     },
   }

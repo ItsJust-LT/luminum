@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { X } from "lucide-react"
 import { useState, useEffect } from "react"
 import { FaWhatsapp } from "react-icons/fa"
-import { trackWhatsAppClick } from "@/lib/gtm"
+import { SITE } from "@/lib/site-copy"
 
 export function FloatingWhatsApp() {
   const [isVisible, setIsVisible] = useState(true)
@@ -27,10 +27,9 @@ export function FloatingWhatsApp() {
   }, [])
 
   const openWhatsApp = () => {
-    trackWhatsAppClick()
     setShowTooltip(false)
     window.open(
-      "https://wa.me/27689186043?text=Hi%20I%27m%20interested%20in%20Luminum%20Agency%27s%20professional%20web%20development%20service",
+      `https://wa.me/${SITE.phoneTel}?text=Hi%20I%27m%20interested%20in%20Luminum%20Agency%27s%20professional%20web%20development%20service`,
       "_blank",
     )
   }
