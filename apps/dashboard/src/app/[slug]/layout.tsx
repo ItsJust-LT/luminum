@@ -22,14 +22,6 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Building2, Settings, LogOut, ChevronDown, AlertTriangle, Menu } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
 import { OrganizationProvider } from "@/lib/contexts/organization-context"
 import { EmailsProvider } from "@/lib/contexts/emails-context"
 import { OrganizationSidebarWrapper } from "@/components/organization/organization-sidebar-wrapper"
@@ -129,9 +121,6 @@ export default function SlugLayout({
   const emailsNavPath = orgNavPath(slug, flatRoutes, "emails")
   const isMailRoute =
     pathname === emailsNavPath || (pathname?.startsWith(`${emailsNavPath}/`) ?? false)
-  const blogsNavPath = orgNavPath(slug, flatRoutes, "blogs")
-  const isBlogsRoute =
-    pathname === blogsNavPath || (pathname?.startsWith(`${blogsNavPath}/`) ?? false)
 
   useEffect(() => {
     if (!isPending && session) {
@@ -693,61 +682,7 @@ export default function SlugLayout({
               {/* Mobile Menu Trigger */}
               <MobileMenu />
 
-              {!isBlogsRoute ? (
-                <>
-                  {/* Brand — glass chip, no hard rings */}
-                  <div className="flex min-w-0 max-w-[min(100%,18rem)] items-center gap-2.5 rounded-2xl bg-muted/50 px-2 py-1.5 pr-3 md:max-w-[min(100%,22rem)] md:gap-3 md:px-2.5 md:py-2 md:pr-3.5">
-                    <Avatar className="h-9 w-9 shrink-0 rounded-xl shadow-none ring-0 md:h-10 md:w-10">
-                      <AvatarImage
-                        src={
-                          state.organization
-                            ? orgLogoOrBrandProxy(state.organization.logo, state.organization.name)
-                            : "/images/logo.png"
-                        }
-                        alt={state.organization?.name || "Workspace"}
-                        className="object-contain p-1.5"
-                      />
-                      <AvatarFallback className="rounded-xl bg-primary/15 text-sm font-semibold text-primary md:text-base">
-                        {(state.organization?.name || "L").charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex min-w-0 flex-col leading-tight">
-                      <span className="text-foreground truncate text-sm font-semibold tracking-tight md:text-[0.95rem]">
-                        {state.organization?.name || "Dashboard"}
-                      </span>
-                      {!isCustomDomain && (
-                        <span className="text-muted-foreground/75 hidden text-[11px] font-medium sm:block">
-                          Dashboard
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <Breadcrumb className="text-muted-foreground/90 hidden min-w-0 flex-1 md:block">
-                    <BreadcrumbList className="flex-nowrap gap-1.5 sm:gap-2">
-                      <BreadcrumbItem>
-                        <BreadcrumbLink
-                          href={orgNavPath(slug, flatRoutes, "dashboard")}
-                          className="text-muted-foreground hover:text-foreground font-medium transition-colors"
-                        >
-                          Dashboard
-                        </BreadcrumbLink>
-                      </BreadcrumbItem>
-                      <BreadcrumbSeparator className="text-muted-foreground/40 [&>svg]:size-3.5" />
-                      <BreadcrumbItem className="min-w-0">
-                        <BreadcrumbPage className="text-foreground/90 max-w-[12rem] truncate capitalize md:max-w-[20rem]">
-                          {pathname?.split("/").filter(Boolean).at(-1) ?? "overview"}
-                        </BreadcrumbPage>
-                      </BreadcrumbItem>
-                    </BreadcrumbList>
-                  </Breadcrumb>
-                </>
-              ) : (
-                <div className="min-w-0 flex-1">
-                  <p className="text-foreground text-sm font-semibold tracking-tight md:text-base">Blog workspace</p>
-                  <p className="text-muted-foreground text-xs">Content and post analytics</p>
-                </div>
-              )}
+              <div className="min-w-0 flex-1" aria-hidden />
 
               {/* Right Section */}
               <div className="ml-auto flex items-center gap-2 md:gap-4">
