@@ -105,6 +105,8 @@ function NavMenuWithHighlight({
     )
   }
 
+  const selectedHref = items.find((item) => isActive(item.href))?.href ?? null
+
   if (reduceMotion) {
     return (
       <SidebarMenu className="space-y-2">
@@ -122,6 +124,7 @@ function NavMenuWithHighlight({
       hover
       click={false}
       enabled
+      value={selectedHref}
       transition={{ type: "spring", stiffness: 500, damping: 38, mass: 0.78 }}
       className="pointer-events-none rounded-lg bg-primary/14 shadow-[inset_0_0_0_1px] shadow-primary/20 dark:bg-primary/20 dark:shadow-primary/30"
       containerClassName="relative"

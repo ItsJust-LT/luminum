@@ -69,7 +69,7 @@ function DropdownMenuContent({
     >
       <DropdownMenuHighlightPrimitive
         transition={{ type: 'spring', stiffness: 460, damping: 36, mass: 0.82 }}
-        className="pointer-events-none absolute inset-0 z-0 rounded-lg bg-primary/12 shadow-[inset_0_0_0_1px] shadow-primary/20 dark:bg-primary/18 dark:shadow-primary/25"
+        className="pointer-events-none z-0 rounded-lg bg-primary/12 shadow-[inset_0_0_0_1px] shadow-primary/20 dark:bg-primary/18 dark:shadow-primary/25"
       >
         {children}
       </DropdownMenuHighlightPrimitive>
@@ -100,6 +100,9 @@ function DropdownMenuItem({
   textValue,
   ...props
 }: DropdownMenuItemProps) {
+  const itemValueFallback = React.useId();
+  const highlightValue = (textValue?.trim() || itemValueFallback) as string;
+
   const itemClassName = cn(
     "focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:!text-destructive [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full min-w-0 cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none transition-colors duration-200 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     className,
@@ -108,6 +111,7 @@ function DropdownMenuItem({
   if (asChild && React.isValidElement(children)) {
     return (
       <DropdownMenuHighlightItemPrimitive
+        value={highlightValue}
         activeClassName={
           variant === 'destructive'
             ? 'rounded-md bg-destructive/10 dark:bg-destructive/20'
@@ -131,6 +135,7 @@ function DropdownMenuItem({
               ),
               ...(inset ? { 'data-inset': true } : {}),
               'data-variant': variant,
+              'data-value': highlightValue,
             } as Record<string, unknown>
           )}
         </DropdownMenuItemRadix>
@@ -140,6 +145,7 @@ function DropdownMenuItem({
 
   return (
     <DropdownMenuHighlightItemPrimitive
+      value={highlightValue}
       activeClassName={
         variant === 'destructive'
           ? 'rounded-md bg-destructive/10 dark:bg-destructive/20'
@@ -154,6 +160,7 @@ function DropdownMenuItem({
         className={itemClassName}
         onSelect={onSelect}
         textValue={textValue}
+        data-value={highlightValue}
         {...props}
       >
         {children}
@@ -169,10 +176,14 @@ function DropdownMenuCheckboxItem({
   children,
   checked,
   disabled,
+  textValue,
   ...props
 }: DropdownMenuCheckboxItemProps) {
+  const itemValueFallback = React.useId();
+  const highlightValue = (textValue?.trim() || itemValueFallback) as string;
+
   return (
-    <DropdownMenuHighlightItemPrimitive disabled={disabled}>
+    <DropdownMenuHighlightItemPrimitive value={highlightValue} disabled={disabled}>
       <DropdownMenuCheckboxItemPrimitive
         disabled={disabled}
         className={cn(
@@ -180,6 +191,8 @@ function DropdownMenuCheckboxItem({
           className,
         )}
         checked={checked}
+        textValue={textValue}
+        data-value={highlightValue}
         {...props}
       >
         <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
@@ -208,16 +221,28 @@ function DropdownMenuRadioItem({
   className,
   children,
   disabled,
+  value,
+  textValue,
   ...props
 }: DropdownMenuRadioItemProps) {
+  const itemValueFallback = React.useId();
+  const highlightValue = (
+    value != null && String(value).trim() !== ''
+      ? String(value)
+      : textValue?.trim() || itemValueFallback
+  ) as string;
+
   return (
-    <DropdownMenuHighlightItemPrimitive disabled={disabled}>
+    <DropdownMenuHighlightItemPrimitive value={highlightValue} disabled={disabled}>
       <DropdownMenuRadioItemPrimitive
         disabled={disabled}
         className={cn(
           "focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
           className,
         )}
+        value={value}
+        textValue={textValue}
+        data-value={highlightValue}
         {...props}
       >
         <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
@@ -313,13 +338,19 @@ function DropdownMenuSubTrigger({
   className,
   inset,
   children,
+  textValue,
   ...props
 }: DropdownMenuSubTriggerProps) {
+  const itemValueFallback = React.useId();
+  const highlightValue = (textValue?.trim() || itemValueFallback) as string;
+
   return (
-    <DropdownMenuHighlightItemPrimitive disabled={disabled}>
+    <DropdownMenuHighlightItemPrimitive value={highlightValue} disabled={disabled}>
       <DropdownMenuSubTriggerPrimitive
         disabled={disabled}
         data-inset={inset}
+        textValue={textValue}
+        data-value={highlightValue}
         className={cn(
           'focus:text-accent-foreground data-[state=open]:text-accent-foreground flex cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[inset]:pl-8',
           'data-[state=open]:[&_[data-slot=chevron]]:rotate-90 [&_[data-slot=chevron]]:transition-transform [&_[data-slot=chevron]]:duration-300 [&_[data-slot=chevron]]:ease-in-out',

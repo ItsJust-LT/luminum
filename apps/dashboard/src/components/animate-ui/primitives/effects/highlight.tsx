@@ -26,6 +26,8 @@ type HighlightContextType<T extends string> = {
   mode: HighlightMode;
   activeValue: T | null;
   setActiveValue: (value: T | null) => void;
+  /** When using hover, restore to this after pointer leaves an item (controlled `value` / `defaultValue` on Highlight). */
+  selectionValue: T | null;
   setBounds: (bounds: DOMRect) => void;
   clearBounds: () => void;
   id: string;
@@ -177,6 +179,9 @@ function Highlight<T extends React.ElementType = 'div'>({
   const [activeClassNameState, setActiveClassNameState] =
     React.useState<string>('');
 
+  const selectionValue: string | null =
+    value !== undefined ? value ?? null : defaultValue ?? null;
+
   const safeSetActiveValue = (id: string | null) => {
     setActiveValue((prev) => {
       if (prev !== id) {
@@ -306,6 +311,7 @@ function Highlight<T extends React.ElementType = 'div'>({
         mode,
         activeValue,
         setActiveValue: safeSetActiveValue,
+        selectionValue,
         id,
         hover,
         click,
@@ -399,6 +405,7 @@ function HighlightItem<T extends React.ElementType>({
   const {
     activeValue,
     setActiveValue,
+    selectionValue,
     mode,
     setBounds,
     clearBounds,
@@ -496,7 +503,7 @@ function HighlightItem<T extends React.ElementType>({
           element.props.onMouseEnter?.(e);
         },
         onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => {
-          setActiveValue(null);
+          setActiveValue(selectionValue ?? null);
           element.props.onMouseLeave?.(e);
         },
       }
