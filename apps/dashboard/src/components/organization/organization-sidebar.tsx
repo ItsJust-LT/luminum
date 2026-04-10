@@ -72,13 +72,13 @@ function NavMenuWithHighlight({
 
     return (
       <SidebarMenuItem>
-        <SidebarMenuButton asChild className={`group relative z-[1] rounded-lg p-2 transition-colors ${btnSurface}`}>
+        <SidebarMenuButton asChild className={`group relative z-[1] rounded-lg p-2 transition-colors duration-200 ${btnSurface}`}>
           <Link href={item.href} className="flex w-full min-w-0 items-center gap-3">
             <div
               className={`flex-shrink-0 rounded-md p-2 transition-colors ${
                 isItemActive
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "bg-muted text-muted-foreground group-hover:text-foreground"
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[0_0_0_1px] shadow-sidebar-primary/30"
+                  : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-foreground"
               }`}
             >
               <item.icon
@@ -122,8 +122,8 @@ function NavMenuWithHighlight({
       hover
       click={false}
       enabled
-      transition={{ type: "spring", stiffness: 400, damping: 34, mass: 0.85 }}
-      className="pointer-events-none rounded-lg bg-primary/12 shadow-[inset_0_0_0_1px] shadow-primary/15 dark:bg-primary/18"
+      transition={{ type: "spring", stiffness: 500, damping: 38, mass: 0.78 }}
+      className="pointer-events-none rounded-lg bg-primary/14 shadow-[inset_0_0_0_1px] shadow-primary/20 dark:bg-primary/20 dark:shadow-primary/30"
       containerClassName="relative"
     >
       <SidebarMenu className="relative space-y-1">

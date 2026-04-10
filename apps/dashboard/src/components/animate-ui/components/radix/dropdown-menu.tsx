@@ -62,12 +62,15 @@ function DropdownMenuContent({
     <DropdownMenuContentPrimitive
       sideOffset={sideOffset}
       className={cn(
-        'bg-popover text-popover-foreground z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border p-1 shadow-md outline-none',
+        'bg-popover/98 text-popover-foreground z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border border-border/80 p-1.5 shadow-lg outline-none backdrop-blur-[2px]',
         className,
       )}
       {...props}
     >
-      <DropdownMenuHighlightPrimitive className="absolute inset-0 bg-accent z-0 rounded-sm">
+      <DropdownMenuHighlightPrimitive
+        transition={{ type: 'spring', stiffness: 460, damping: 36, mass: 0.82 }}
+        className="pointer-events-none absolute inset-0 z-0 rounded-lg bg-primary/12 shadow-[inset_0_0_0_1px] shadow-primary/20 dark:bg-primary/18 dark:shadow-primary/25"
+      >
         {children}
       </DropdownMenuHighlightPrimitive>
     </DropdownMenuContentPrimitive>
@@ -98,7 +101,7 @@ function DropdownMenuItem({
   ...props
 }: DropdownMenuItemProps) {
   const itemClassName = cn(
-    "focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:!text-destructive [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full min-w-0 cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+    "focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:!text-destructive [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full min-w-0 cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-hidden select-none transition-colors duration-200 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     className,
   );
 
@@ -107,8 +110,8 @@ function DropdownMenuItem({
       <DropdownMenuHighlightItemPrimitive
         activeClassName={
           variant === 'destructive'
-            ? 'bg-destructive/10 dark:bg-destructive/20'
-            : ''
+            ? 'rounded-md bg-destructive/10 dark:bg-destructive/20'
+            : 'rounded-md bg-primary/12 dark:bg-primary/18'
         }
         disabled={disabled}
       >
@@ -139,8 +142,8 @@ function DropdownMenuItem({
     <DropdownMenuHighlightItemPrimitive
       activeClassName={
         variant === 'destructive'
-          ? 'bg-destructive/10 dark:bg-destructive/20'
-          : ''
+          ? 'rounded-md bg-destructive/10 dark:bg-destructive/20'
+          : 'rounded-md bg-primary/12 dark:bg-primary/18'
       }
       disabled={disabled}
     >
