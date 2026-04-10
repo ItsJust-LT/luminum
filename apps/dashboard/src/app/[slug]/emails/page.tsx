@@ -543,6 +543,8 @@ function EmailsListPageInner() {
     mailbox === "inbox" ? (unreadCountFromApi ?? folderCounts.inboxUnread) : emails.filter((e) => !e.read).length
 
   const readFilterValue = filterRead === undefined ? "all" : filterRead ? "read" : "unread"
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 || selectedEmailAddresses.length > 0 || filterRead !== undefined
 
   if (!organization) return null
 
@@ -694,127 +696,156 @@ function EmailsListPageInner() {
 
         <Separator />
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-4">
-          <div className="relative min-w-0 flex-1 lg:max-w-xl">
-            <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
-            <Input
-              placeholder="Search subject, sender, body…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => {
-                searchInputFocusedRef.current = true
-              }}
-              onBlur={() => {
-                searchInputFocusedRef.current = false
-              }}
-              className="h-11 pl-9 text-base sm:h-10 sm:text-sm"
-              aria-label="Search mail"
-            />
-          </div>
-
-          <div className="flex w-full flex-col gap-3 min-[520px]:flex-row min-[520px]:flex-wrap min-[520px]:items-end min-[520px]:gap-3">
-            <Popover open={emailSelectorOpen} onOpenChange={setEmailSelectorOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant={selectedEmailAddresses.length > 0 ? "secondary" : "outline"}
-                  className="h-11 w-full min-w-0 justify-between sm:h-10 sm:w-[min(100%,280px)]"
-                  disabled={orgLoading || availableEmailAddresses.length === 0}
-                >
-                  <span className="flex items-center gap-2 truncate">
-                    <Inbox className="h-4 w-4 shrink-0" />
-                    <span className="truncate">
-                      {selectedEmailAddresses.length === 0
-                        ? "All addresses"
-                        : selectedEmailAddresses.length === 1
-                          ? selectedEmailAddresses[0]
-                          : `${selectedEmailAddresses.length} addresses`}
-                    </span>
-                  </span>
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[min(calc(100vw-2rem),320px)] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Filter addresses…" />
-                  <CommandList className="max-h-[280px]">
-                    <CommandEmpty>No addresses found.</CommandEmpty>
-                    <CommandGroup>
-                      <CommandItem
-                        onSelect={() => {
-                          setSelectedEmailAddresses([])
-                          setEmailSelectorOpen(false)
-                          pushMailListUrl({ addrs: null })
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <Check
-                          className={cn("mr-2 h-4 w-4", selectedEmailAddresses.length === 0 ? "opacity-100" : "opacity-0")}
-                        />
-                        All addresses
-                        {selectedEmailAddresses.length === 0 ? (
-                          <Badge variant="secondary" className="ml-auto text-xs">
-                            Active
-                          </Badge>
-                        ) : null}
-                      </CommandItem>
-                      {availableEmailAddresses.length > 0 ? <div className="bg-border my-1 h-px" /> : null}
-                      {availableEmailAddresses.map((email) => (
-                        <CommandItem
-                          key={email}
-                          onSelect={() => {
-                            setSelectedEmailAddresses((prev) => {
-                              const next = prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]
-                              pushMailListUrl({ addrs: next.length ? next.join(",") : null })
-                              return next
-                            })
-                          }}
-                          className="cursor-pointer"
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              selectedEmailAddresses.includes(email) ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          <Mail className="text-muted-foreground mr-2 h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate text-sm">{email}</span>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-
+        <div className="rounded-xl border border-border/70 bg-card/80 p-3 shadow-sm backdrop-blur-sm sm:p-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-4">
             <div className="space-y-1.5">
-              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Read state</span>
-              <Select
-                value={readFilterValue}
-                onValueChange={(v) => {
-                  if (v === "all") {
-                    setFilterRead(undefined)
-                    pushMailListUrl({ read: null })
-                  } else if (v === "read") {
-                    setFilterRead(true)
-                    pushMailListUrl({ read: "read" })
-                  } else {
-                    setFilterRead(false)
-                    pushMailListUrl({ read: "unread" })
-                  }
-                }}
-                disabled={orgLoading}
-              >
-                <SelectTrigger className="h-11 w-full sm:h-10 sm:w-[min(100%,200px)]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="unread">Unread</SelectItem>
-                  <SelectItem value="read">Read</SelectItem>
-                </SelectContent>
-              </Select>
+              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Search mail</span>
+              <div className="relative min-w-0">
+                <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
+                <Input
+                  placeholder="Search subject, sender, body..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => {
+                    searchInputFocusedRef.current = true
+                  }}
+                  onBlur={() => {
+                    searchInputFocusedRef.current = false
+                  }}
+                  className="h-11 border-border/80 bg-background pl-9 text-base sm:h-10 sm:text-sm"
+                  aria-label="Search mail"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Addresses</span>
+                <Popover open={emailSelectorOpen} onOpenChange={setEmailSelectorOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={selectedEmailAddresses.length > 0 ? "secondary" : "outline"}
+                      className="h-11 w-full min-w-0 justify-between border-border/80 sm:h-10 sm:min-w-[250px]"
+                      disabled={orgLoading || availableEmailAddresses.length === 0}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <Inbox className="h-4 w-4 shrink-0" />
+                        <span className="truncate">
+                          {selectedEmailAddresses.length === 0
+                            ? "All addresses"
+                            : selectedEmailAddresses.length === 1
+                              ? selectedEmailAddresses[0]
+                              : `${selectedEmailAddresses.length} addresses`}
+                        </span>
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[min(calc(100vw-2rem),340px)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Filter addresses..." />
+                      <CommandList className="max-h-[280px]">
+                        <CommandEmpty>No addresses found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            onSelect={() => {
+                              setSelectedEmailAddresses([])
+                              setEmailSelectorOpen(false)
+                              pushMailListUrl({ addrs: null })
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Check
+                              className={cn("mr-2 h-4 w-4", selectedEmailAddresses.length === 0 ? "opacity-100" : "opacity-0")}
+                            />
+                            All addresses
+                            {selectedEmailAddresses.length === 0 ? (
+                              <Badge variant="secondary" className="ml-auto text-xs">
+                                Active
+                              </Badge>
+                            ) : null}
+                          </CommandItem>
+                          {availableEmailAddresses.length > 0 ? <div className="bg-border my-1 h-px" /> : null}
+                          {availableEmailAddresses.map((email) => (
+                            <CommandItem
+                              key={email}
+                              onSelect={() => {
+                                setSelectedEmailAddresses((prev) => {
+                                  const next = prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]
+                                  pushMailListUrl({ addrs: next.length ? next.join(",") : null })
+                                  return next
+                                })
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  selectedEmailAddresses.includes(email) ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              <Mail className="text-muted-foreground mr-2 h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate text-sm">{email}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Read state</span>
+                <Select
+                  value={readFilterValue}
+                  onValueChange={(v) => {
+                    if (v === "all") {
+                      setFilterRead(undefined)
+                      pushMailListUrl({ read: null })
+                    } else if (v === "read") {
+                      setFilterRead(true)
+                      pushMailListUrl({ read: "read" })
+                    } else {
+                      setFilterRead(false)
+                      pushMailListUrl({ read: "unread" })
+                    }
+                  }}
+                  disabled={orgLoading}
+                >
+                  <SelectTrigger className="h-11 w-full border-border/80 sm:h-10 sm:min-w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="unread">Unread</SelectItem>
+                    <SelectItem value="read">Read</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
+
+          {hasActiveFilters ? (
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
+                onClick={() => {
+                  setSearchQuery("")
+                  setDebouncedSearch("")
+                  setSelectedEmailAddresses([])
+                  setFilterRead(undefined)
+                  pushMailListUrl({ q: null, addrs: null, read: null })
+                }}
+              >
+                <X className="mr-1.5 h-3.5 w-3.5" />
+                Clear filters
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         {selectedEmailAddresses.length > 0 && (
