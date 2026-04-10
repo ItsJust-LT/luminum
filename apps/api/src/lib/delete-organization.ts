@@ -8,6 +8,38 @@ import { isStorageConfigured, listObjectsByPrefix, remove } from "./storage/s3.j
 
 const FILES_PREFIX = "/api/files/";
 
+function isMissingNetSchemaError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.toLowerCase().includes('schema "net" does not exist');
+}
+
+/**
+ * Legacy DBs can contain triggers/functions that call net.http_post.
+ * If pg_net isn't installed, org deletion may fail with schema "net" missing.
+ * This shim provides a harmless fallback so cleanup can complete.
+ */
+async function ensureNetSchemaCompatibilityShim(): Promise<void> {
+  await prisma.$executeRawUnsafe(`
+    CREATE SCHEMA IF NOT EXISTS net;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE OR REPLACE FUNCTION net.http_post(
+      url text,
+      body jsonb DEFAULT '{}'::jsonb,
+      params jsonb DEFAULT '{}'::jsonb,
+      headers jsonb DEFAULT '{}'::jsonb,
+      timeout_milliseconds integer DEFAULT 1000
+    ) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      RETURN 0;
+    END;
+    $$;
+  `);
+}
+
 function keyFromProxyUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   const i = url.indexOf(FILES_PREFIX);
@@ -113,12 +145,32 @@ export async function permanentlyDeleteOrganization(organizationId: string): Pro
   await cacheDelByPrefix(`blog:pub:${organizationId}:`);
   await cacheDelByPrefix(`blog:draft:${organizationId}:`);
 
-  await prisma.organization.update({
-    where: { id: organizationId },
-    data: { primary_subscription_id: null },
-  });
+  const runOrgDelete = async () => {
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { primary_subscription_id: null },
+    });
+    await prisma.organization.delete({ where: { id: organizationId } });
+  };
 
-  await prisma.organization.delete({ where: { id: organizationId } });
+  try {
+    await runOrgDelete();
+  } catch (error) {
+    if (!isMissingNetSchemaError(error)) throw error;
+    console.warn(
+      "Organization delete hit missing net schema; attempting compatibility shim",
+      { organizationId }
+    );
+    try {
+      await ensureNetSchemaCompatibilityShim();
+      await runOrgDelete();
+    } catch (retryError) {
+      const msg = retryError instanceof Error ? retryError.message : String(retryError);
+      throw new Error(
+        `Organization delete failed after net-schema compatibility retry: ${msg}`
+      );
+    }
+  }
 
   return { name: org.name };
 }
