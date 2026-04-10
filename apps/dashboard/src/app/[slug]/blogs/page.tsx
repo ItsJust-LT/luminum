@@ -74,6 +74,14 @@ type BlogRow = {
   updated_at?: string
 }
 
+type PageStatRow = {
+  page: string
+  views: number
+  uniqueVisitors: number
+  avgDuration: number
+  sharePercent: number
+}
+
 type StatusFilter = "all" | "published" | "draft" | "scheduled"
 
 type BlogSortKey = "updated_desc" | "updated_asc" | "title_asc"
@@ -98,6 +106,24 @@ function formatShortDate(iso?: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   })
+}
+
+function normalizePathname(raw: string): string {
+  const text = (raw || "").trim()
+  if (!text) return "/"
+  try {
+    if (text.startsWith("http://") || text.startsWith("https://")) {
+      return new URL(text).pathname.toLowerCase()
+    }
+  } catch {
+    /* ignore */
+  }
+  const q = text.split("?")[0] || text
+  return q.toLowerCase()
+}
+
+function isBlogPath(pathname: string): boolean {
+  return pathname.startsWith("/blog/") || pathname.startsWith("/blogs/")
 }
 
 function OrgBlogsListPageInner() {
@@ -150,6 +176,7 @@ function OrgBlogsListPageInner() {
   }, [query, pathname, router, searchParams])
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [blogPageStats, setBlogPageStats] = useState<PageStatRow[]>([])
 
   useEffect(() => {
     if (!organization?.id) return
@@ -166,6 +193,35 @@ function OrgBlogsListPageInner() {
     })()
     return () => {
       c = true
+    }
+  }, [organization?.id])
+
+  useEffect(() => {
+    if (!organization?.id) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const websites = (await api.websites.list(organization.id)) as Array<{ id?: string; analytics?: boolean }> | { data?: Array<{ id?: string; analytics?: boolean }> }
+        const rows = Array.isArray(websites) ? websites : websites?.data ?? []
+        const withAnalytics = rows.find((w) => w?.id && w?.analytics !== false) ?? rows.find((w) => w?.id)
+        if (!withAnalytics?.id) {
+          if (!cancelled) setBlogPageStats([])
+          return
+        }
+        const end = new Date()
+        const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000)
+        const stats = (await api.analytics.getPageStats(withAnalytics.id, start.toISOString(), end.toISOString(), 200)) as {
+          pages?: PageStatRow[]
+        }
+        if (cancelled) return
+        const pages = Array.isArray(stats?.pages) ? stats.pages : []
+        setBlogPageStats(pages.filter((p) => isBlogPath(normalizePathname(p.page))))
+      } catch {
+        if (!cancelled) setBlogPageStats([])
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [organization?.id])
 
@@ -201,8 +257,25 @@ function OrgBlogsListPageInner() {
     const published = posts.filter((p) => p.status === "published").length
     const draft = posts.filter((p) => p.status === "draft").length
     const scheduled = posts.filter((p) => p.status === "scheduled").length
-    return { published, draft, scheduled, total: posts.length }
-  }, [posts])
+    const blogViews30d = blogPageStats.reduce((sum, row) => sum + (row.views || 0), 0)
+    const blogVisitors30d = blogPageStats.reduce((sum, row) => sum + (row.uniqueVisitors || 0), 0)
+    return { published, draft, scheduled, total: posts.length, blogViews30d, blogVisitors30d }
+  }, [posts, blogPageStats])
+
+  const viewsByPostId = useMemo(() => {
+    const bySlug = new Map<string, number>()
+    for (const row of blogPageStats) {
+      const path = normalizePathname(row.page)
+      const slugPart = path.split("/").filter(Boolean).at(1)
+      if (!slugPart) continue
+      bySlug.set(slugPart, (bySlug.get(slugPart) ?? 0) + (row.views || 0))
+    }
+    const map = new Map<string, number>()
+    for (const post of posts) {
+      map.set(post.id, bySlug.get(post.slug.toLowerCase()) ?? 0)
+    }
+    return map
+  }, [blogPageStats, posts])
 
   const filtersActive = query.trim() !== "" || statusFilter !== "all" || sortBy !== "updated_desc"
 
@@ -302,6 +375,18 @@ function OrgBlogsListPageInner() {
               <CardContent className="pt-5 pb-4">
                 <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Drafts</p>
                 <p className="text-muted-foreground mt-1 text-2xl font-semibold tabular-nums">{stats.draft}</p>
+              </CardContent>
+            </Card>
+            <Card className="app-card">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Blog views (30d)</p>
+                <p className="text-primary mt-1 text-2xl font-semibold tabular-nums">{stats.blogViews30d.toLocaleString()}</p>
+              </CardContent>
+            </Card>
+            <Card className="app-card">
+              <CardContent className="pt-5 pb-4">
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Unique visitors (30d)</p>
+                <p className="text-chart-2 mt-1 text-2xl font-semibold tabular-nums">{stats.blogVisitors30d.toLocaleString()}</p>
               </CardContent>
             </Card>
           </div>
@@ -482,6 +567,7 @@ function OrgBlogsListPageInner() {
                     {p.updated_at ? (
                       <p className="text-muted-foreground text-xs">Updated {formatShortDate(p.updated_at)}</p>
                     ) : null}
+                    <p className="text-muted-foreground text-xs">Views (30d): {viewsByPostId.get(p.id)?.toLocaleString() ?? "0"}</p>
                     {p.status === "scheduled" && p.scheduled_publish_at ? (
                       <p className="text-chart-3 text-xs">Goes live {formatShortDate(p.scheduled_publish_at)}</p>
                     ) : null}
@@ -531,6 +617,7 @@ function OrgBlogsListPageInner() {
                     <TableHead className="w-[140px]">Cover</TableHead>
                     <TableHead>Post</TableHead>
                     <TableHead className="w-[120px]">Status</TableHead>
+                    <TableHead className="w-[130px]">Views (30d)</TableHead>
                     <TableHead className="hidden lg:table-cell w-[180px]">Dates</TableHead>
                     <TableHead className="w-[120px] text-right">Actions</TableHead>
                   </TableRow>
@@ -570,6 +657,9 @@ function OrgBlogsListPageInner() {
                         <Badge variant="outline" className={cn("capitalize", statusBadgeClass(p.status))}>
                           {p.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm tabular-nums text-muted-foreground">
+                        {(viewsByPostId.get(p.id) ?? 0).toLocaleString()}
                       </TableCell>
                       <TableCell className="text-muted-foreground hidden align-middle text-xs lg:table-cell">
                         <div className="space-y-1">

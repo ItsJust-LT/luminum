@@ -74,6 +74,42 @@ import {
 
 type AllowComponent = { name: string; props: Record<string, { type: string; required?: boolean }> };
 
+type PageStatRow = {
+  page: string;
+  views: number;
+  uniqueVisitors: number;
+  avgDuration: number;
+  sharePercent: number;
+};
+
+function normalizedPathname(raw: string): string {
+  const text = (raw || "").trim();
+  if (!text) return "/";
+  try {
+    if (text.startsWith("http://") || text.startsWith("https://")) {
+      return new URL(text).pathname.toLowerCase();
+    }
+  } catch {
+    /* ignore malformed absolute URLs */
+  }
+  return (text.split("?")[0] || text).toLowerCase();
+}
+
+function getPostViewsFromPageStats(rows: PageStatRow[], postSlug: string): { views: number; visitors: number } {
+  const targetA = `/blog/${postSlug.toLowerCase()}`;
+  const targetB = `/blogs/${postSlug.toLowerCase()}`;
+  let views = 0;
+  let visitors = 0;
+  for (const row of rows) {
+    const p = normalizedPathname(row.page);
+    if (p === targetA || p === targetB) {
+      views += row.views || 0;
+      visitors += row.uniqueVisitors || 0;
+    }
+  }
+  return { views, visitors };
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -130,6 +166,8 @@ export function BlogEditor(props: {
   const [scheduling, setScheduling] = React.useState(false);
   const [contentParseError, setContentParseError] = React.useState<string | null>(null);
   const [markdownHints, setMarkdownHints] = React.useState<string[]>([]);
+  const [postViews30d, setPostViews30d] = React.useState(0);
+  const [postVisitors30d, setPostVisitors30d] = React.useState(0);
 
   const markDirty = React.useCallback(() => setDirty(true), []);
 
@@ -244,6 +282,45 @@ export function BlogEditor(props: {
       c = true;
     };
   }, [props.organizationId]);
+
+  React.useEffect(() => {
+    if (!props.organizationId || !slug.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const websites = (await api.websites.list(props.organizationId)) as
+          | Array<{ id?: string; analytics?: boolean }>
+          | { data?: Array<{ id?: string; analytics?: boolean }> };
+        const rows = Array.isArray(websites) ? websites : websites?.data ?? [];
+        const withAnalytics = rows.find((w) => w?.id && w?.analytics !== false) ?? rows.find((w) => w?.id);
+        if (!withAnalytics?.id) {
+          if (!cancelled) {
+            setPostViews30d(0);
+            setPostVisitors30d(0);
+          }
+          return;
+        }
+        const end = new Date();
+        const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const stats = (await api.analytics.getPageStats(withAnalytics.id, start.toISOString(), end.toISOString(), 200)) as {
+          pages?: PageStatRow[];
+        };
+        if (cancelled) return;
+        const pages = Array.isArray(stats?.pages) ? stats.pages : [];
+        const current = getPostViewsFromPageStats(pages, slug.trim());
+        setPostViews30d(current.views);
+        setPostVisitors30d(current.visitors);
+      } catch {
+        if (!cancelled) {
+          setPostViews30d(0);
+          setPostVisitors30d(0);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [props.organizationId, slug]);
 
   const persist = React.useCallback(
     async (opts?: { silent?: boolean }): Promise<boolean> => {
@@ -675,6 +752,8 @@ export function BlogEditor(props: {
                   </motion.span>
                 )}
               </AnimatePresence>
+              <Badge variant="outline" className="font-normal">Views 30d: {postViews30d.toLocaleString()}</Badge>
+              <Badge variant="outline" className="font-normal">Visitors 30d: {postVisitors30d.toLocaleString()}</Badge>
             </div>
           </div>
         </div>
