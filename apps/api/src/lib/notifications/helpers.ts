@@ -602,7 +602,14 @@ export async function notifyFormSubmission(
   const orgName = await getOrganizationName(website.organization_id);
   const slug = await getOrganizationSlug(website.organization_id);
 
-  return sendNotification({
+  const dashboardPath =
+    finalSubmissionId && slug
+      ? `/${slug}/forms/${finalSubmissionId}`
+      : slug
+        ? `/${slug}/forms`
+        : "/dashboard";
+
+  const notifResult = await sendNotification({
     type: "form_submission",
     data: {
       websiteId,
@@ -612,15 +619,34 @@ export async function notifyFormSubmission(
       formName,
       formSubmissionId: finalSubmissionId,
       submissionData,
-      url:
-        finalSubmissionId && slug
-          ? `/${slug}/forms/${finalSubmissionId}`
-          : slug
-          ? `/${slug}/forms`
-          : undefined,
+      url: dashboardPath.startsWith("/") ? dashboardPath : `/${dashboardPath}`,
     },
     target: { organizationId: website.organization_id },
   });
+
+  const submissionObj =
+    submissionData && typeof submissionData === "object" && !Array.isArray(submissionData)
+      ? (submissionData as Record<string, unknown>)
+      : {};
+
+  void import("../send-form-submission-email.js")
+    .then(({ sendFormSubmissionNotificationEmails }) =>
+      sendFormSubmissionNotificationEmails({
+        organizationId: website.organization_id,
+        organizationName: orgName || "Your organization",
+        websiteName: website.name,
+        formName,
+        formSubmissionId: finalSubmissionId,
+        submissionData: submissionObj,
+        dashboardPath,
+        submittedAtIso: new Date().toISOString(),
+      }),
+    )
+    .catch((err) =>
+      console.error("[notifyFormSubmission] form notification email:", err),
+    );
+
+  return notifResult;
 }
 
 export async function notifyAdmins(

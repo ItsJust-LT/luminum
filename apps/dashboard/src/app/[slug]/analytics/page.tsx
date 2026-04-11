@@ -28,7 +28,15 @@ import {
   Layers,
   ChevronRight,
 } from "lucide-react"
-import type { MetricCount, StatsOverview, PageFlowResponse, EntryExitResponse, SessionPathsResponse, PageStatsResponse } from "@/lib/types/analytics"
+import type {
+  MetricCount,
+  StatsOverview,
+  PageFlowResponse,
+  EntryExitResponse,
+  SessionPathsResponse,
+  PageStatsResponse,
+  ReferrerSourceRow,
+} from "@/lib/types/analytics"
 import { api } from "@/lib/api"
 import { formatDuration, cn } from "@/lib/utils"
 import { cleanAnalyticsPath } from "@/lib/analytics/clean-route"
@@ -52,6 +60,7 @@ import { PageDataSpinner } from "@/components/shell/page-data-spinner"
 import { useAnalyticsPresence } from "@/lib/ably/client"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { LiveVisitorsBadges } from "@/components/analytics/live-visitors-counter"
+import { AnalyticsReferrersSection } from "@/components/analytics/analytics-referrers-section"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
 import {
   formatChartAxisTick,
@@ -111,6 +120,7 @@ export default function AnalyticsPage() {
   const [topPages, setTopPages] = useState<MetricCount[]>([])
   const [topCountries, setTopCountries] = useState<MetricCount[]>([])
   const [deviceData, setDeviceData] = useState<MetricCount[]>([])
+  const [referrerRows, setReferrerRows] = useState<ReferrerSourceRow[]>([])
   const [liveData, setLiveData] = useState<LiveData>({ activeVisitors: 0, recentEvents: [] })
 
   // Advanced analytics state
@@ -243,12 +253,14 @@ export default function AnalyticsPage() {
         customRange?.to
       )
 
-      const [overview, timeseries, pages, countries, devices, realtime, flow, entryExitData, paths, stats] = await Promise.all([
+      const [overview, timeseries, pages, countries, devices, referrers, realtime, flow, entryExitData, paths, stats] =
+        await Promise.all([
         api.analytics.getOverview(website.id, start, end).catch(() => null),
         api.analytics.getTimeSeries(website.id, start, end, tsGranularity).catch(() => null),
         api.analytics.getTopPages(website.id, start, end, 10).catch(() => []),
         api.analytics.getCountries(website.id, start, end, 10).catch(() => []),
         api.analytics.getDevices(website.id, start, end, 5).catch(() => []),
+        api.analytics.getReferrers(website.id, start, end, 12).catch(() => null),
         api.analytics.getRealtime(website.id).catch(() => null),
         api.analytics.getPageFlow(website.id, start, end, 50).catch(() => null),
         api.analytics.getEntryExit(website.id, start, end, 10).catch(() => null),
@@ -261,6 +273,8 @@ export default function AnalyticsPage() {
       setTopPages((pages ?? []) as MetricCount[])
       setTopCountries((countries ?? []) as MetricCount[])
       setDeviceData((devices ?? []) as MetricCount[])
+      const refPayload = referrers as { referrers?: ReferrerSourceRow[] } | null
+      setReferrerRows(Array.isArray(refPayload?.referrers) ? refPayload.referrers : [])
       setLiveData({
         activeVisitors: (realtime as { activeVisitors?: number })?.activeVisitors ?? 0,
         recentEvents: ((realtime as { recentEvents?: LiveData["recentEvents"] })?.recentEvents ?? []) as LiveData["recentEvents"],
@@ -733,6 +747,8 @@ export default function AnalyticsPage() {
             )}
           </CardContent>
         </Card>
+
+        <AnalyticsReferrersSection rows={referrerRows} />
 
         <Card className="app-card border-border/50 shadow-sm">
           <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">

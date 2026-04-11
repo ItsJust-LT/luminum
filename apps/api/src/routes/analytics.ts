@@ -12,6 +12,15 @@ import {
   aggregateUrlCountsWithTitles,
   dominantTitleFromVotes,
 } from "../lib/analytics-url-titles.js";
+import {
+  displayLabelForReferrerDomain,
+  faviconHostForDomainKey,
+  googleFaviconUrl,
+  kindLabel,
+  normalizeReferrerDomain,
+  trafficKindFromStored,
+  type ReferrerTrafficKind,
+} from "../lib/analytics-referrers.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -355,6 +364,90 @@ router.get("/devices", async (req: Request, res: Response) => {
     res.json(result);
   } catch (error: any) {
     console.error("[analytics] devices error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/analytics/referrers?websiteId=X&start=...&end=...&limit=12
+router.get("/referrers", async (req: Request, res: Response) => {
+  try {
+    const { websiteId, start, end, limit = "12" } = req.query as Record<string, string>;
+    if (!websiteId || !start || !end) return res.status(400).json({ error: "Missing params" });
+
+    const website = await resolveWebsiteWithAccess(websiteId, req.user);
+    if (!website) return res.status(403).json({ error: "Access denied" });
+
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 40);
+    const cacheKey = `analytics:referrers:${website.id}:${start}:${end}:${lim}`;
+    const skipCache = await isAnalyticsDirty(website.id);
+    if (!skipCache) {
+      const cached = await cacheGet(cacheKey);
+      if (cached != null) return res.json(cached);
+    }
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    const rows = await prisma.events.groupBy({
+      by: ["referrer_domain", "traffic_source"],
+      where: {
+        website_id: website.id,
+        created_at: { gte: startDate, lte: endDate },
+      },
+      _count: { _all: true },
+    });
+
+    type Acc = { count: number; sourceHits: Map<string, number> };
+    const byDomain = new Map<string, Acc>();
+
+    for (const r of rows) {
+      const domainKey = normalizeReferrerDomain(r.referrer_domain);
+      const c = r._count._all ?? 0;
+      const ts = r.traffic_source ?? "";
+      let acc = byDomain.get(domainKey);
+      if (!acc) {
+        acc = { count: 0, sourceHits: new Map() };
+        byDomain.set(domainKey, acc);
+      }
+      acc.count += c;
+      acc.sourceHits.set(ts, (acc.sourceHits.get(ts) ?? 0) + c);
+    }
+
+    const merged = [...byDomain.entries()].map(([domainKey, acc]) => {
+      let topSource = "";
+      let topN = 0;
+      for (const [s, n] of acc.sourceHits) {
+        if (n > topN) {
+          topN = n;
+          topSource = s;
+        }
+      }
+      const kind: ReferrerTrafficKind = trafficKindFromStored(topSource, domainKey);
+      return {
+        domainKey,
+        displayLabel: displayLabelForReferrerDomain(domainKey),
+        kind,
+        kindLabel: kindLabel(kind),
+        count: acc.count,
+        faviconHost: faviconHostForDomainKey(domainKey),
+        faviconUrl: faviconHostForDomainKey(domainKey)
+          ? googleFaviconUrl(faviconHostForDomainKey(domainKey)!, 32)
+          : null,
+      };
+    });
+
+    const total = merged.reduce((s, r) => s + r.count, 0);
+    merged.sort((a, b) => b.count - a.count);
+    const top = merged.slice(0, lim).map((r) => ({
+      ...r,
+      share: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0,
+    }));
+
+    const payload = { referrers: top, totalReferrerEvents: total };
+    await cacheSet(cacheKey, payload, 60);
+    res.json(payload);
+  } catch (error: any) {
+    console.error("[analytics] referrers error:", error);
     res.status(500).json({ error: error.message });
   }
 });

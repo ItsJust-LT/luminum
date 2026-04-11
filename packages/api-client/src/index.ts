@@ -192,6 +192,7 @@ function createApiClient(baseUrl: string = "") {
         contacted: filters?.contacted,
       }),
     getById: (id: string) => get(`/api/forms/${id}`),
+    delete: (id: string) => del("/api/forms/" + encodeURIComponent(id)),
     updateStatus: (id: string, updates: { seen?: boolean; contacted?: boolean }) =>
       patch(`/api/forms/${id}/status`, updates),
     getUnseenCount: (organizationId: string) =>
@@ -539,6 +540,18 @@ function createApiClient(baseUrl: string = "") {
         start,
         end,
         limit: limit ?? 5,
+      }),
+    getReferrers: (
+      websiteId: string,
+      start: string,
+      end: string,
+      limit?: number
+    ) =>
+      get("/api/analytics/referrers", {
+        websiteId,
+        start,
+        end,
+        limit: limit ?? 12,
       }),
     getRealtime: (websiteId: string) =>
       get("/api/analytics/realtime", { websiteId }),

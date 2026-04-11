@@ -74,6 +74,30 @@ export type SessionPathsResponse = {
   avgPagesPerSession: number
 }
 
+export type ReferrerTrafficKind =
+  | "direct"
+  | "search"
+  | "social"
+  | "email"
+  | "campaign"
+  | "referral"
+
+export type ReferrerSourceRow = {
+  domainKey: string
+  displayLabel: string
+  kind: ReferrerTrafficKind | string
+  kindLabel: string
+  count: number
+  share: number
+  faviconHost: string | null
+  faviconUrl: string | null
+}
+
+export type ReferrersResponse = {
+  referrers: ReferrerSourceRow[]
+  totalReferrerEvents: number
+}
+
 export type PageStat = {
   page: string
   views: number

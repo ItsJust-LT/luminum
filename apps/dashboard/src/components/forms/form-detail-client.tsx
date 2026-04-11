@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +22,7 @@ import {
   User,
   Globe,
   FileText,
+  Trash2,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import type { FormSubmission } from "@/lib/types/forms"
@@ -33,6 +35,18 @@ import {
   getTelUrl,
 } from "@/lib/utils/field-detection"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useOrganization } from "@/lib/contexts/organization-context"
+import { toast } from "sonner"
 
 interface FormDetailClientProps {
   submission: FormSubmission
@@ -40,8 +54,13 @@ interface FormDetailClientProps {
 }
 
 export function FormDetailClient({ submission, organizationSlug }: FormDetailClientProps) {
+  const router = useRouter()
+  const { hasAllPermissions } = useOrganization()
+  const canDeleteSubmission = hasAllPermissions(["forms:submissions:manage"])
   const [copied, setCopied] = useState<string | null>(null)
   const [contacted, setContacted] = useState(submission.contacted)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const handleContactedToggle = async (newContacted: boolean) => {
     setContacted(newContacted)
@@ -92,6 +111,25 @@ export function FormDetailClient({ submission, organizationSlug }: FormDetailCli
     : emailField
       ? formatFieldValue(emailField)
       : "Submission"
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      const res = (await api.forms.delete(submission.id)) as { success?: boolean; error?: string }
+      if (!res?.success) {
+        toast.error(res?.error || "Could not delete submission")
+        return
+      }
+      toast.success("Submission deleted")
+      router.push(`/${organizationSlug}/forms`)
+      router.refresh()
+    } catch {
+      toast.error("Could not delete submission")
+    } finally {
+      setDeleting(false)
+      setDeleteOpen(false)
+    }
+  }
 
   return (
     <AppPageContainer fullWidth className="mx-auto max-w-[1600px] space-y-6 sm:space-y-8">
@@ -186,6 +224,44 @@ export function FormDetailClient({ submission, organizationSlug }: FormDetailCli
                 </Label>
                 <Switch id="contacted-switch" checked={contacted} onCheckedChange={handleContactedToggle} />
               </div>
+              {canDeleteSubmission ? (
+                <>
+                  <Separator />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-start text-destructive hover:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete submission
+                  </Button>
+                  <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this submission?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This permanently removes the submission for <strong>{displayName}</strong> from{" "}
+                          {new Date(submission.submitted_at).toLocaleDateString()}. This cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          disabled={deleting}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            void handleDelete()
+                          }}
+                        >
+                          {deleting ? "Deleting…" : "Delete"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              ) : null}
             </CardContent>
           </Card>
         </div>

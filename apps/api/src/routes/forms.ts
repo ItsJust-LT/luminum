@@ -93,4 +93,24 @@ router.patch("/:id/status", async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/forms/:id
+router.delete("/:id", async (req: Request, res: Response) => {
+  try {
+    const id = pathParam(req, "id");
+    const submission = await prisma.form_submissions.findUnique({
+      where: { id },
+      include: { websites: { select: { organization_id: true } } },
+    });
+    if (!submission) return res.status(404).json({ success: false, error: "Not found" });
+    const orgId = submission.websites?.organization_id;
+    if (!orgId) return res.status(400).json({ success: false, error: "Missing organization" });
+    if (!(await requireOrgPermissions(orgId, req.user, res, ["forms:submissions:manage"]))) return;
+
+    await prisma.form_submissions.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export { router as formsRouter };

@@ -23,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -43,6 +44,7 @@ import {
   ArrowUp,
   ArrowDown,
   Inbox,
+  Trash2,
 } from "lucide-react"
 import { api } from "@/lib/api"
 import type { FormSubmission, FormSubmissionFilters } from "@/lib/types/forms"
@@ -57,7 +59,18 @@ import {
   getTelUrl,
 } from "@/lib/utils/field-detection"
 import { AppPageContainer } from "@/components/app-shell/app-page-container"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 import { mergeSearchParams } from "@/lib/url-state/list-query"
 
 type ReadFilter = "any" | "new" | "seen"
@@ -79,7 +92,8 @@ export function FormsPage() {
     },
     [pathname, router, searchParams]
   )
-  const { organization, loading: orgLoading, error: orgError } = useOrganization()
+  const { organization, loading: orgLoading, error: orgError, hasAllPermissions } = useOrganization()
+  const canDeleteSubmission = hasAllPermissions(["forms:submissions:manage"])
   const organizationId = organization?.id ?? ""
 
   const [websites, setWebsites] = useState<Website[] | null>(null)
@@ -95,6 +109,8 @@ export function FormsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedSubmissions, setSelectedSubmissions] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState<FormSortKey>("not_contacted")
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; summary: string } | null>(null)
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
   const primaryWebsite = websites?.[0]
   const searchFieldFocusedRef = useRef(false)
@@ -330,6 +346,42 @@ export function FormsPage() {
   const handleViewSubmission = (submissionId: string) => {
     if (!organization?.slug) return
     router.push(`/${organization.slug}/forms/${submissionId}`)
+  }
+
+  const openDeleteDialog = (submission: FormSubmission) => {
+    const fields = detectFormFields(submission.data)
+    const primary = getPrimaryFields(fields)
+    const nameField = primary.find((f) => f.type === "name")
+    const emailField = primary.find((f) => f.type === "email")
+    const summary =
+      (nameField && formatFieldValue(nameField)) ||
+      (emailField && formatFieldValue(emailField)) ||
+      "this submission"
+    setPendingDelete({ id: submission.id, summary })
+  }
+
+  const confirmDeleteSubmission = async () => {
+    if (!pendingDelete) return
+    setDeleteSubmitting(true)
+    try {
+      const res = (await api.forms.delete(pendingDelete.id)) as { success?: boolean; error?: string }
+      if (!res?.success) {
+        toast.error(res?.error || "Could not delete submission")
+        return
+      }
+      toast.success("Submission deleted")
+      setSubmissions((prev) => prev.filter((s) => s.id !== pendingDelete.id))
+      setSelectedSubmissions((prev) => {
+        const next = new Set(prev)
+        next.delete(pendingDelete.id)
+        return next
+      })
+      setPendingDelete(null)
+    } catch {
+      toast.error("Could not delete submission")
+    } finally {
+      setDeleteSubmitting(false)
+    }
   }
 
   const handleSubmissionHover = (submissionId: string) => {
@@ -766,6 +818,18 @@ export function FormsPage() {
                               </>
                             )}
                           </DropdownMenuItem>
+                          {canDeleteSubmission ? (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => openDeleteDialog(submission)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -935,6 +999,18 @@ export function FormsPage() {
                                     </>
                                   )}
                                 </DropdownMenuItem>
+                                {canDeleteSubmission ? (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-destructive focus:text-destructive"
+                                      onClick={() => openDeleteDialog(submission)}
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                ) : null}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
@@ -948,6 +1024,31 @@ export function FormsPage() {
           </Card>
         </>
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete submission?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove <strong>{pendingDelete?.summary}</strong> from your inbox. This cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteSubmitting}
+              onClick={(e) => {
+                e.preventDefault()
+                void confirmDeleteSubmission()
+              }}
+            >
+              {deleteSubmitting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppPageContainer>
   )
 }
