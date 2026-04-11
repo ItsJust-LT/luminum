@@ -30,6 +30,7 @@ import {
 } from "lucide-react"
 import { useRealtime } from "@/components/realtime/realtime-provider"
 import { TransferOwnershipDialog } from "@/components/dashboard/transfer-ownership-dialog"
+import { TeamJoinLinkCard } from "@/components/organization/team-join-link-card"
 import { useSession } from "@/lib/auth/client"
 import { api } from "@/lib/api"
 import { TeamSkeleton } from "@/components/ui/team-skeleton"
@@ -235,6 +236,8 @@ export default function TeamPage() {
         </div>
         <Separator />
       </header>
+
+      {canInvite ? <TeamJoinLinkCard organizationId={organization.id} /> : null}
 
       <Card className="app-card overflow-hidden">
         <CardHeader className="pb-3">

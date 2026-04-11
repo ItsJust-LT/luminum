@@ -2,9 +2,10 @@
 
 import { SignInForm } from "@/components/auth/sign-in-form"
 import { useSession } from "@/lib/auth/client"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useEffect } from "react"
 import LoadingAnimation from "@/components/LoadingAnimation"
+import { safePostAuthRedirect } from "@/lib/safe-post-auth-redirect"
 
 export interface SignInOrgBranding {
   name: string
@@ -14,12 +15,14 @@ export interface SignInOrgBranding {
 export function SignInView({ orgBranding }: { orgBranding: SignInOrgBranding | null }) {
   const { data: session, isPending } = useSession()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const afterAuth = safePostAuthRedirect(searchParams.get("callbackUrl"))
 
   useEffect(() => {
     if (!isPending && session?.user) {
-      router.push("/dashboard")
+      router.push(afterAuth || "/dashboard")
     }
-  }, [session, isPending, router])
+  }, [session, isPending, router, afterAuth])
 
   if (isPending) {
     return <LoadingAnimation />

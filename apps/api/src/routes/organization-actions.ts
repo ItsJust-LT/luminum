@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth, optionalAuth } from "../middleware/require-auth.js";
+import { randomBytes } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
-import { getMemberOrAdmin } from "../lib/access.js";
 import { requireOrgPermissions } from "../lib/org-permission-http.js";
 import { ensureBuiltinRolesForOrganization } from "../lib/org-roles-seed.js";
 import { ORG_ROLE_KIND } from "@luminum/org-permissions";
@@ -11,6 +11,39 @@ import { auth } from "../auth/config.js";
 import { createOwnershipTransferInvitation } from "../lib/ownership-transfer-invite.js";
 
 const router = Router();
+
+const JOIN_LINK_MAX_DAYS = 7;
+
+function newJoinLinkToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+async function addUserAsJoinLinkMember(
+  organizationId: string,
+  userId: string,
+  email: string,
+  displayName: string | null
+): Promise<{ alreadyMember: boolean }> {
+  await ensureBuiltinRolesForOrganization(prisma, organizationId);
+  const existingMember = await prisma.member.findFirst({ where: { userId, organizationId } });
+  if (existingMember) return { alreadyMember: true };
+  const orow = await prisma.organization_role.findFirst({
+    where: { organizationId, kind: ORG_ROLE_KIND.member_template },
+  });
+  const organizationRoleId = orow?.id ?? null;
+  await prisma.member.create({
+    data: {
+      id: crypto.randomUUID(),
+      userId,
+      organizationId,
+      role: "member",
+      createdAt: new Date(),
+      organizationRoleId,
+    },
+  });
+  await notifyMemberJoined(organizationId, displayName || "User", email, "member");
+  return { alreadyMember: false };
+}
 
 // GET /api/organization-actions/invitation/:id (no auth needed for checking)
 router.get("/invitation/:id", async (req: Request, res: Response) => {
@@ -51,6 +84,71 @@ router.post("/check-user", async (req: Request, res: Response) => {
     res.json({ success: true, exists: !!user, user: user || null });
   } catch (error: any) {
     res.json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/organization-actions/public-join-link/:token (no auth)
+router.get("/public-join-link/:token", async (req: Request, res: Response) => {
+  try {
+    const token = typeof req.params.token === "string" ? req.params.token : "";
+    if (!token) return res.status(404).json({ success: false, error: "not_found" });
+    const link = await prisma.organization_join_link.findUnique({
+      where: { token },
+      include: { organization: { select: { name: true, slug: true } } },
+    });
+    if (!link || new Date(link.expiresAt) < new Date()) {
+      return res.status(404).json({ success: false, error: "invalid_or_expired" });
+    }
+    res.json({
+      success: true,
+      organizationName: link.organization.name,
+      organizationSlug: link.organization.slug,
+      expiresAt: link.expiresAt.toISOString(),
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/organization-actions/accept-join-link (optional session: join as current user, or email sign-up)
+router.post("/accept-join-link", optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body as { token?: string };
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ success: false, error: "Join link token is required" });
+    }
+    const link = await prisma.organization_join_link.findUnique({
+      where: { token },
+      include: { organization: { select: { id: true, name: true, slug: true } } },
+    });
+    if (!link || new Date(link.expiresAt) < new Date()) {
+      return res.status(404).json({ success: false, error: "This join link is invalid or has expired." });
+    }
+    const organizationId = link.organizationId;
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        code: "AUTH_REQUIRED",
+        error: "Sign in or create your account first, then you will be added to the organization.",
+      });
+    }
+
+    const u = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, email: true, name: true },
+    });
+    if (!u) return res.status(401).json({ success: false, error: "Session is no longer valid. Please sign in again." });
+    const em = (u.email || "").trim().toLowerCase();
+    const joined = await addUserAsJoinLinkMember(organizationId, u.id, em, u.name);
+    return res.json({
+      success: true,
+      alreadyMember: joined.alreadyMember,
+      organizationSlug: link.organization.slug,
+      organizationName: link.organization.name,
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message || "Failed to join" });
   }
 });
 
@@ -391,6 +489,84 @@ router.post("/cancel-invitation", async (req: Request, res: Response) => {
     if (!(await requireOrgPermissions(invitation.organizationId, req.user, res, ["team:invite"]))) return;
 
     await prisma.invitation.update({ where: { id: invitationId }, data: { status: "cancelled" } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/organization-actions/join-link?organizationId=...
+router.get("/join-link", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId is required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:invite"]))) return;
+
+    const row = await prisma.organization_join_link.findUnique({ where: { organizationId } });
+    if (!row) return res.json({ success: true, joinLink: null });
+    res.json({
+      success: true,
+      joinLink: {
+        token: row.token,
+        expiresAt: row.expiresAt.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/organization-actions/join-link — create or rotate the single org-wide join link (max 7 days)
+router.post("/join-link", async (req: Request, res: Response) => {
+  try {
+    const { organizationId, expiresInDays } = req.body as { organizationId?: string; expiresInDays?: number };
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId is required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:invite"]))) return;
+
+    const rawDays = Number(expiresInDays);
+    const days = Number.isFinite(rawDays)
+      ? Math.min(JOIN_LINK_MAX_DAYS, Math.max(1, Math.floor(rawDays)))
+      : JOIN_LINK_MAX_DAYS;
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const token = newJoinLinkToken();
+
+    const row = await prisma.organization_join_link.upsert({
+      where: { organizationId },
+      create: {
+        organizationId,
+        token,
+        expiresAt,
+        createdByUserId: req.user.id,
+      },
+      update: {
+        token,
+        expiresAt,
+        createdByUserId: req.user.id,
+      },
+    });
+
+    res.json({
+      success: true,
+      joinLink: {
+        token: row.token,
+        expiresAt: row.expiresAt.toISOString(),
+        createdAt: row.createdAt.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/organization-actions/join-link?organizationId=...
+router.delete("/join-link", async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.query.organizationId as string;
+    if (!organizationId) return res.status(400).json({ success: false, error: "organizationId is required" });
+    if (!(await requireOrgPermissions(organizationId, req.user, res, ["team:invite"]))) return;
+
+    await prisma.organization_join_link.deleteMany({ where: { organizationId } });
     res.json({ success: true });
   } catch (error: any) {
     res.json({ success: false, error: error.message });

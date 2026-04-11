@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import { headers } from "next/headers"
+import { Suspense } from "react"
 import { dashboardTitle } from "@/lib/dashboard-metadata"
+import LoadingAnimation from "@/components/LoadingAnimation"
 import { SignInView, type SignInOrgBranding } from "./sign-in-view"
 
 export const metadata: Metadata = dashboardTitle("Sign in")
@@ -19,5 +21,9 @@ export default async function SignInPage() {
         }
       : null
 
-  return <SignInView orgBranding={orgBranding} />
+  return (
+    <Suspense fallback={<LoadingAnimation />}>
+      <SignInView orgBranding={orgBranding} />
+    </Suspense>
+  )
 }

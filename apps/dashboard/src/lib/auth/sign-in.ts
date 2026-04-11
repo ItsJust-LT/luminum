@@ -1,20 +1,28 @@
 import { authClient } from "@/lib/auth/client"
+import { safePostAuthRedirect } from "@/lib/safe-post-auth-redirect"
 
 const DASHBOARD_CALLBACK = "/dashboard"
+
+function resolvePostAuthRedirect(callbackURL?: string | null) {
+  return safePostAuthRedirect(callbackURL ?? null) || DASHBOARD_CALLBACK
+}
 
 // Email & password sign-in
 export async function signInWithEmail({
   email,
   password,
+  callbackURL,
 }: {
   email: string
   password: string
+  callbackURL?: string | null
 }) {
+  const target = resolvePostAuthRedirect(callbackURL)
   const { data, error } = await authClient.signIn.email(
     {
       email,
       password,
-      callbackURL: DASHBOARD_CALLBACK, // redirect after sign-in
+      callbackURL: target,
     },
     {
       onRequest: () => {
@@ -22,7 +30,7 @@ export async function signInWithEmail({
       },
       onSuccess: (ctx) => {
         console.log("Sign-in successful, redirecting...")
-        window.location.href = ctx.data?.callbackURL || DASHBOARD_CALLBACK
+        window.location.href = ctx.data?.callbackURL || target
       },
       onError: (ctx) => {
         alert(`Sign-in failed: ${ctx.error.message}`)
@@ -33,11 +41,12 @@ export async function signInWithEmail({
 }
 
 // Google OAuth sign-in (only for existing users)
-export async function signInWithGoogle() {
+export async function signInWithGoogle(callbackURL?: string | null) {
+  const target = resolvePostAuthRedirect(callbackURL)
   const { data, error } = await authClient.signIn.social(
     {
       provider: "google",
-      callbackURL: DASHBOARD_CALLBACK,
+      callbackURL: target,
     },
     {
       onRequest: () => {
@@ -45,8 +54,7 @@ export async function signInWithGoogle() {
       },
       onSuccess: (ctx) => {
         console.log("Google sign-in complete!")
-        // Redirect to dashboard after successful authentication
-        window.location.href = ctx.data?.callbackURL || DASHBOARD_CALLBACK
+        window.location.href = ctx.data?.callbackURL || target
       },
       onError: (ctx) => {
         console.error("Google sign-in error:", ctx.error)

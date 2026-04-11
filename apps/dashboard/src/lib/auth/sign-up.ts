@@ -1,4 +1,5 @@
-import { authClient } from "@/lib/auth/client";
+import { authClient } from "@/lib/auth/client"
+import { safePostAuthRedirect } from "@/lib/safe-post-auth-redirect"
 
 const DASHBOARD_CALLBACK = "/dashboard"
 
@@ -39,10 +40,11 @@ export async function signUpUser({
 }
 
 export async function signUpWithGoogle(callbackURL: string = DASHBOARD_CALLBACK) {
+  const target = safePostAuthRedirect(callbackURL) || DASHBOARD_CALLBACK
   const { data, error } = await authClient.signIn.social(
     {
       provider: "google",
-      callbackURL,
+      callbackURL: target,
     },
     {
       onRequest: () => {
@@ -50,7 +52,7 @@ export async function signUpWithGoogle(callbackURL: string = DASHBOARD_CALLBACK)
       },
       onSuccess: async (ctx) => {
         console.log("Google sign-up complete!");
-        window.location.href = ctx.data?.callbackURL || callbackURL;
+        window.location.href = ctx.data?.callbackURL || target;
       },
       onError: (ctx) => {
         console.error("Google sign-up error:", ctx.error);

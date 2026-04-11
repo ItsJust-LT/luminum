@@ -11,6 +11,7 @@ import { logger } from "../lib/logger.js";
 import {
   aggregateUrlCountsWithTitles,
   dominantTitleFromVotes,
+  normalizeAnalyticsPagePath,
 } from "../lib/analytics-url-titles.js";
 import {
   displayLabelForReferrerDomain,
@@ -571,13 +572,15 @@ router.get("/page-flow", async (req: Request, res: Response) => {
     const pageSessions: Record<string, Set<string>> = {};
 
     for (const t of allTransitions) {
-      const key = `${t.from_page}::${t.to_page}`;
+      const from = normalizeAnalyticsPagePath(t.from_page || "/");
+      const to = normalizeAnalyticsPagePath(t.to_page || "/");
+      const key = `${from}::${to}`;
       linkCounts[key] = (linkCounts[key] || 0) + 1;
 
-      if (!pageSessions[t.from_page]) pageSessions[t.from_page] = new Set();
-      if (!pageSessions[t.to_page]) pageSessions[t.to_page] = new Set();
-      pageSessions[t.from_page].add(t.session_id);
-      pageSessions[t.to_page].add(t.session_id);
+      if (!pageSessions[from]) pageSessions[from] = new Set();
+      if (!pageSessions[to]) pageSessions[to] = new Set();
+      pageSessions[from].add(t.session_id);
+      pageSessions[to].add(t.session_id);
     }
 
     const links = Object.entries(linkCounts)
@@ -664,8 +667,8 @@ router.get("/top-entry-exit", async (req: Request, res: Response) => {
       if (pages.length === 0) continue;
       const first = pages[0];
       const last = pages[pages.length - 1];
-      bump(entryAgg, first.url, first.pageTitle);
-      bump(exitAgg, last.url, last.pageTitle);
+      bump(entryAgg, normalizeAnalyticsPagePath(first.url || "/"), first.pageTitle);
+      bump(exitAgg, normalizeAnalyticsPagePath(last.url || "/"), last.pageTitle);
     }
 
     const toTopList = (agg: Record<string, UrlAgg>) =>
@@ -725,9 +728,10 @@ router.get("/session-paths", async (req: Request, res: Response) => {
     for (const e of events) {
       const sid = e.session_id!;
       if (!sessionPages[sid]) sessionPages[sid] = [];
+      const norm = normalizeAnalyticsPagePath(e.url || "/");
       const lastPage = sessionPages[sid][sessionPages[sid].length - 1];
-      if (lastPage !== e.url) {
-        sessionPages[sid].push(e.url!);
+      if (lastPage !== norm) {
+        sessionPages[sid].push(norm);
       }
     }
 
@@ -799,7 +803,7 @@ router.get("/page-stats", async (req: Request, res: Response) => {
     }> = {};
 
     for (const e of events) {
-      const url = (e.url || "/").trim() || "/";
+      const url = normalizeAnalyticsPagePath((e.url || "/").trim() || "/");
       if (!pageStats[url]) {
         pageStats[url] = { views: 0, sessions: new Set(), totalDuration: 0, durCount: 0, titleVotes: {} };
       }

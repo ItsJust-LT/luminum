@@ -767,12 +767,11 @@ export default function AnalyticsPage() {
                   const totalViews = topPages.reduce((sum, p) => sum + (p.count || 0), 0)
                   const percentage = totalViews > 0 ? ((page.count || 0) / totalViews) * 100 : 0
                   
-                  let cleanRoute = cleanAnalyticsPath(page.key)
-                  if (cleanRoute === "/") cleanRoute = "/home"
+                  const cleanRoute = cleanAnalyticsPath(page.key)
 
                   return (
                     <div
-                      key={index}
+                      key={page.key}
                       className="flex items-center justify-between p-4 rounded-xl bg-muted/30 hover:bg-muted/50 transition-all duration-200 hover:scale-[1.02] border border-transparent hover:border-primary/10"
                     >
                       <div className="flex items-center gap-4 flex-1 min-w-0">

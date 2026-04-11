@@ -76,6 +76,10 @@ import { mergeSearchParams } from "@/lib/url-state/list-query"
 type ReadFilter = "any" | "new" | "seen"
 type ContactFilter = "any" | "not_contacted" | "contacted"
 
+type PendingDelete =
+  | { mode: "single"; id: string; summary: string }
+  | { mode: "bulk"; ids: string[] }
+
 const FORM_SORT_CHOICES = ["latest", "oldest", "not_contacted", "contacted", "new", "seen"] as const
 type FormSortKey = (typeof FORM_SORT_CHOICES)[number]
 
@@ -109,7 +113,7 @@ export function FormsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedSubmissions, setSelectedSubmissions] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState<FormSortKey>("not_contacted")
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; summary: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
   const primaryWebsite = websites?.[0]
@@ -357,26 +361,68 @@ export function FormsPage() {
       (nameField && formatFieldValue(nameField)) ||
       (emailField && formatFieldValue(emailField)) ||
       "this submission"
-    setPendingDelete({ id: submission.id, summary })
+    setPendingDelete({ mode: "single", id: submission.id, summary })
+  }
+
+  const openBulkDeleteDialog = () => {
+    const ids = Array.from(selectedSubmissions)
+    if (ids.length === 0) return
+    setPendingDelete({ mode: "bulk", ids })
   }
 
   const confirmDeleteSubmission = async () => {
     if (!pendingDelete) return
     setDeleteSubmitting(true)
     try {
-      const res = (await api.forms.delete(pendingDelete.id)) as { success?: boolean; error?: string }
-      if (!res?.success) {
-        toast.error(res?.error || "Could not delete submission")
+      if (pendingDelete.mode === "single") {
+        const res = (await api.forms.delete(pendingDelete.id)) as { success?: boolean; error?: string }
+        if (!res?.success) {
+          toast.error(res?.error || "Could not delete submission")
+          return
+        }
+        toast.success("Submission deleted")
+        setSubmissions((prev) => prev.filter((s) => s.id !== pendingDelete.id))
+        setSelectedSubmissions((prev) => {
+          const next = new Set(prev)
+          next.delete(pendingDelete.id)
+          return next
+        })
+        setPendingDelete(null)
         return
       }
-      toast.success("Submission deleted")
-      setSubmissions((prev) => prev.filter((s) => s.id !== pendingDelete.id))
-      setSelectedSubmissions((prev) => {
-        const next = new Set(prev)
-        next.delete(pendingDelete.id)
-        return next
-      })
-      setPendingDelete(null)
+
+      const ids = pendingDelete.ids
+      const deletedIds: string[] = []
+      let fail = 0
+      for (const id of ids) {
+        try {
+          const res = (await api.forms.delete(id)) as { success?: boolean; error?: string }
+          if (res?.success) deletedIds.push(id)
+          else fail++
+        } catch {
+          fail++
+        }
+      }
+
+      if (deletedIds.length > 0) {
+        setSubmissions((prev) => prev.filter((s) => !deletedIds.includes(s.id)))
+        setSelectedSubmissions((prev) => {
+          const next = new Set(prev)
+          deletedIds.forEach((d) => next.delete(d))
+          return next
+        })
+      }
+
+      if (deletedIds.length === ids.length) {
+        toast.success(ids.length === 1 ? "Submission deleted" : `Deleted ${deletedIds.length} submissions`)
+        setPendingDelete(null)
+      } else if (deletedIds.length > 0) {
+        toast.success(`Deleted ${deletedIds.length} of ${ids.length} submissions`)
+        if (fail > 0) toast.error(`Could not delete ${fail} submission(s)`)
+        setPendingDelete(null)
+      } else {
+        toast.error("Could not delete submissions")
+      }
     } catch {
       toast.error("Could not delete submission")
     } finally {
@@ -664,6 +710,18 @@ export function FormsPage() {
                 <XCircle className="mr-1.5 h-3.5 w-3.5" />
                 Mark not contacted
               </Button>
+              {canDeleteSubmission ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={openBulkDeleteDialog}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Delete selected
+                </Button>
+              ) : null}
               <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedSubmissions(new Set())}>
                 Clear
               </Button>
@@ -1028,10 +1086,24 @@ export function FormsPage() {
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete submission?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pendingDelete?.mode === "bulk"
+                ? `Delete ${pendingDelete.ids.length} submissions?`
+                : "Delete submission?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove <strong>{pendingDelete?.summary}</strong> from your inbox. This cannot be
-              undone.
+              {pendingDelete?.mode === "bulk" ? (
+                <>
+                  This will permanently remove <strong>{pendingDelete.ids.length}</strong> selected{" "}
+                  {pendingDelete.ids.length === 1 ? "submission" : "submissions"} from your inbox. This cannot be
+                  undone.
+                </>
+              ) : (
+                <>
+                  This will permanently remove <strong>{pendingDelete?.summary}</strong> from your inbox. This cannot be
+                  undone.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1044,7 +1116,11 @@ export function FormsPage() {
                 void confirmDeleteSubmission()
               }}
             >
-              {deleteSubmitting ? "Deleting…" : "Delete"}
+              {deleteSubmitting
+                ? "Deleting…"
+                : pendingDelete?.mode === "bulk"
+                  ? `Delete ${pendingDelete.ids.length}`
+                  : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

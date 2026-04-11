@@ -297,6 +297,39 @@ function createApiClient(baseUrl: string = "") {
       get("/api/organization-actions/invitations", { organizationId }),
     cancelInvitation: (invitationId: string) =>
       post("/api/organization-actions/cancel-invitation", { invitationId }),
+    getJoinLink: (organizationId: string) =>
+      get("/api/organization-actions/join-link", { organizationId }),
+    createOrRotateJoinLink: (organizationId: string, expiresInDays?: number) =>
+      post("/api/organization-actions/join-link", { organizationId, expiresInDays }),
+    deleteJoinLink: (organizationId: string) =>
+      del(`/api/organization-actions/join-link?organizationId=${encodeURIComponent(organizationId)}`),
+    getPublicJoinLink: (token: string) =>
+      get(`/api/organization-actions/public-join-link/${encodeURIComponent(token)}`),
+    /** Resolves with JSON and HTTP status (does not throw on 4xx). Requires an authenticated session. */
+    acceptJoinLink: async (data: {
+      token: string;
+      name?: string;
+      email?: string;
+      password?: string;
+    }) => {
+      const url = `${baseUrl}/api/organization-actions/accept-join-link`;
+      const res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      return { status: res.status, ...body } as {
+        status: number;
+        success?: boolean;
+        error?: string;
+        code?: string;
+        alreadyMember?: boolean;
+        organizationSlug?: string;
+        organizationName?: string;
+      };
+    },
     addMember: (data: {
       email: string;
       role: "admin" | "member";

@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/accept-invitation",
   "/accept-org-invitation",
   "/accept-owner-invitation",
+  "/join",
   /** Must be reachable without a session or PWA install uses the wrong name/icons. */
   "/manifest.json",
   "/sw.js",

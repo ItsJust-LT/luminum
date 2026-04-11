@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +26,8 @@ function signInBrandImageSrc(orgBranding: SignInFormProps["orgBranding"]): strin
 }
 
 export function SignInForm({ orgBranding }: SignInFormProps) {
+  const searchParams = useSearchParams()
+  const postAuthCallback = searchParams.get("callbackUrl")
   const brandSrc = signInBrandImageSrc(orgBranding)
   const brandAlt = orgBranding?.name || "Luminum Agency"
   const brandUnoptimized = brandSrc !== "/images/logo.png"
@@ -59,7 +62,7 @@ export function SignInForm({ orgBranding }: SignInFormProps) {
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true)
     try {
-      await signInWithGoogle()
+      await signInWithGoogle(postAuthCallback)
     } catch (error) {
       console.error("Google sign in error:", error)
     } finally {
@@ -79,7 +82,7 @@ export function SignInForm({ orgBranding }: SignInFormProps) {
     setIsLoading(true)
 
     try {
-      await signInWithEmail({ email, password })
+      await signInWithEmail({ email, password, callbackURL: postAuthCallback })
     } catch (error: any) {
       console.error("Sign in error:", error)
       const errorMessage = error?.message || "Failed to sign in. Please check your credentials."
